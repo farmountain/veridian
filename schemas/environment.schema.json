@@ -42,6 +42,17 @@
       "type": ["string", "null"],
       "description": "Path of the database file this world is, relative to this file (or absolute). Present for a file-backed world such as `local-db`, where the application's state IS this file; absent for every other world. Stated here rather than as an adapter-private option so the plan every reader sees names the same file the adapter opens."
     },
+    "cluster": {
+      "type": ["object", "null"],
+      "description": "The cluster this world stands in for, when the world is a cluster. Present for a simulated cluster such as `sim-k8s`; absent for every other world. Same reasoning as `databasePath`: stated here rather than as an adapter-private option, so the plan every reader sees - the adapter, the bundle, a failure report - names the same cluster, namespace and registry the run measured, and so that 'this world is not a cluster' stays distinguishable from 'nobody filled the field in'.",
+      "properties": {
+        "name": { "type": "string", "description": "The cluster name recorded in every reading, so a result says which cluster produced it." },
+        "namespace": { "type": "string", "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", "description": "The namespace this run is scoped to. A cluster is namespaced, and a criterion that named a bare object would be judged against whichever namespace happened to hold one." },
+        "images": { "type": "string", "description": "Directory of built-image records, relative to `app`. The substitute registry holds exactly the images the application's own build produced, so a manifest naming a tag that was never built fails with an image-pull error for the real reason rather than for a knob someone set." }
+      },
+      "required": ["name", "namespace", "images"],
+      "additionalProperties": false
+    },
     "health": {
       "type": "object",
       "properties": {

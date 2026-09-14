@@ -210,6 +210,20 @@ export interface EnvironmentDefinitionShape {
    * against - which is what makes "the seed did not run" a thing a criterion can say.
    */
   readonly databasePath?: unknown;
+  /**
+   * The cluster this world stands in for, when the world is a cluster.
+   *
+   * One field holding the three facts that make a cluster a cluster - its name, the namespace a run
+   * is scoped to, and where its substitute image registry reads from - for the same reason
+   * `databasePath` is one field: a world's own vocabulary belongs in one place a reader can find it,
+   * and a fourth sibling field added per adapter would make the shared document shape the union of
+   * every adapter's private options.
+   */
+  readonly cluster?: {
+    readonly name?: unknown;
+    readonly namespace?: unknown;
+    readonly images?: unknown;
+  };
   readonly health?: {
     readonly path?: unknown;
     readonly expectStatus?: unknown;
@@ -308,6 +322,16 @@ export interface EnvironmentPlan {
    * own configuration, and when the two disagree the winner is whichever parsed last.
    */
   readonly databasePath: string | null;
+  /**
+   * The cluster this world stands in for, or `null` when the world is not a cluster.
+   *
+   * The third of the same field, one per kind of world, and read for the same reason as the other
+   * two: the first question asked of a result is *which world produced it*. For a simulated cluster
+   * the answer has three parts - a name, a namespace and the registry the substitution reads - and
+   * leaving them in an adapter's private options would mean a bundle that cannot say which cluster a
+   * verdict came from, which is precisely the claim a simulated world must never make loosely.
+   */
+  readonly cluster: ClusterPlan | null;
   readonly health: HealthPolicy;
   readonly reset: { readonly strategy: ResetStrategy; readonly command: string | null };
   readonly browser: BrowserPolicy;
@@ -320,4 +344,20 @@ export interface EnvironmentPlan {
    * that still promised a browser.
    */
   readonly boundary: BoundaryPolicy;
+}
+
+/**
+ * A cluster world's resolved declaration.
+ *
+ * `images` is a directory rather than a list on purpose. A list of image names would be a second
+ * source of truth about what was built, and the interesting failure - a manifest naming a tag that
+ * nothing ever built - would then be a knob someone set rather than a disagreement between two
+ * artifacts the run really produced. Read from the application's own build output, the substitution
+ * keeps the faithful failure mode: a real cluster fails this way for exactly this reason.
+ */
+export interface ClusterPlan {
+  readonly name: string;
+  readonly namespace: string;
+  /** Absolute, resolved against `appPath` on the same rule `databasePath` follows. */
+  readonly imagesPath: string;
 }

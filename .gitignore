@@ -21,6 +21,12 @@ playwright-report/
 # restore does not need to remove it - the build removes it, which is what makes a reset a reset.
 examples/inventory-db/app/**.db
 
+# The substitute image registry the `sim-k8s` example's build produces. Same reasoning as the database
+# above, and one consequence on top of it: this directory is what the world's control plane reads to
+# decide whether an image can be pulled, so committing it would let a manifest naming a tag the build
+# never produced pull successfully - a false PASS in the world's own evidence, kept in the repository.
+examples/sim-k8s/app/build/
+
 # Editors / OS
 .DS_Store
 Thumbs.db

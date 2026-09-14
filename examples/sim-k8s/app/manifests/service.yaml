@@ -1,0 +1,32 @@
+# The application's Service: the second object the deploy program ships, and the second half of the
+# run's action-record / state-record pair.
+#
+# Its `metadata.name` is the object's identity, and the Deployment's `metadata.name` is a *different*
+# object's identity that happens to have the same value. Two facts with one spelling, which is exactly
+# the shape a defect can hide in: `../defects.ts` renames this one, the deploy program then submits a
+# Service the criteria are not asking about, and the run has a Deployment that is perfectly healthy and
+# a Service that does not exist - two facts, and a contract that only counted ready replicas would
+# report the second as a pass.
+#
+# `selector` is read by nothing in this world, because the substitute does not route packets: it is
+# carried because a Service without a selector is a different (and also real) object, and deleting a
+# field because the substitute does not implement it would make the manifest a description of the
+# simulation instead of a description of the application.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: cart-web
+  labels:
+    app: cart-web
+    component: web
+spec:
+  type: ClusterIP
+  selector:
+    app: cart-web
+    component: web
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP

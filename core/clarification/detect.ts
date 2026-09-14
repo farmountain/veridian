@@ -1,4 +1,4 @@
-import { joinPointer } from "./pointer.ts";
+import { getPointer, joinPointer } from "./pointer.ts";
 import type { Ambiguity } from "./types.ts";
 import { ambiguity, failSafeDefault, isBlocking } from "./types.ts";
 
@@ -31,7 +31,11 @@ export interface ValidatorDescriptor {
  * requirement is written down twice.
  */
 export interface AdapterRequirement {
-  /** The key at the document's root, e.g. `databasePath`. */
+  /**
+   * Where the value sits in the document, as a dot-separated path from the root: `databasePath`, or
+   * `cluster.name` for one that is a level down. A dot inside a key is not expressible, which is why
+   * the worlds that declare one spell their keys in word-like segments.
+   */
   readonly field: string;
   readonly question: string;
   /** Why there is no default, quoted to the operator when the gap reaches DEFER. */
@@ -123,6 +127,8 @@ export interface EnvironmentLike {
   };
   readonly reset?: { readonly strategy?: unknown };
   readonly browser?: { readonly enabled?: unknown };
+  /** Present when the world stands in for a cluster. The address is the cluster's, not a URL's. */
+  readonly cluster?: unknown;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -133,21 +139,25 @@ const isMissing = (value: unknown): boolean =>
   value === undefined || value === null || (typeof value === "string" && value.trim() === "");
 
 /**
- * Whether the document describes a world reached by opening a file rather than over a socket.
+ * Whether the document describes a world with no HTTP surface of its own.
  *
  * Decided from the *document*, not from the adapter name, because `core/clarification` is the lowest
- * layer and may not import an adapter to ask it. The document can answer this on its own: a world
- * that names a `databasePath` and no `url` is file-backed, and one that names neither is simply an
- * incomplete web definition and is still asked for its URL.
+ * layer and may not import an adapter to ask it. Two shapes have no HTTP: a world reached by opening
+ * a file (`databasePath`) and one whose address is a substitute control plane (`cluster`). Anything
+ * else is a socket world, and is still asked for its URL.
  *
- * Getting this wrong is not cosmetic. The ladder derives `/health/path` as `/` and
- * `/health/expectStatus` as `200` because a wrong health check can only ever produce an
- * `ENVIRONMENT_FAILURE`, never a PASS. That argument is sound for an HTTP world and meaningless for
- * one with no HTTP: deriving `200` there invents a status the world cannot return, and the run then
- * waits out its whole health timeout for a number nothing was ever going to produce.
+ * Getting this wrong is not cosmetic, and the second shape is how the cost was measured. Every
+ * question gated below is an HTTP question - the address, the health path, the health status, whether
+ * to drive a browser - and `core/environment/load.ts` answers all four the same way for a document
+ * with no url: `health.path` and `health.expectStatus` become `null`, `browser.enabled` becomes
+ * `false`, and `browser.enabled: true` next to no url is refused outright. The loader had that rule
+ * and the detector did not share it, so the ladder derived `browser.enabled = true` for a world with
+ * no page and demanded a URL for a world whose adapter never reads one. *Two implementations of one
+ * rule disagree the first time a world arrives that only one of them was written for.*
  */
-const isFileBacked = (environment: EnvironmentLike): boolean =>
-  isMissing(environment.url) && !isMissing(environment.databasePath);
+const hasNoHttp = (environment: EnvironmentLike): boolean =>
+  isMissing(environment.url) &&
+  (!isMissing(environment.databasePath) || !isMissing(environment.cluster));
 
 const asArray = <T>(value: readonly T[] | undefined): readonly T[] => value ?? [];
 
@@ -587,11 +597,12 @@ export function detectValidationAmbiguities(
  * which is precisely the condition under which a default is permitted.
  *
  * The rule has a boundary, and it is drawn by the document: every HTTP-shaped question here is
- * skipped for a world that names a file instead of an address. The argument above is sound for a
- * world reached over a socket and *meaningless* for one reached by opening a database, where
- * deriving `expectStatus: 200` invents a number nothing will ever return and the run waits out its
- * whole health timeout for it. `isFileBacked` is that boundary, and it reads the artifact because
- * `core/clarification` is the lowest layer and may not ask an adapter what it is.
+ * skipped for a world that has no address - one that names a file, or one whose address is a
+ * substitute control plane. The argument above is sound for a world reached over a socket and
+ * *meaningless* for one with no HTTP at all, where deriving `expectStatus: 200` invents a number
+ * nothing will ever return and the run waits out its whole health timeout for it. `hasNoHttp` is that
+ * boundary, and it reads the artifact because `core/clarification` is the lowest layer and may not
+ * ask an adapter what it is.
  */
 export function detectEnvironmentAmbiguities(
   environment: EnvironmentLike,
@@ -634,13 +645,18 @@ export function detectEnvironmentAmbiguities(
   // turns "ENVIRONMENT_FAILURE at create()" into a question with a place to answer it.
   const declared = isMissing(environment.adapter) ? null : String(environment.adapter);
   const descriptor = asArray(ctx.adapterDescriptors).find((entry) => entry.kind === declared);
-  const document = environment as unknown as Record<string, unknown>;
   for (const requirement of asArray(descriptor?.requires)) {
-    if (!isMissing(document[requirement.field])) continue;
+    // A requirement names a *place*, not a key: `cluster.name` is one level down. Both the lookup and
+    // the reported path therefore go through the pointer vocabulary, so an answer the operator gives
+    // is written back where the field actually is. Keying on the literal string instead would put a
+    // `"cluster.name"` key at the document's root - a document the schema refuses as an unknown
+    // property, naming a field the adapter will never read.
+    const pointer = joinPointer(...requirement.field.split("."));
+    if (!isMissing(getPointer(environment, pointer))) continue;
     found.push(
       ambiguity({
         origin: "environment",
-        path: `/${requirement.field}`,
+        path: pointer,
         kind: "missing_value",
         question: requirement.question,
         blocking: isBlocking({ makesUnexecutable: true, changesEnvironmentMeaning: true }),
@@ -676,8 +692,8 @@ export function detectEnvironmentAmbiguities(
     );
   }
 
-  const fileBacked = isFileBacked(environment);
-  if (!fileBacked && isMissing(environment.url)) {
+  const noHttp = hasNoHttp(environment);
+  if (!noHttp && isMissing(environment.url)) {
     found.push(
       ambiguity({
         origin: "environment",
@@ -690,7 +706,7 @@ export function detectEnvironmentAmbiguities(
     );
   }
 
-  if (!fileBacked && (isMissing(environment.health) || isMissing(environment.health?.["path"]))) {
+  if (!noHttp && (isMissing(environment.health) || isMissing(environment.health?.["path"]))) {
     found.push(
       ambiguity({
         origin: "environment",
@@ -732,7 +748,7 @@ export function detectEnvironmentAmbiguities(
   // -------------------------------------------------------------------------------------------
   const health = environment.health ?? {};
 
-  if (!fileBacked && isMissing(health.expectStatus)) {
+  if (!noHttp && isMissing(health.expectStatus)) {
     found.push(
       ambiguity({
         origin: "environment",
@@ -786,7 +802,7 @@ export function detectEnvironmentAmbiguities(
     );
   }
 
-  if (!fileBacked && isMissing(environment.browser?.["enabled"])) {
+  if (!noHttp && isMissing(environment.browser?.["enabled"])) {
     found.push(
       ambiguity({
         origin: "environment",

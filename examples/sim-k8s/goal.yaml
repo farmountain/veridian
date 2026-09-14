@@ -1,0 +1,68 @@
+# The goal: an observable end state, not an activity.
+#
+# "Deploy the app to a cluster" is not a goal. "The cluster holds a cart-web Deployment asking for the
+# image this application's own build produced, three of its replicas are serving, the matching Service
+# exists, and the cluster's event log reports no failed image pull" is a goal, because a third party
+# can query the cluster and decide whether it is true. Veridian never chooses this; it validates
+# against it.
+#
+# Note what the statement does *not* say. It does not say the rollout would have succeeded on a real
+# cluster. This world substitutes the scheduler, the kubelet, the container runtime, etcd, the CNI,
+# admission and ingress (see `K8S_SIMULATED_SURFACES`), so a verdict it can justify is about what this
+# API server accepted and what the application's build actually produced - not about a scheduler it
+# does not have. A goal that overclaimed here would be a false PASS with a longer name.
+
+version: 1
+id: sim-k8s
+
+statement: >-
+  The application deploys itself into the cluster it was given. The API server accepted its own
+  submission of a cart-web Deployment and a cart-web Service; the Deployment asks for the image the
+  application's own build produced; all three of its replicas are ready and carry the labels its
+  selector names; the Service exists; and the cluster's event log reports no failed image pull.
+
+acceptance: acceptance.yaml
+environment: environment.yaml
+
+context: |-
+  The application under test is a deployment pipeline. Its artifacts are a build step, a deploy
+  program and the manifests the deploy program submits; there is no page to click and no file to
+  query, so the equivalent of an interaction is `apply` and the equivalent of a reading is `k8s.*`.
+
+  The world is a cluster, and it is *simulated*, which is a claim with three obligations (see
+  docs/DISTRIBUTION-AND-ENVIRONMENTS.md section 5):
+
+    1. The application executes for real. `start.command` is the application's own `deploy.mjs`, run
+       as a child process with the operator's own privileges. It reads the cluster address out of its
+       environment, opens a real TCP socket, and submits real objects over HTTP.
+    2. The interfaces are real. The routes are the Kubernetes API's own paths, the objects are its
+       objects, and a malformed request gets its `422` with its `Status` body.
+    3. The substitution is declared. Every reading carries `simulated`, naming each surface that is
+       not real - so a result says which parts of the cluster were substituted rather than leaving a
+       reader to infer it.
+
+  What is never simulated: whether the application's code ran, what it actually submitted, the fact
+  that the API server accepted or refused it, the reading taken afterwards, and the reset between
+  iterations.
+
+tags:
+  - cluster-world
+  - simulated
+  - third-adapter
+
+# Safety boundaries. Every field is required and has a hard ceiling as well as a default, because
+# Veridian executes potentially untrusted AI-generated code (PLAN.md section 52).
+limits:
+  # 10 is the MVP ceiling. The demo needs 3: one to observe both defects, and two repairs.
+  maxIterations: 10
+  maxRuntimeMs: 300000
+  maxCriterionMs: 30000
+  # The world binds a loopback socket the application really connects to, and the adapter reports it
+  # as `unsupported` rather than `enforced`: the application is an ordinary child process that can
+  # open any socket it likes. A boundary this adapter cannot hold is stated as unheld rather than
+  # implied to be safe.
+  networkPolicy: deny
+  # `sandbox` rather than `deny`: the deploy program must be able to write the images directory its
+  # own build produces, which is a write inside the world. A manifest resolved outside the
+  # application directory is refused by the adapter and recorded as a crossing.
+  filesystemWrite: sandbox

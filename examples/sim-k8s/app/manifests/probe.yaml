@@ -1,0 +1,33 @@
+# A manifest the *contract* submits, not the application.
+#
+# AC-009 applies this and then judges both records for it, which is what makes the world usable for
+# repair and not only for inspection: an agent that fixes a rollout has to be able to deploy something
+# and see whether the cluster took it. The probe is a Deployment of its own rather than a second
+# Service for `cart-web`, so that applying it cannot change the answer to any other criterion - a
+# contract whose act of measuring perturbs what it measures is a contract that cannot be trusted twice.
+#
+# It names the image the build produces, and it is deliberately *not* the defect site: a probe that
+# failed because the registry was wrong would report a defect in the world instead of one in the
+# application. If AC-009's probe comes up unready while the application's own Deployment comes up
+# ready, the two manifests are not being read by the same registry - which is the disagreement this
+# whole world is shaped to make visible.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cart-web-probe
+  labels:
+    app: cart-web-probe
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cart-web-probe
+  template:
+    metadata:
+      labels:
+        app: cart-web-probe
+    spec:
+      containers:
+        - name: probe
+          image: registry.local/cart-web:1.4.0

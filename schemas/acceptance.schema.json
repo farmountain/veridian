@@ -113,6 +113,12 @@
           "required": ["sql"],
           "properties": { "sql": { "type": "string", "description": "One statement put to the database, producing the result set the criterion's `db.value` expectations read. This is how a database world is acted on: it has no page to click and no form to fill, so the equivalent of an interaction is a query with an observable result." } },
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["apply"],
+          "properties": { "apply": { "type": "string", "description": "One manifest submitted to the cluster the world stands in for, producing the objects the criterion's `k8s.*` expectations read. This is how a cluster world is acted on: it has no page to click and no form to fill, so the equivalent of an interaction is a manifest with an observable result. The path is read relative to the application directory, so the criterion judges the manifests the application actually ships rather than a copy embedded in the contract." } },
+          "additionalProperties": false
         }
       ]
     },

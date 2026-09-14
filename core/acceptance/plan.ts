@@ -35,6 +35,7 @@ export const STEP_KINDS = [
   "press",
   "waitFor",
   "sql",
+  "apply",
 ] as const;
 export type StepKind = (typeof STEP_KINDS)[number];
 
@@ -57,7 +58,17 @@ export type ValidationStep =
    * constraint, and the `expect` entries read what actually happened. One statement rather than a
    * batch, so a failure names the statement that produced it.
    */
-  | { readonly kind: "sql"; readonly statement: string };
+  | { readonly kind: "sql"; readonly statement: string }
+  /**
+   * One manifest put to the world's own cluster, before the criterion is observed.
+   *
+   * The cluster counterpart of `sql`, and it follows the same rule for the same reason: the step is
+   * the criterion's *action*, not its judgement. The path is read relative to the application
+   * directory, so a criterion judges the manifests the application actually ships. A manifest
+   * embedded in the contract would be judged instead of the artifact - and an operator repairing the
+   * application would be repairing a file the run never read.
+   */
+  | { readonly kind: "apply"; readonly manifest: string };
 
 export const COMPARISON_KEYS = ["equals", "contains", "matches", "atLeast", "atMost"] as const;
 export type ComparisonKey = (typeof COMPARISON_KEYS)[number];
@@ -173,6 +184,8 @@ export function decodeStep(
     }
     case "sql":
       return { kind, statement: requireString(body, path, "sql") };
+    case "apply":
+      return { kind, manifest: requireString(body, path, "apply") };
   }
 }
 
@@ -204,6 +217,8 @@ export function encodeStep(step: ValidationStep): Readonly<Record<string, unknow
       return { waitFor: { target: step.target, state: step.state } };
     case "sql":
       return { sql: step.statement };
+    case "apply":
+      return { apply: step.manifest };
   }
 }
 

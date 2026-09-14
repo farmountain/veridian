@@ -29,6 +29,7 @@
 import { LocalWebEnvironment } from "../adapters/local-web/index.ts";
 import type { BrowserPort } from "../adapters/local-web/index.ts";
 import { LocalDbEnvironment } from "../adapters/local-db/index.ts";
+import { SimK8sEnvironment } from "../adapters/sim-k8s/index.ts";
 import type { AdapterDescriptor, AdapterRequirement } from "../core/clarification/detect.ts";
 import type { Logger } from "../core/clarification/types.ts";
 import type { EnvironmentAdapter, EnvironmentPlan } from "../core/environment/index.ts";
@@ -95,6 +96,53 @@ const WORLDS: readonly World[] = [
     ],
     build: ({ environment, io, logger, processes, stateDir }) =>
       new LocalDbEnvironment(environment, {
+        io,
+        clock: systemClock,
+        logger,
+        processes,
+        stateDir,
+      }),
+  },
+  {
+    kind: "sim-k8s",
+    summary: "a simulated cluster the application deploys itself into, with no cluster software installed",
+    // Three fields rather than one, and the split is the point: a namespace is what every reading is
+    // scoped to, and an images directory is the registry the substitution reads. A world that
+    // defaulted the namespace would silently judge a *different* namespace's objects when the
+    // operator's manifest named one, and a world that guessed the registry would report every image
+    // as absent for a reason that is not the application's fault.
+    requires: [
+      {
+        field: "cluster.name",
+        question: "What should this cluster be called?",
+        why:
+          "Every reading records the cluster it came from, so a substituted cluster has a name for " +
+          "the same reason a real one does - and the name is what lets a reader of two bundles tell " +
+          "which cluster each was judged in. There is no default: `sim-k8s` saying nothing is not a " +
+          "declaration that it stood in for an unnamed cluster.",
+      },
+      {
+        field: "cluster.namespace",
+        question: "Which namespace does this run act in?",
+        why:
+          "A cluster is namespaced, so every reading, every apply and every criterion target is " +
+          "resolved against one. Defaulting to `default` would judge whichever objects happen to sit " +
+          "there instead of the ones the contract named, and the failure would look like a missing " +
+          "deployment rather than a missing declaration.",
+      },
+      {
+        field: "cluster.images",
+        question: "Which directory holds the images the application's build produced?",
+        why:
+          "This world substitutes the container runtime and the registry, and what it substitutes " +
+          "them *with* is the application's own build output. It names a directory rather than a " +
+          "list because a list would be a second source of truth about what was built - and the " +
+          "interesting failure, a manifest naming a tag nothing produced, would become a knob " +
+          "instead of a disagreement between two artifacts the run really made.",
+      },
+    ],
+    build: ({ environment, io, logger, processes, stateDir }) =>
+      new SimK8sEnvironment(environment, {
         io,
         clock: systemClock,
         logger,

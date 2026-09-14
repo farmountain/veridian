@@ -64,6 +64,7 @@ import {
 } from "../adapters/local-web/index.ts";
 import { webUiValidators } from "../validators/playwright/index.ts";
 import { dbValidators } from "../validators/database/index.ts";
+import { k8sValidators } from "../validators/k8s/index.ts";
 
 import type { CliArguments } from "./arguments.ts";
 import {
@@ -91,15 +92,15 @@ import {
 /**
  * Every validator this build can judge with.
  *
- * Both families, because the registry is what decides whether a criterion is *answerable* and the
- * answer must not depend on which world the run chose. A contract that names `db.value` is judged by
- * a database world and refused with `unresolvable_entity` everywhere else — by the plan decoder, at
- * DEFINE, before anything starts. Registering the family only when a database world was selected
- * would make the *same contract* resolvable in one world and nonsensical in another, and the
- * resolvability of a criterion is a property of the criterion.
+ * All three families, because the registry is what decides whether a criterion is *answerable* and
+ * the answer must not depend on which world the run chose. A contract that names `db.value` or
+ * `k8s.ready` is judged by the world that can observe it and refused with `unresolvable_entity`
+ * everywhere else - by the plan decoder, at DEFINE, before anything starts. Registering a family only
+ * when a world that can answer it was selected would make the *same contract* resolvable in one world
+ * and nonsensical in another, and the resolvability of a criterion is a property of the criterion.
  */
 function allValidators() {
-  return [...webUiValidators(), ...dbValidators()];
+  return [...webUiValidators(), ...dbValidators(), ...k8sValidators()];
 }
 
 /** The actor name memory records are written under. */

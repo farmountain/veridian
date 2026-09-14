@@ -6,6 +6,7 @@ import {
   RESET_STRATEGIES,
   type BoundaryPolicy,
   type BrowserPolicy,
+  type ClusterPlan,
   type EnvironmentPlan,
   type HealthPolicy,
   type ResetStrategy,
@@ -142,6 +143,44 @@ function readBrowser(raw: unknown, hasUrl: boolean): BrowserPolicy {
  * ways is a boundary that will eventually be read the wrong way, and the goal document is itself
  * copied into every run bundle, so nothing is lost by not echoing it in the plan.
  */
+/**
+ * The cluster this world stands in for, or `null` when the world is not a cluster.
+ *
+ * Absent means not a cluster. Present-but-incomplete is refused rather than defaulted, and that
+ * refusal is the whole reason this is a function rather than three `asString` calls: a cluster
+ * declaration missing its namespace would otherwise resolve to the empty string, the adapter would
+ * scope every object to a namespace nobody named, and the run would report a verdict about a world
+ * the operator did not describe. A half-stated world is the one input that can turn "we could not
+ * test it" into "it passed".
+ *
+ * `images` resolves against `appPath` on the rule `databasePath` already follows, and the resolved
+ * path is what the plan carries - so the directory the adapter scans is the one the document named,
+ * and a reader of the bundle can check it.
+ */
+function readCluster(raw: unknown, appPath: string): ClusterPlan | null {
+  if (raw === undefined || raw === null) return null;
+  if (!isPlainObject(raw)) {
+    throw defect("$.cluster", "cluster must be an object naming a name, a namespace and an images directory");
+  }
+  const name = asString(raw["name"]).trim();
+  const namespace = asString(raw["namespace"]).trim();
+  const images = asString(raw["images"]).trim();
+  const missing = [
+    name === "" ? "name" : null,
+    namespace === "" ? "namespace" : null,
+    images === "" ? "images" : null,
+  ].filter((entry): entry is string => entry !== null);
+  if (missing.length > 0) {
+    throw defect(
+      `$.cluster.${missing[0] ?? "name"}`,
+      `the cluster declaration is missing ${missing.join(", ")}. A cluster world is scoped to a ` +
+        "namespace and reads its substitute image registry from a directory; defaulting either one " +
+        "would judge the run in a world the operator never described.",
+    );
+  }
+  return { name, namespace, imagesPath: resolveSibling({ dir: appPath, path: "", text: "" }, images) };
+}
+
 function readBoundary(limits: GoalLimits): BoundaryPolicy {
   return {
     network: limits.networkPolicy,
@@ -197,6 +236,9 @@ export function finalizeEnvironment(
   // the adapter so that every reader of the plan - the adapter, the bundle, a failure report - names
   // the same absolute file, and so that `""` is the one spelling of "this world is not a database".
   const database = asString(raw["databasePath"]).trim();
+  // Resolved once, because two readers need it: `appPath` itself, and the cluster declaration's
+  // image directory, which the schema says is relative to `app`.
+  const appPath = resolveSibling(source, app === "" ? "." : app);
 
   return {
     adapter: asString(raw["adapter"]),
@@ -204,7 +246,7 @@ export function finalizeEnvironment(
     // Resolved against the environment file, which is the only directory the schema says `app` is
     // relative to. A process runner handed a bare "." would spawn in whatever the current working
     // directory happened to be, which is how a test suite ends up passing from the wrong folder.
-    appPath: resolveSibling(source, app === "" ? "." : app),
+    appPath,
     env: readEnv(raw["env"]),
     dependencyInstall:
       typeof raw["dependencyInstall"] === "string" && raw["dependencyInstall"].trim() !== ""
@@ -217,6 +259,7 @@ export function finalizeEnvironment(
     },
     url: url === "" ? null : url,
     databasePath: database === "" ? null : resolveSibling(source, database),
+    cluster: readCluster(raw["cluster"], appPath),
     health: readHealth(raw["health"], url !== "", readyPattern),
     reset: { strategy: strategy as ResetStrategy, command: resetCommand },
     browser: readBrowser(raw["browser"], url !== ""),

@@ -465,13 +465,23 @@ export class LocalDbEnvironment implements EnvironmentAdapter {
       );
     }
 
+    // Only the kinds this call did *not* write are worth a warning, and the set is read off the
+    // artifacts rather than from a literal list beside them. The literal was here first and it was
+    // wrong in the one direction that matters: the loop warned for `json` while holding a `json`
+    // artifact it had written two lines above, so every criterion reported "produces `json` and cannot
+    // produce `json`" - a sentence that contradicts itself, emitted three times per criterion, and a
+    // reader who learns to skip these lines has learned to skip the one that is true. A second list
+    // would also be free to disagree with the writes; derived from them it cannot.
+    const written = [...new Set(artifacts.map((artifact) => artifact.kind))].sort();
+    const produces = written.length === 0 ? "no" : `\`${written.join("`, `")}\``;
     for (const kind of request.evidence) {
+      if (written.includes(kind)) continue;
       this.#logger.warn("environment.evidence", {
         criterionId: id,
         kind,
         note:
-          `the local-db adapter produces \`json\` artifacts and cannot produce \`${kind}\`; ` +
-          "the criterion will report the artifact as missing rather than being handed a substitute",
+          `the local-db adapter writes ${produces} artifacts for a criterion and cannot produce ` +
+          `\`${kind}\`; the criterion will report the artifact as missing rather than being handed a substitute`,
       });
     }
     return artifacts;

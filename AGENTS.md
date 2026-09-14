@@ -4,16 +4,18 @@ Agent instructions for the **Veridian** repository. This is the single always-on
 instructions file for this workspace — do not add a second one
 (`.github/copilot-instructions.md`) alongside it.
 
-> **Status: the MVP is implemented and green, and a second sandbox world has landed.** Core, the
+> **Status: the MVP is implemented and green, and two more sandbox worlds have landed.** Core, the
 > `local-web` adapter, the Playwright validators, the CLI, the schemas and the canonical demo all exist.
 > `local-db` - a second adapter and a second validator family, against a SQLite file with no browser -
-> exists beside them, and is the proof that `EnvironmentAdapter` is a seam. `npx tsc --noEmit` is silent
-> and `node --test` reports 495 passing tests. Two distribution routes ship - a clone and an npm package -
-> and there is still **no build step between the source tree and the running program**: Node 22 strips
-> types and runs `.ts` straight from the source. `npm run build` exists only to produce the *compiled*
-> copy an installed package needs, because Node refuses type-stripping under `node_modules`. Read
-> [`docs/IMPLEMENTATION-PLAN.md`](./docs/IMPLEMENTATION-PLAN.md) for what was built and
-> [`docs/PLAN.md`](./docs/PLAN.md) for why.
+> exists beside them, and is the proof that `EnvironmentAdapter` is a seam. `sim-k8s` is the third, and
+> the first **simulated** world: a real application process really deploying itself into a substitute
+> control plane over routes it really calls, with scheduler, kubelet, etcd and admission standing in.
+> `npx tsc --noEmit` is silent and `node --test` reports 634 passing tests. Two distribution routes ship
+> - a clone and an npm package - and there is still **no build step between the source tree and the
+> running program**: Node 22 strips types and runs `.ts` straight from the source. `npm run build` exists
+> only to produce the *compiled* copy an installed package needs, because Node refuses type-stripping
+> under `node_modules`. Read [`docs/IMPLEMENTATION-PLAN.md`](./docs/IMPLEMENTATION-PLAN.md) for what was
+> built and [`docs/PLAN.md`](./docs/PLAN.md) for why.
 
 ## Project
 
@@ -256,12 +258,22 @@ adapters/local-db/      LocalDbEnvironment - build a SQLite file, read it, reset
                         than a browser harness with an interface bolted on. `database-port.ts`
                         carries the measured facts about `node:sqlite`; the engine is reached by a
                         dynamic `import`, so there is no dependency to install either.
+adapters/sim-k8s/       SimK8sEnvironment - the first SIMULATED world, and the first adapter whose
+                        substitution is the point rather than a convenience. The application really
+                        deploys itself, over a real HTTP control plane it really calls, into
+                        namespaces the control plane really holds - and there is no cluster software
+                        anywhere in the loop. `cluster-port.ts` is the substitute (its own HTTP
+                        surface, so the application cannot tell the difference) and `index.ts` is the
+                        front door; the substitution is declared in the plan and in `environment.json`.
 validators/playwright/  Playwright web validators (element, value, text, count, url, console,
                         network).
 validators/database/    Database validators (table, column, count, value). Judge a reading in
                         core/environment/db-observation.ts, which is what keeps them from importing
                         an adapter. Each declares its own `targetNoun`, so the clarification ladder
                         asks "which table" rather than "which element".
+validators/k8s/         Cluster validators (applied, deployment, image, ready, pod, service, event).
+                        Judge a reading in core/environment/k8s-observation.ts, on the same rule as
+                        the database family - and the reason the third family needed no core change.
 cli/                    The interface that exists today: arguments, support, worlds.ts (the adapter
                         register and the requirements each adapter declares), veridian.ts.
 schemas/                goal/acceptance/environment/run/result/ambiguity .schema.json - the
@@ -271,6 +283,10 @@ examples/shopping-cart/ The canonical demo: correct app + a run-time defect over
 examples/inventory-db/  The second demo, and the one that carries the argument: the same lifecycle,
                         verdict rules, evidence bundle and repair protocol against a world with no
                         process, no socket, no page and no console.
+examples/sim-k8s/       The third demo, and the first simulated one: the application deploys itself
+                        into a substitute control plane and is judged on what the substitute holds.
+                        Two defects, ten criteria, and the world's composition recorded so a PASS is
+                        traceable to a named substitute rather than to unexamined reality.
 examples/defect-text.ts One implementation of the CRLF rule for a textual overlay on a source file.
                         Two demos injecting defects is two chances to teach the rule differently;
                         a third copy is where the rule gets broken.
@@ -352,7 +368,7 @@ on this machine and is quoted from its real output.
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 495 tests, ~1.3s. No directory argument.
+node --test                # the whole suite. 634 tests, ~2s. No directory argument.
 npm run gate               # typecheck then test. Run this before claiming anything is done.
 
 npm run build              # tsc -p tsconfig.build.json, then node scripts/copy-assets.mjs
@@ -381,6 +397,9 @@ npm run demo                                # the canonical demo. Asks the envir
                                             # progression actually runs. Exit 0 when it passes.
 npm run demo:db                             # the second demo: the same loop against a SQLite file,
                                             # with no browser at all. Exit 0 when it passes.
+npm run demo:k8s                            # the third demo, and the first simulated world: the app
+                                            # deploys itself into a substitute control plane. Exit 0
+                                            # when it passes.
 npm run demo:no-browser                     # the same demo with `--browser none`. Every criterion is
                                             # a browser observation, so this must end INCONCLUSIVE
                                             # (exit 2). It shows the refusal, not the aha.
@@ -756,6 +775,77 @@ port had none, which is why the defect reached a demo run.
   is a claim about the code, and the cheapest way to hold it is a test that reads the code.* **This is
   the same shape as a count that does not match the run, and as an identifier written in both
   `package.json` and its lockfile**: a fact recorded in prose drifts because nothing reads it.
+
+- **A requirement that names a *place* must be resolved as a pointer, not read as a literal key.** The
+  worlds register declares each adapter's requirements as dot-paths (`cluster.name`,
+  `health.path`, `database.path`), and the detector read each one with `Object.hasOwn(environment,
+  requirement.field)` - so `cluster.name` was looked for as a key with a literal dot in its name, was
+  absent from every correct document, and `clarify` raised three *blocking* gaps for values that were
+  sitting in the file. Worse, the operator's answer would have been written to the literal key, so the
+  gap would have reappeared on the next run: a question the answer cannot close. Fixed by routing every
+  requirement through `getPointer`/`joinPointer` on the split path, which is the same helper the ladder
+  already used for criteria. `tests/environment-gaps.test.ts` drives the *real* descriptor table rather
+  than a fixture, and holds both halves - a missing nested requirement is reported at its pointer whose
+  *container* exists, and an answer lands where the adapter reads it. *A path is not decoration: it is
+  where the operator's answer is written and what the failure report quotes.*
+
+- **Two implementations of one rule disagree the first time a world arrives that only one of them was
+  written for.** "This world has no HTTP" was decided in two places: the detector's `hasNoHttp`, which
+  knew only about a *database file*, and the environment loader's `readBrowser`, which infers a browser
+  from the presence of a `url`. `sim-k8s` is a world with neither, so the detector asked it for a URL
+  and handed it `expectStatus: 200`, the ladder derived `browser.enabled: true`, and the loader then
+  refused the pair it had just been handed - `this definition cannot be run`, before the run ever
+  reached the cluster. The predicate now lives once, on the shape of the world (`url`, `databasePath`,
+  `cluster`), and the loader and the detector agree because there is one of them. *An environment
+  predicate duplicated across two layers is a claim about agreement that nothing checks - and the
+  divergence is not a near miss, it is `INCONCLUSIVE` on every criterion at best and a false promise at
+  worst.*
+
+- **A capability report must be derived from what the code did, not from a literal list beside it.** The
+  `sim-k8s` and `local-db` adapters warned for *every* evidence kind a criterion requested, including the
+  `json` artifact the same function had written two statements earlier - so the demo printed
+  `produces \`json\` artifacts and cannot produce \`json\`` thirty times, and a reader who learned to skip
+  those lines had learned to skip the one that is true. The set is now read off the artifacts actually
+  written, so it cannot disagree with them. *A second list is free to drift from the writes; a derived
+  one is not - and a sentence that contradicts itself is worse than silence, because it trains the
+  reader.*
+
+- **A test that asks whether a value is in a list cannot see a list that is wrong in a different way.**
+  The first version of the new suite's strongest assertion was
+  `!raised.includes(pointerOf(requirement.field))` - and it **passed with the literal-key defect
+  deliberately reintroduced**, because that defect moved the reported path from `/cluster/name` to
+  `/cluster.name`: a different list, containing neither the string the test looked for. It now keys on
+  `context.reason`, which is unique per requirement and not templated, and asserts the resulting path
+  list is empty - under the same probe it fails **three** subtests. *A membership test is a question
+  about one string, and a defect is a claim about a set.*
+
+- **A register whose members are schema `oneOf` branches needs a guard of its own.** `STEP_KINDS` in
+  `core/acceptance/` and the `Step.oneOf` branches in `schemas/acceptance.schema.json` are the same
+  vocabulary written twice, in two languages, reconciled by nothing - so a step kind the engine
+  implements and the schema rejects (or the reverse) is a criterion no document can express. Exactly
+  this had already happened once in this repository to a *validator name* (`db.rowCount`, unwritable
+  under the schema's `^[a-z0-9]+(\.[a-z0-9]+)+$`). `tests/step-kinds.test.ts` now reads the schema and
+  pins the register to it. *A vocabulary the engine owns and the schema re-states falls behind the
+  engine, and the failure mode is not a warning: it is a document that cannot be written.*
+
+- **A read must not mutate the record it reads.** The substitute control plane recorded a pod's events
+  *inside* the derivation of its snapshot, so the first read of a namespace wrote `count: 1` and the
+  second wrote `count: 2` - and M1, which compares exactly these documents, would have called one
+  cluster two different worlds. A real cluster records its events when its controller acts, not when a
+  client looks. `adapters/sim-k8s/cluster-port.test.ts` reads twice and asserts the two documents are
+  `deepEqual` and that every count is still one. *An observation that edits what it observes cannot be
+  repeated, and a measurement nobody can repeat is an opinion.*
+
+- **A resource that is absent and a request that is refused are two different observations, and HTTP
+  already has a word for each.** The substitute control plane answered every route it did not serve
+  with `405`, so a request for a resource the cluster does not hold came back as
+  `GET is not supported for /apis/apps/v1/namespaces/dev/configmaps` - a message **naming a cause the
+  server had not observed**, since `GET` was served and the *resource* was what was missing. It sends
+  the reader to inspect their method. A criterion over that status has only one honest translation,
+  `INCONCLUSIVE`, for a question whose answer was actually known. An unknown resource is a `404`
+  naming it; an unsupported method on a known resource is a `405`. Both are now answered by their own
+  condition, and `cluster-port.test.ts` holds each. *A substitute that merges `404` and `405` makes the
+  verdict unearned, and an error message may only name a cause the reporter observed.*
 
 ## Documentation
 

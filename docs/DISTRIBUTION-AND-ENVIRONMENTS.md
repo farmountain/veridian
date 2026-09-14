@@ -21,7 +21,7 @@ the MVP, this one covers what comes after it.
 | 3 | VS Code extension | Specified, not built | `PLAN.md` §30, this doc, Phase B |
 | 4 | Database environment | Roadmap "Later" | `PLAN.md` §38, this doc, Phase C |
 | 5 | Linux / Kali / Windows / macOS | Roadmap Tier 2-3 | blocked, §5 |
-| 6 | Kubernetes, cloud, data platform | Roadmap Tier 4-5 | blocked, §5 |
+| 6 | Kubernetes, cloud, data platform | Roadmap Tier 4-5 | Kubernetes built as a **simulated** world, `sim-k8s`; cloud and data planned (§5) |
 
 Nothing in this list is forbidden. `PLAN.md` §3 forbids Veridian becoming a *Kubernetes management
 platform*, a *cloud deployment platform*, a *CI/CD platform*; it explicitly permits integrating with
@@ -165,11 +165,41 @@ is a result; only silence is not.
 **Acceptance:** a contract against a seeded SQLite database passes and fails for the right reasons;
 `core/` diff is limited to registration; the M-metrics report the same shape as the web run.
 
+### Phase C2 - the third adapter: `sim-k8s`, the first *simulated* world
+
+Phase C proved the seam admits a second world. It did not test the case this document's §5 was
+rewritten for: a world whose **substitution is the point** rather than a convenience. A cluster world
+is that case, and it is the first one where the difference between "local" and "simulated" has to be
+recorded rather than assumed.
+
+The application (a small build-and-deploy program) really runs, really builds an image directory,
+really reads manifests, and really submits them over HTTP to a control plane it really connects to.
+There is no cluster software, no scheduler, no kubelet, no etcd and no container runtime anywhere in
+the loop: the adapter serves the API surface itself, holds the objects in memory, and derives pods,
+replica sets, events and readiness from what was submitted. The other half of that sentence is the
+point - the substitution is declared in the plan and in `environment.json`, so a `PASS` is traceable
+to a named substitute rather than to unexamined reality.
+
+- `core/` gains an *observation vocabulary* (`core/environment/k8s-observation.ts`) and nothing else
+  that a validator could have reached through an adapter.
+- A third validator family (`k8s.applied`, `k8s.deployment`, `k8s.image`, `k8s.ready`, `k8s.pod`,
+  `k8s.service`, `k8s.event`) is addable without touching `core/validation` or `core/execution`.
+- The same `EnvironmentPlan` carries a `cluster` next to its `browser` and its `databasePath`, so a
+  bundle can say which world produced a verdict in all three cases.
+- A refusal by the substitute is judged as a result: `k8s.applied` reads `rejected` for an object the
+  API server would not accept, which is a *pass* when the contract expects a rejection.
+
+**Acceptance:** the demo runs the whole loop - `FAIL` on the first iteration, an external repair agent
+rewrites the manifests, `PASS` on the last - with no cluster anywhere on the machine, and
+`environment.json` names what was simulated.
+
 ### Phase D - the rest of Tier 1
 
 `local-api` and `local-process` (`PLAN.md` §36 Tier 1). Both need only a child process and an HTTP
 client, so both are verifiable here. Each is a repeat of Phase C's procedure, which is the point:
-after the second one, the third is mechanical, and *that* is what confirms the architecture.
+after the second one, the third is mechanical, and *that* is what confirms the architecture - and
+`sim-k8s` has now supplied the third, with a simulated world rather than a third local one, which is
+the stronger case.
 
 ---
 
@@ -222,7 +252,7 @@ run ids rather than adjectives.
 | `local-web` | real child process + real browser | - | **built** (`v0.1.0`) |
 | `local-db` | real SQLite via `node:sqlite`; the app's own schema and seed code runs | - | **built** |
 | `local-api` / `local-process` | real child process, real HTTP | - | planned (Phase D) |
-| `sim-k8s` | real app process against a real HTTP control plane | scheduler, kubelet, etcd, CNI, admission | planned |
+| `sim-k8s` | real app process against a real HTTP control plane | scheduler, kubelet, etcd, CNI, admission | **built** |
 | `sim-cloud` | real app process against real HTTP endpoints | the AWS / Azure / GCP services | planned |
 | `sim-container` | real app process | the runtime, the image store, cgroup semantics | planned |
 | `sim-posix` (linux, kali) | real process runner + real sandboxed filesystem | the kernel, the distro, the package manager; Kali's attack network | planned |
@@ -237,7 +267,7 @@ statement - each names the world it blocks, and the simulated row that answers i
 | Blocked | Why | Answered by |
 |---------|-----|-------------|
 | a real Linux / Windows / macOS / Kali guest | No VM substrate on this machine. Booting a guest nobody can boot is the unverifiable claim this document refuses. | `sim-posix`, `sim-os` |
-| a real Kubernetes cluster | Same, plus no `kubectl`. | `sim-k8s` |
+| a real Kubernetes cluster | Same, plus no `kubectl`. | `sim-k8s` - **built**, see §7 |
 | a real container runtime as a *world* | No runtime here. Phase A2's Dockerfile is a *distribution* route and needs none; an adapter that starts and resets containers does. | `sim-container` |
 | a real cloud account | Not a runtime question: an unattended run against a metered, credentialed account is a cost model rather than a test. | `sim-cloud` |
 
@@ -399,3 +429,58 @@ refusal is a real refusal of a real escape, and it is not a filesystem sandbox, 
 reported separately because collapsing them into one number is the overclaim this path exists to
 prevent. And a file-backed world simulates the *engine* (`node:sqlite`) while the database file itself
 is real, which is why every reading records which engine produced it.
+
+### Phase C2: the cluster world, and what the simulation proved
+
+| Step | Status | Evidence |
+|------|--------|----------|
+| Substitute control plane | built | `adapters/sim-k8s/cluster-port.ts` serves the API surface itself - apply, read, events, readiness, an implicit scheduler - over a real HTTP listener the application connects to. `cluster-port.test.ts` is 42 tests over it. |
+| Adapter lifecycle | built | `adapters/sim-k8s/index.ts` implements all ten `EnvironmentAdapter` methods; `reset` restarts the world by rebuilding the substitute's state, and the crossings it observed are **not** cleared (a reset restores the world, not the record). |
+| Observation vocabulary | built | `core/environment/k8s-observation.ts`, so no validator imports an adapter. The third family needed **no core change** beyond this and the name registration. |
+| Validator family | built | `validators/k8s/` - seven validators, 63 tests, falsified by replacing a comparison rather than trusted. Each declares its own `targetNoun`. |
+| Schema and plan | built | `EnvironmentPlan.cluster` + `readCluster`, so a bundle's `environment.json` says which world produced the verdict. `schemas/environment.schema.json` gained the `cluster` object; `STEP_KINDS` gained `apply`. |
+| Demo | built | `examples/sim-k8s/` - two deliberate defects, ten criteria, `npm run demo:k8s`. Measured, verbatim: iteration 1 `FAIL`s `AC-003`..`AC-005`, `AC-007`, `AC-008` and cannot judge `AC-006`; iteration 2 fails only `AC-007`, the one the first repair did not touch - and the two defects are repaired in *criterion* order (`AC-003` before `AC-007`), so the first iteration's remaining failure is the second defect, not a fragile one; iteration 3 is `PASS` on all ten with the reason `10/10 mandatory criteria passed, environment valid, no safety violation, evidence complete.` - **exit 0**, with no cluster software anywhere on this machine. |
+| Refusal as a result | built | The contract's last two criteria expect the API server to *reject* a submission, and it does - in its own words, with the conflict recorded by the substitute rather than by the criterion. `AC-010` reads the refusal's result and states in its own description that it does not read the stated *reason*. |
+| Regression tests | built | `tests/sim-k8s-demo.test.ts` (17 tests, over the defect table's discrimination claim and the line-ending rule) plus `tests/environment-gaps.test.ts` (8 tests, driven off the real descriptor table rather than a fixture). Both falsified: forcing `newlineOf` to a constant fails 4 subtests here and 0 in `inventory-db`, because this table's first defect block is multi-line and that one's are not. |
+
+**What the third world settled.** `core/` changed by an observation vocabulary and a name - the same
+claim Phase C made, now made against a world that is neither local nor web, which is the harder case.
+The plan's own §35 claim survives a third sample.
+
+**Five defects this world's build produced, which is the argument for building one.**
+
+1. **A read that mutates what it reads.** The substitute recorded a pod's events inside the derivation
+   of its snapshot, so the first read of a namespace wrote `count: 1` and the second wrote `count: 2`.
+   M1 compares exactly these documents, so it would have called one cluster two different worlds. A
+   real cluster records events when its controller acts, not when a client looks, and the substitute
+   now does too.
+2. **A `404` and a `405` collapsed into one answer.** Every unmatched route returned `405`, so a
+   request for a resource the cluster does not hold came back as *"GET is not supported for
+   /apis/apps/v1/.../configmaps"* - naming a cause the server had not observed, since `GET` was
+   served and the *resource* was what was missing. HTTP has a word for each, and a criterion over the
+   merged status could only be `INCONCLUSIVE` about a question whose answer was known.
+3. **A capability report derived from a literal list instead of from the writes.** Both the `sim-k8s`
+   and `local-db` adapters warned for every evidence kind a criterion requested - including the `json`
+   artifact the same function had written two statements earlier - so the demo printed *"produces
+   `json` artifacts and cannot produce `json`"*. A second list is free to drift from the writes; the
+   set is now read off the artifacts actually written.
+4. **A requirement naming a *place* read as a literal key.** The worlds register declares each
+   adapter's requirements as dot-paths (`cluster.name`, `database.path`), and the clarification
+   detector read each with `Object.hasOwn(environment, "cluster.name")` - so it was absent from every
+   correct document, three *blocking* questions were raised for values sitting in the file, and the
+   operator's answer would have been written to the literal key, making the gap reappear on the next
+   run. Fixed by routing every requirement through `getPointer`/`joinPointer`.
+
+5. **The same world could not be described by two layers.** "This world has no HTTP" was decided in two
+   places - the detector's `hasNoHttp`, which knew only about a *database file*, and the environment
+   loader's `readBrowser`, which inferred a browser from the presence of a `url`. `sim-k8s` has
+   neither, so the detector asked it for a URL, handed it `expectStatus: 200`, the ladder derived
+   `browser.enabled: true`, and the loader then refused the pair it had just been handed - `this
+   definition cannot be run`, before the run reached the cluster. The predicate now lives once, on the
+   shape of the world. This is also the defect that shows why a *simulated* world is the harder test:
+   `local-db` differed from `local-web` in a way both layers could already see, while `sim-k8s` differs
+   in a way neither had a word for - no page, no socket, no file. A property a world can have, that no
+   predicate in the codebase names, is a world the codebase mis-describes the first time it meets one.
+   *An environment predicate duplicated across two layers is a claim about agreement that nothing
+   checks - and its divergence is `INCONCLUSIVE` on every criterion at best and a false promise at
+   worst.*

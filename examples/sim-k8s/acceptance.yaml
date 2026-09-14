@@ -1,0 +1,219 @@
+# The contract. Deterministic actions (`apply`), then declarative expectations (`expect`).
+#
+# Every criterion here is a question put to the cluster the world stands in for. Each one is phrased so
+# that exactly one plausible wrong answer exists, because a criterion that could be satisfied by the
+# wrong world is not a criterion.
+#
+# Read this next to `environment.yaml`: `apply` paths are relative to the *application* directory, so
+# a criterion can only ever submit a manifest the application actually ships. Nothing in this file
+# restates the namespace, the cluster name or the image tag - those are facts about the world and the
+# application, and copying them here would create a third place for them to disagree.
+
+version: 1
+goal_id: sim-k8s
+
+criteria:
+  # ---- the action record and the state record, for the Deployment -------------------------------
+  #
+  # These two are deliberately separate criteria, and the split is the point. AC-001 asks what the
+  # application's own deploy program *asked for*; AC-002 asks what the cluster *holds*. Collapsing them
+  # is the classic shortcut and it is a false pass with a longer name: an object that was already in
+  # the cluster before the run is not evidence that this run deployed anything. The validators keep
+  # them apart because the readings keep them apart.
+
+  - id: AC-001
+    description: >-
+      The application's own deploy program submitted the cart-web Deployment and the API server
+      accepted it as a new object. Observed with no `apply` step on purpose: this criterion judges
+      what the application did on its own during `start`, so a contract that had to apply the
+      deployment itself would be validating the contract rather than the software.
+    expect:
+      - validator: k8s.applied
+        target: Deployment/cart-web
+        equals: created
+        message: >-
+          The deploy program did not successfully submit the cart-web Deployment. A submission the API
+          server refused is recorded with its own reason in the criterion's observation artifact, and
+          a submission that never happened records nothing at all - the two are different defects and
+          this criterion cannot report the first, because there is no submission to judge.
+    evidence:
+      - json
+
+  - id: AC-002
+    description: >-
+      The cluster holds the Deployment. The counterpart to AC-001: a cluster can hold an object this
+      run never submitted, which is why the two records are read separately rather than inferred from
+      one another.
+    expect:
+      - validator: k8s.deployment
+        target: dev/cart-web
+        equals: present
+        message: >-
+          The namespace holds no cart-web Deployment, so nothing is serving the replicas the criteria
+          below count. Check the deploy program's own output first: an accepted submission is recorded
+          by AC-001 even when the Deployment is later gone.
+    evidence:
+      - json
+
+  # ---- what the Deployment asks for, and what is actually serving --------------------------------
+
+  - id: AC-003
+    description: >-
+      The Deployment's pod template names the image the application's own build produced. This reads
+      the *spec*, so it can be satisfied while the pods are not serving - AC-004 answers that
+      separately, and the pair is what lets a wrong tag be told apart from a rollout that is merely
+      slow.
+    expect:
+      - validator: k8s.image
+        target: dev/cart-web
+        equals: registry.local/cart-web:1.4.0
+        message: >-
+          The manifest pins a different image than the build produced. The substitute registry holds
+          exactly the tags the application built, so a tag nothing built cannot be pulled and the
+          replicas will stay pending - check the build's own output before editing the deployment to
+          match the cluster.
+    evidence:
+      - json
+
+  - id: AC-004
+    description: >-
+      All three replicas are ready. `readyReplicas` rather than `replicas`, because one is what the
+      Deployment asked for and the other is what is serving, and reporting the first as though it were
+      the second is the most common false pass in a rollout check.
+    expect:
+      - validator: k8s.ready
+        target: dev/cart-web
+        equals: 3
+        message: >-
+          Fewer than three cart-web replicas are ready, so the Deployment is not fully rolled out.
+          A replica that is not ready is not the same as a replica that is not running: the cluster's
+          own account of why is in this criterion's own observation artifact, and as events in
+          AC-008's.
+    evidence:
+      - json
+
+  - id: AC-005
+    description: >-
+      Three pods carry the Deployment's own labels. Read through a selector rather than by name
+      because pod names are generated, and a criterion that pinned one would be asserting a fact about
+      the substitute's naming scheme instead of about the rollout.
+    expect:
+      - validator: k8s.pod
+        target: app=cart-web
+        atLeast: 3
+        message: >-
+          Fewer than three pods carry the app=cart-web label. Either the Deployment's template labels
+          do not reach its pods, or the replicas could not be created at all - the second is visible
+          as an empty match, which this validator reports as inconclusive rather than as zero.
+    evidence:
+      - json
+
+  # ---- the Service, by the same two records ------------------------------------------------------
+
+  - id: AC-006
+    description: >-
+      The application's own deploy program submitted the cart-web Service and the API server accepted
+      it as a new object. An equally important half of the same question: a Service the contract
+      applied itself would prove the cluster works, not that the application deploys itself.
+    expect:
+      - validator: k8s.applied
+        target: Service/cart-web
+        equals: created
+        message: >-
+          The deploy program submitted no Service named cart-web. The Deployment may still be healthy,
+          which is exactly why this is its own criterion: a rollout that succeeds and a Service that
+          is never created are two facts, and a run that only counted ready replicas would report the
+          second as a pass.
+    evidence:
+      - json
+
+  - id: AC-007
+    description: >-
+      The cluster holds the Service. The counterpart to AC-006, and the state record the application's
+      own action record is checked against.
+    expect:
+      - validator: k8s.service
+        target: dev/cart-web
+        equals: present
+        message: >-
+          The namespace holds no cart-web Service, so nothing routes to the replicas that are serving.
+          Note that this criterion stays strict even though the substitution covers ingress and the
+          CNI: a Service object is state the API server really holds, and its absence is a genuine
+          deployment defect rather than a simulated one.
+    evidence:
+      - json
+
+  # ---- the cluster's own account of the rollout --------------------------------------------------
+
+  - id: AC-008
+    description: >-
+      The cluster recorded no failed pod event. This is the criterion a human would use first, because
+      it is the only one that says *why* a rollout did not finish: the state records say how many
+      replicas are serving, and the event log says the image could not be pulled and names it.
+    expect:
+      - validator: k8s.event
+        target: Failed
+        equals: absent
+        message: >-
+          The cluster recorded a failed pod event during this run. Read
+          artifacts/AC-008.events.json: the substitute controller writes the API's own wording, and
+          for an unbuildable image tag that wording names the tag it could not pull.
+    evidence:
+      - json
+
+  # ---- the contract deploys an object of its own --------------------------------------------------
+
+  - id: AC-009
+    description: >-
+      The contract can act on this world, not merely read it. This criterion submits a manifest of its
+      own and judges the two records for it, which is what makes the world usable for repair rather
+      than only for inspection: an agent that fixes a rollout needs to be able to deploy the fix and
+      see whether it took.
+    steps:
+      - apply: manifests/probe.yaml
+    expect:
+      - validator: k8s.applied
+        target: Deployment/cart-web-probe
+        equals: created
+        message: >-
+          The API server did not accept the probe manifest. Read the criterion's observation artifact
+          for the object's own recorded answer: a refusal is kept with the API's stated reason rather
+          than thrown away.
+      - validator: k8s.pod
+        target: app=cart-web-probe
+        equals: 1
+        message: >-
+          The probe Deployment exists but produced no ready pod. Its manifest names the image the
+          application's build produced, so an unready probe means the registry the world is reading is
+          not the registry the build wrote - a disagreement between two real artifacts, which is the
+          failure this world is shaped to make visible.
+    evidence:
+      - json
+
+  # ---- a refusal is a result, not an error --------------------------------------------------------
+
+  - id: AC-010
+    description: >-
+      The API server refuses an object that declares a namespace it was not submitted to. Judged as a
+      pass, deliberately: a cluster that relocated the object instead of refusing it would be a
+      simulated world disagreeing with the interface it claims to speak, and the substitute's own
+      substitution doctrine is only as good as its worst refusal.
+
+      One limitation, stated rather than discovered later: the validator compares the API server's
+      *result* and not its stated *reason*, so this criterion cannot tell a refusal for the namespace
+      apart from a refusal for some other cause. It is why `conflict.yaml` is otherwise identical to
+      the probe manifest - the only thing wrong with it is the thing being judged - and the API's own
+      reason is kept in this criterion's observation artifact for a reader.
+    steps:
+      - apply: manifests/conflict.yaml
+    expect:
+      - validator: k8s.applied
+        target: Deployment/cart-web-conflict
+        equals: rejected
+        message: >-
+          The API server accepted an object that declared namespace staging and was submitted to
+          namespace dev. A real API server refuses that mismatch rather than relocating the object, and
+          a substitute that relocated it would make every namespace-scoped result in this run
+          untrustworthy.
+    evidence:
+      - json

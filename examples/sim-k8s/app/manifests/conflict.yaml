@@ -1,0 +1,33 @@
+# A manifest that is wrong in exactly one way, applied by AC-010 to be *refused*.
+#
+# `metadata.namespace: staging` while the object is submitted to `dev` is a mismatch, and a real API
+# server refuses a mismatch rather than relocating the object. The criterion expects `rejected` and
+# counts that as a pass, which is the point: a cluster that quietly moved the object would be a
+# simulated world disagreeing with the interface it claims to speak, and every other result in the run
+# would be worth less for it.
+#
+# Everything else about this manifest is correct - a real name, a real image, a positive replica count
+# - and that is not tidiness. The `k8s.applied` validator compares the API server's *result* and not
+# its stated *reason*, so a refusal for a missing image would satisfy AC-010 exactly as well as a
+# refusal for the namespace. This file cannot fix that limitation of the validator; it can at least
+# refuse to give the criterion a second cause to pass on.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cart-web-conflict
+  # The one thing wrong with this document.
+  namespace: staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cart-web-conflict
+  template:
+    metadata:
+      labels:
+        app: cart-web-conflict
+    spec:
+      containers:
+        - name: web
+          image: registry.local/cart-web:1.4.0

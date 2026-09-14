@@ -1,0 +1,84 @@
+# How to create, start, observe and reset one environment instance.
+#
+# This is the third world Veridian ships and the first one that is explicitly *simulated*. It exists to
+# answer a question the other two cannot: does the environment layer admit a world that is not this
+# machine, and can it do so without the result being a lie?
+#
+# Read this next to `schemas/environment.schema.json`: there is no `version` key, and the document is
+# closed to unknown keys, because an environment definition describes a running world rather than being
+# a versioned contract of its own.
+
+# `sim-k8s` binds a real HTTP server that speaks the Kubernetes API's own routes, runs the
+# application's own deploy program against it, and decides image availability from what that program
+# built. The substitution is declared in every reading.
+adapter: sim-k8s
+
+# Relative to this file. The adapter runs `start` with the working directory set here, and resolves
+# a criterion's `apply` manifest against it - so a criterion can only ever submit a manifest the
+# application actually ships.
+app: app
+
+# There is no address to probe over HTTP and saying so is the point rather than an omission: the
+# application is not a server, it is a program that talks *to* a server. The adapter's readiness
+# signal is the deploy program's own exit and readiness line, so `health.expectStatus` is not
+# defaulted to 200 here and a browser is not enabled for it.
+url: null
+
+# Null means "this app has no dependencies to install". The world's control plane is an HTTP server
+# built on `node:http` and the application's build imports `node:fs`, so the demo runs from a clean
+# checkout with nothing to fetch - and no socket is opened to a registry either.
+dependencyInstall: null
+
+# The cluster this world stands in for.
+#
+# Stated in the environment document rather than as an adapter-private option so that every reader of
+# the run - the adapter, the bundle, a failure report - names the *same* cluster, namespace and
+# registry, and so that "this world is not a cluster" stays distinguishable from "nobody filled the
+# field in". All three keys are required: a cluster world with no namespace would scope every object
+# to a namespace nobody named.
+cluster:
+  # Recorded in every reading, because the first question asked of a cluster result is which cluster.
+  # A substitute answering on 127.0.0.1 must be visibly a substitute rather than an unnamed one.
+  name: sim-local
+  # The namespace this run is scoped to. Every reading is a view of this one namespace, which is why
+  # the validators refuse a target naming a namespace the reading never held: absence would then mean
+  # nobody looked, which is not a failure.
+  namespace: dev
+  # The substitute registry: a directory of built-image records, relative to the app directory. It
+  # holds exactly the images the application's own build produced, so a manifest naming a tag that was
+  # never built fails with an image-pull error for the real reason rather than for a knob someone set.
+  images: build/images
+
+start:
+  # Executed verbatim - never a shell string built by pasting configuration into it.
+  command: node
+  args:
+    - deploy.mjs
+  # Wait for the deploy program to say it finished. This is a fact about the world; a sleep is a race,
+  # and a race is how run-to-run consistency is lost. The adapter requires this pattern before it will
+  # accept the world as started, and it requires the images directory to exist afterwards - a deploy
+  # program that built nothing would otherwise make every manifest report as unpullable for a reason
+  # that is not the application's fault.
+  #
+  # The namespace is in the line and the cluster name is not, deliberately: the deploy program is told
+  # the namespace and never told the cluster's name, so a pattern naming `sim-local` would be this
+  # document asserting a fact the program could only have invented. The object count is `\d+` rather
+  # than a literal for the same class of reason - a deploy program that submitted one object instead of
+  # two must still start the world, so that the missing object is reported by the criterion that asks
+  # for it rather than as the world failing to come up.
+  readyPattern: 'cart-web deployed: \d+ objects applied to dev'
+
+health:
+  # No `path` and no `expectStatus`: both are HTTP concepts, and the address this world has is the
+  # address of the *cluster*, not of the application - probing it would ask the wrong server whether
+  # the right thing happened. Left absent deliberately so the plan records `null` rather than a 200
+  # this world could never return.
+  timeoutMs: 30000
+  intervalMs: 100
+
+# Reset is first-class, not test cleanup: a later criterion must never inherit the objects a repair
+# left behind. For a cluster world `restart` clears the control plane, rebinds it on a *fresh* port -
+# the address is chosen by the OS, so it was never a fact the document could state - and re-runs the
+# application's deploy program against it.
+reset:
+  strategy: restart

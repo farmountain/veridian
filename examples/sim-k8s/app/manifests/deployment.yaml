@@ -1,0 +1,41 @@
+# The application's Deployment: the object this whole example exists to see held by a cluster.
+#
+# Note what is *absent*: `metadata.namespace`. This manifest does not name a namespace, and it does not
+# need to - a manifest submitted to a namespace-scoped route is namespaced by the request, which is
+# what the real API server's own strategy does and what every `kubectl apply -f` in the world relies
+# on. The substitute refuses an object that declares a *different* namespace rather than relocating it,
+# and an earlier shape of that rule refused an object that declared *none* - which made every manifest
+# a person actually writes unwritable.
+#
+# The image tag below appears in exactly two places, on purpose: here and in `../build.mjs`. That is
+# the ordinary shape of a Kubernetes deployment - CI builds a tag and a manifest pins it - and the
+# failure worth demonstrating is the two disagreeing, so a shared source of truth would delete the
+# defect class. `../defects.ts` injects exactly that disagreement.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cart-web
+  labels:
+    app: cart-web
+    component: web
+spec:
+  # Three, so that "all three replicas are ready" is a claim a single replica cannot satisfy by
+  # accident.
+  replicas: 3
+  selector:
+    matchLabels:
+      app: cart-web
+      component: web
+  template:
+    metadata:
+      labels:
+        app: cart-web
+        component: web
+    spec:
+      containers:
+        - name: web
+          image: registry.local/cart-web:1.4.0
+          ports:
+            - name: http
+              containerPort: 8080

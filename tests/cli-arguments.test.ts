@@ -54,6 +54,7 @@ function environmentPlan(browserEnabled: boolean): EnvironmentPlan {
     start: { command: "node", args: ["serve.mjs"], readyPattern: null },
     url: "http://127.0.0.1:4173/",
     databasePath: null,
+    cluster: null,
     health: { path: "/", expectStatus: 200, timeoutMs: 15000, intervalMs: 250, readyPattern: null },
     reset: { strategy: "snapshot-restore", command: null },
     browser: { enabled: browserEnabled, viewport: null, locale: null, timezoneId: null },
