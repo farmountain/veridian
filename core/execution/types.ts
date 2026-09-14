@@ -109,6 +109,19 @@ export interface RepairRequest {
 export interface RepairOutcome {
   readonly decision: RepairDecision;
   readonly note: string;
+  /**
+   * What the actor said while it was deciding, when the gate ran something that could be quoted.
+   *
+   * The `note` is Veridian's one-line reading of the answer; this is the actor's own account, and the
+   * two are different evidence. Diagnosing a repair that did not work needs the second one: the first
+   * says *whether* the command thought it had succeeded, and only the second says *why* it thought so.
+   * A bundle holding the decision but not the transcript is a bundle a reader cannot audit, which is
+   * how this field came to exist rather than being designed in.
+   *
+   * It is the gate's own output and is **not** trusted for anything: the criteria are re-observed from
+   * a clean world before a repair is believed. Recording it changes no verdict.
+   */
+  readonly transcript?: string;
 }
 
 export interface RepairGate {

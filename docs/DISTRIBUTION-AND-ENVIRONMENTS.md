@@ -614,9 +614,14 @@ all, but a filesystem and a permission model. The plan's §35 claim survives a f
    reload - but the rule generalises: *a repair the world never observed is not a repair, and a loop
    that reports progress from its own intentions is reporting the wrong run.*
 
-**And one gap recorded rather than closed.** The repair agent's own stdout is **not** in the run
-bundle. Diagnosing defect 1 required reading the injected program, the exec record and the reading to
-reconstruct what the agent had done, because the bundle holds the criteria's evidence and not the
-actor's transcript - *an evidence bundle that omits the actor's own transcript is a bundle a reader
-cannot audit.* Persisting it is a change to the evidence writer, and it is recorded here as owed
-rather than attempted in the same pass as the world it would have helped.
+**And one gap that was recorded and has since been closed.** The repair agent's own stdout was **not**
+in the run bundle. Diagnosing defect 1 required reading the injected program, the exec record and the
+reading to reconstruct what the agent had done, because the bundle held the criteria's evidence and not
+the actor's transcript - *an evidence bundle that omits the actor's own transcript is a bundle a reader
+cannot audit.* **Built.** `RepairOutcome.transcript` now carries the gate's own output on every answer,
+and the loop writes it to `artifacts/repair-<iteration>.log` before it acts on that answer, registered
+in the bundle ledger with `kind: "log"` and `criterion_id: null` and named from the same
+`iteration.repair` log line as the decision it belongs to. The demo's repair agent writes to stderr;
+that stderr is now in the bundle it produced. Held by `tests/command-repair-gate.test.ts` (11 tests)
+and five tests in `tests/execution-loop.test.ts`, both falsified rather than trusted - see the rule in
+[`AGENTS.md`](../AGENTS.md).

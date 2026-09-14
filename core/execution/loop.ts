@@ -291,10 +291,22 @@ export async function runValidationLoop(options: LoopOptions): Promise<LoopResul
     }) - 1;
     await write(iteration);
     const repair = await attemptRepair(iteration, verdict, failureOut, failed, reasons);
+    // The actor's own words are written before the run acts on its answer. A transcript that landed
+    // after the verdict it explains would be a file a reader reaches only once the run is over, and
+    // the mid-run write is the one an external agent actually reads.
+    const transcriptPath =
+      repair.transcript === undefined ? null : await writeRepairTranscript(iteration, repair.transcript);
     // One summary per iteration, revised in place once the gate has answered. Appending a second
     // entry would make the bundle's iteration count disagree with the run's.
     iterations[index] = { ...base, repaired: repair.decision === "repaired", note: repair.note };
-    await bundle.log("iteration.repair", { iteration, decision: repair.decision, note: repair.note });
+    await bundle.log("iteration.repair", {
+      iteration,
+      decision: repair.decision,
+      note: repair.note,
+      // Named in the same line as the decision it belongs to. A second event would let the two
+      // disagree about which iteration the transcript describes.
+      transcript: transcriptPath,
+    });
 
     run.to("FAILED", `iteration ${String(iteration)} failed (${String(failed.length)} criterion/criteria)`);
 
@@ -502,6 +514,27 @@ export async function runValidationLoop(options: LoopOptions): Promise<LoopResul
         note: `the repair gate failed: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
+  }
+
+  /**
+   * Persist the repair actor's own output, so a repair decision can be audited from the bundle.
+   *
+   * This is evidence of a *decision*, not of the application: it is the external actor's account of
+   * what it did, and Veridian records it without reading it. Nothing in the verdict depends on it -
+   * a repair is believed only once the criteria are re-observed from a clean world - which is exactly
+   * why it is safe to store verbatim and why a bundle without it leaves a reader unable to say what
+   * the actor was thinking when it changed the code.
+   *
+   * Returns the path it wrote, so the caller can name it in the log line for the same decision.
+   */
+  async function writeRepairTranscript(currentIteration: number, text: string): Promise<string> {
+    const path = bundle.repairTranscriptPath(currentIteration);
+    await bundle.writeArtifact({ path, kind: "log", criterionId: null, bytes: null }, text);
+    // Named on the console as well as in the bundle: an operator watching a run in a terminal has no
+    // way to guess that the actor's output was kept, and a record nobody is told about is one nobody
+    // reads. Which path was chosen is the loop's decision, so it is the loop that reports it.
+    logger.info("repair transcript written", { iteration: currentIteration, path });
+    return path;
   }
 
   async function write(currentIteration: number): Promise<void> {

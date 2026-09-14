@@ -13,8 +13,8 @@ instructions file for this workspace — do not add a second one
 > `sim-posix` is the fourth and the second simulated one, and it attacks a different axis: a real
 > application process really provisioning a substitute Linux system through commands it really issues,
 > judged as a **named account** rather than as root, with no virtual machine and no guest kernel
-> anywhere in the loop. `npx tsc --noEmit` is silent and `node --test` reports 856 passing tests -
-> Veridian's own 796 plus the 60 the VS Code Cockpit contributes, which the root runner discovers
+> anywhere in the loop. `npx tsc --noEmit` is silent and `node --test` reports 872 passing tests -
+> Veridian's own 812 plus the 60 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Four distribution routes ship - a clone, an npm package, the Cockpit, and
 > a container image - and there is still **no
 > build step between the source tree and the running program**: Node 22 strips types and runs `.ts`
@@ -372,6 +372,8 @@ Git-friendly, and independently inspectable:
 │       ├── environment.json
 │       ├── execution.log
 │       ├── result.json
+│       ├── artifacts/AC-00N.observation.json
+│       ├── artifacts/repair-<iteration>.log
 │       ├── screenshots/AC-00N.png
 │       └── trace/AC-00N.zip
 └── snapshots/
@@ -385,6 +387,14 @@ file on disk - which is the property a reader needs, because a size can be read 
 and a wrong size cannot be detected from the bundle at all. One trace per criterion, not one per run:
 the file is a recording of that criterion's actions, and `tests/local-web-environment.test.ts` holds
 the path.
+
+**`artifacts/repair-<iteration>.log` is the only file in the bundle that is not evidence about the
+application.** It is the *actor's* own output - the repair command's stdout, stderr, command line, exit
+code and working directory - written before the run acts on its answer, so an external agent can read
+whoever repaired the code while the run is still going. It is keyed by iteration rather than named once
+because the bundle is last-write-wins per path and a second repair would otherwise overwrite the first
+attempt's explanation. Nothing in the verdict reads it; a repair is believed only once the criteria are
+re-observed from a clean world, which is why it is safe to store verbatim.
 
 `.veridian/latest-result.json` and `.veridian/latest-failure.md` are the Level-2 agent feedback
 artifacts — an external agent reads them to learn what failed without Veridian having to drive it.
@@ -404,8 +414,8 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 856 tests, 1.7s. No directory argument.
-                           # 856 = the root's own 796 + the Cockpit's 60, because the runner walks
+node --test                # the whole suite. 872 tests, 1.7s. No directory argument.
+                           # 872 = the root's own 812 + the Cockpit's 60, because the runner walks
                            # the tree and reaches extension/vscode/src/*.test.ts. Neither figure is
                            # the whole story on its own: the root tsconfig EXCLUDES extension/**, so
                            # `npx tsc --noEmit` here does not typecheck the Cockpit and the root gate
@@ -1043,10 +1053,39 @@ port had none, which is why the defect reached a demo run.
   that reports progress from its own intentions is reporting the wrong run.*
 
 - **An evidence bundle that omits the actor's own transcript is a bundle a reader cannot audit.** The
-  repair agent's stdout is not persisted; diagnosing the `adduser` defect required reconstructing what
-  the agent had done from the injected program, the exec record and the reading. Recorded as owed
-  rather than attempted in the same pass as the world it would have helped: the bundle holds the
-  criteria's evidence and not the actor's decisions.
+  repair agent's stdout was not persisted; diagnosing the `adduser` defect required reconstructing what
+  the agent had done from the injected program, the exec record and the reading - the bundle held the
+  criteria's evidence and not the actor's decisions. **Built.** `RepairOutcome.transcript` carries the
+  gate's own output, `CommandRepairGate` fills it on every answer including the timeout (where the
+  partial output is the evidence explaining why the command never finished), and the loop writes it to
+  `artifacts/repair-<iteration>.log` *before* it acts on the answer - a transcript that landed after
+  the verdict it explains would be a file a reader reaches only once the run is over, and the mid-run
+  write is the one an external agent actually reads. It is registered with `kind: "log"` and
+  `criterion_id: null`, because a transcript backs no criterion and naming the nearest one would be a
+  claim the file cannot support, and it is named in the *same* `iteration.repair` log line as the
+  decision it belongs to, because two events could disagree about which iteration the file describes.
+  Nothing in the verdict reads it: a repair is believed only once the criteria are re-observed from a
+  clean world, which is exactly why it is safe to store verbatim. Held by `tests/command-repair-gate.test.ts`
+  (11 tests) and five tests in `tests/execution-loop.test.ts`; falsified rather than trusted - deleting
+  `transcript` from one of the three returns fails three named subtests, and making the path
+  iteration-independent fails *"keys each transcript to its own iteration"*.
+
+- **A message that copies its input is not a summary, and a bound by lines is not a bound.** The repair
+  note quoted the tail of the actor's stderr - `lines.slice(-3)` - which is unbounded in the one
+  direction that matters: a command printing a single 4000-character line put all 4000 characters into
+  `result.json`, `latest-failure.md` *and* `execution.log`, three files a reader scans rather than
+  reads. Found by a test that asserted the note stays a note, which is the assertion that would have
+  been written as a formality if the line-based version had been trusted. `tail()` now flattens and caps
+  at the same 300 characters `core/memory`'s port already applied to a refused write, keeping the last
+  characters because that is where a failure states its cause, with a leading `...` so the reader is
+  told something was dropped rather than left to guess. The cap is on the *note*; the transcript beside
+  it is the record and is stored whole. Reverting `tail` to the line-based version fails the test that
+  names the rule.
+
+- **A record nobody is told about is one nobody reads.** `writeRepairTranscript` names the path it chose
+  on the console as well as in the bundle: an operator watching a run in a terminal has no way to guess
+  that the actor's output was kept, and which path a transcript lands at is the loop's decision, so the
+  loop is what reports it.
 
 - **A step whose name states an outcome must fail when that outcome does not happen** - restated one
   layer in, because the fourth demo is where it was found again. `AC-013` expects the world to *refuse*

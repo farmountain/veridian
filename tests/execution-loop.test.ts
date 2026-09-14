@@ -450,6 +450,118 @@ describe("the loop never iterates without a reason to believe something changed"
   });
 });
 
+describe("a repair decision can be audited from the bundle", () => {
+  // `RepairOutcome.note` is Veridian's one-line reading of the actor's answer. The transcript is the
+  // actor's own account, and diagnosing a repair that did not work needs the second one: the note says
+  // *whether* the command believed it had succeeded, and only the transcript says *why*. Before this,
+  // the demo's repair agent wrote to stderr and nothing kept it - so the only evidence of what the
+  // actor did was the effect it had, which is precisely what cannot be read when the repair fails.
+
+  const engine = (): ClarificationEngine =>
+    new ClarificationEngine({ user: NullPromptPort, clock: fixedClock(), logger: silentLogger });
+
+  const said = (transcript: string, note: string): RepairOutcome => ({
+    decision: "repaired",
+    note,
+    transcript,
+  });
+
+  it("persists the actor's own output, verbatim", async () => {
+    const io = memoryIo();
+    await runIntoBundle({
+      io,
+      runId: "run-transcript",
+      world: scriptedWorld({ totals: ["$25.00", "$30.00"] }),
+      gate: new ScriptedRepairGate([said("read failure.md\npatched cart.js\n", "the agent changed the total")]),
+      clarifier: engine(),
+    });
+
+    assert.equal(
+      io.files.get("virtual/.veridian/runs/run-transcript/artifacts/repair-1.log"),
+      "read failure.md\npatched cart.js\n",
+    );
+  });
+
+  it("lists it as a run-level artifact rather than attributing it to a criterion", async () => {
+    // The ledger's `criterion_id` names the criterion an artifact backs. A repair transcript backs
+    // none of them, and filling in the nearest criterion's id would be a claim the file cannot
+    // support - the reader would go looking for a repair to AC-001 and find the whole iteration.
+    const io = memoryIo();
+    await runIntoBundle({
+      io,
+      runId: "run-ledger",
+      world: scriptedWorld({ totals: ["$25.00", "$30.00"] }),
+      gate: new ScriptedRepairGate([said("patched cart.js\n", "the agent changed the total")]),
+      clarifier: engine(),
+    });
+
+    const result = JSON.parse(io.files.get("virtual/.veridian/runs/run-ledger/result.json") ?? "null") as {
+      evidence?: { artifacts?: readonly { path: string; kind: string; criterion_id: string | null }[] };
+    } | null;
+    const row = result?.evidence?.artifacts?.find((entry) => entry.path === "artifacts/repair-1.log");
+
+    assert.ok(row !== undefined, "the transcript is in the bundle ledger, not only on disk");
+    assert.equal(row.kind, "log");
+    assert.equal(row.criterion_id, null);
+  });
+
+  it("names the transcript in the log line for the decision it belongs to", async () => {
+    // One log line, not two events: two events could disagree about which iteration a transcript
+    // describes, and the execution log is read as a sequence.
+    const io = memoryIo();
+    await runIntoBundle({
+      io,
+      runId: "run-logline",
+      world: scriptedWorld({ totals: ["$25.00", "$30.00"] }),
+      gate: new ScriptedRepairGate([said("patched cart.js\n", "the agent changed the total")]),
+      clarifier: engine(),
+    });
+
+    const log = io.files.get("virtual/.veridian/runs/run-logline/execution.log") ?? "";
+    const line = log
+      .split("\n")
+      .find((entry) => entry.includes("iteration.repair") && entry.includes('"iteration":1'));
+
+    assert.ok(line !== undefined, log);
+    assert.match(line, /"transcript":"artifacts\/repair-1\.log"/);
+  });
+
+  it("writes nothing when the gate had nothing to say", async () => {
+    // An empty artifact is a claim: `repair-1.log` at zero bytes says the actor was silent, which is a
+    // different fact from there being no actor to hear.
+    const io = memoryIo();
+    await runIntoBundle({
+      io,
+      runId: "run-quiet",
+      world: scriptedWorld({ totals: ["$25.00", "$30.00"] }),
+      gate: new ScriptedRepairGate([{ decision: "repaired", note: "the agent changed the total" }]),
+      clarifier: engine(),
+    });
+
+    assert.equal(io.files.has("virtual/.veridian/runs/run-quiet/artifacts/repair-1.log"), false);
+  });
+
+  it("keys each transcript to its own iteration, so a second repair cannot overwrite the first", async () => {
+    // The bundle is last-write-wins per path, so a single name would leave a reader holding the second
+    // attempt while believing it was the first - the same defect the artifact ledger had when a
+    // passing run listed four sizes for one screenshot.
+    const io = memoryIo();
+    await runIntoBundle({
+      io,
+      runId: "run-twice",
+      world: scriptedWorld({ totals: ["$25.00", "$25.00", "$30.00"] }),
+      gate: new ScriptedRepairGate([
+        said("attempt one\n", "the first attempt changed nothing useful"),
+        said("attempt two\n", "the second attempt changed the total"),
+      ]),
+      clarifier: engine(),
+    });
+
+    assert.equal(io.files.get("virtual/.veridian/runs/run-twice/artifacts/repair-1.log"), "attempt one\n");
+    assert.equal(io.files.get("virtual/.veridian/runs/run-twice/artifacts/repair-2.log"), "attempt two\n");
+  });
+});
+
 describe("the loop is bounded by two independent exits", () => {
   it("still stops on the attempt count when the clock never advances", async () => {
     // A frozen clock is the case that breaks a purely time-based bound: `elapsedMs` is always 0, so

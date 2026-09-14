@@ -338,6 +338,18 @@ export class RunBundle {
     }
   }
 
+  /**
+   * Relative path for a run-level artifact named after the iteration that produced it.
+   *
+   * Deliberately *not* `artifactPath("log", ...)`: that names an artifact after a criterion, and a
+   * repair transcript belongs to no criterion. It is still bounded by the iteration, because a repair
+   * loop can reach this path more than once and a single name would leave last-write-wins deciding
+   * which transcript a reader sees.
+   */
+  repairTranscriptPath(iteration: number): string {
+    return `${BUNDLE_FILES.artifacts}/repair-${String(iteration)}.log`;
+  }
+
   async writeArtifact(artifact: EvidenceArtifact, data: Uint8Array | string): Promise<void> {
     const path = this.#file(artifact.path);
     if (typeof data === "string") await this.#io.writeTextFile(path, data);
