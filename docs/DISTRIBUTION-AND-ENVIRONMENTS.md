@@ -197,8 +197,8 @@ These are not deferred for lack of interest. Each names the thing that would unb
 
 ## 7. What was built, and what was measured rather than assumed
 
-Phase A1 is implemented. Phase A2's files exist and have never executed, and that distinction is
-recorded here rather than blurred, because it is the distinction this whole document is about.
+Phase A1 and Phase A2 are both implemented and both verified. The Docker route was verified in CI
+rather than locally, and the run id is cited below rather than the word "works".
 
 | Step | Status | Evidence |
 |------|--------|----------|
@@ -210,8 +210,14 @@ recorded here rather than blurred, because it is the distinction this whole docu
 | Gate stays green | **done** | `378 tests / 74 suites / 0 fail`, exit 0 |
 | Smoke test exists **and discriminates** | **done** | falsified by reverting the asset root in the built `.js`: `FAIL ... exits 2, not 3`, exit 1 |
 | `npm pack` -> clean install -> run | **done** | 65 files, 124.5 kB; `npx veridian help` exit 0; a browserless validate exit 2 with schemas resolved from `node_modules` |
-| `Dockerfile` + `image` CI job | **written, unrun** | This machine has no container runtime. An unwatched CI job is a claim, not a record. |
-| `dist` CI job (`smoke:dist` + pack/install round trip) | **written, unrun** | Same reason: it has to run before it can be cited. |
+| `Dockerfile` + `image` CI job | **done, in CI** | This machine has no container runtime, so the verification is where the runtime is. Run 34845548864 on `41d16f8`: job `container image` succeeded - the image builds, the container runs the CLI, and a browserless validate inside it resolves the schemas the image carries. |
+| `dist` CI job (`smoke:dist` + pack/install round trip) | **done, in CI** | Same run, job `distribution`: succeeded. `npm pack` -> install into a clean directory -> run, which is the only check that reads `files` and `bin` the way a consumer does. |
+
+**The first CI run of a job is the only run that can find a defect a local check cannot.** These two
+jobs existed for one commit before they executed, and during that window they were exactly the kind
+of claim this document refuses - written and unverified. They now carry a real run id, a real commit
+and a real conclusion, which is the difference between "the Dockerfile is correct" and "the
+Dockerfile built".
 
 **The falsification is the part worth keeping.** The smoke test asserts exit 2 rather than 0 because 0
 would mean a browserless run passed, which it must never do, and rather than "not 3" because 3 is the

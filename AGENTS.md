@@ -390,11 +390,17 @@ need compiling.
 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) has four jobs. `gate` runs `npm run gate` on
 `ubuntu-latest` and `windows-latest` (both resolving Node from `.nvmrc`). `demo` runs the canonical
 demo on ubuntu, asserts that `--browser none` really exits 2, and uploads `.veridian/` as an artifact.
-`dist` runs `npm run smoke:dist` and then a full `npm pack` -> install into a clean directory -> run
-round trip, because that is the only check that reads `files` and `bin` the way a consumer does.
-`image` builds the Dockerfile and requires the container to run the CLI **and** to resolve its own
-schemas from a browserless run - which Docker cannot be tested against locally, since this machine has
-no container runtime.
+`distribution` runs `npm run smoke:dist` and then a full `npm pack` -> install into a clean directory
+-> run round trip, because that is the only check that reads `files` and `bin` the way a consumer
+does. `container image` builds the Dockerfile and requires the container to run the CLI **and** to
+resolve its own schemas from a browserless run.
+
+**Both of those last two jobs have now run, and that is why they can be cited.** They were added and
+pushed in one commit, which means they existed for a short window as exactly the thing this file
+warns about - an unexecuted check. Run `34845548864` on `41d16f8` has all five jobs green, so the
+Dockerfile is a built image rather than a correct-looking file, and `npm pack` is a working install
+rather than a configuration. Docker cannot be exercised on this machine at all, which is precisely
+why the job has to exist and why watching its first run is part of the change rather than a follow-up.
 
 The `demo` exit-2 step reads `$?` after `set +e` because Actions runs bash with `-e`, which would
 abort on the 2 before the assertion could look at it. Both new exit-code assertions use the same
@@ -666,6 +672,19 @@ port had none, which is why the defect reached a demo run.
   That is the shape of false pass M3 exists to refuse. `tests/execution-loop.test.ts` holds it - a
   crossing seen in an early iteration still fails the run after the reset - and the reason is written
   at the field rather than only in the test.
+
+- **The package manager validates the dependency tree, not the metadata that describes the package.**
+  Moving `bin` to `./dist/cli/veridian.js` left `package-lock.json`'s root entry still naming
+  `cli/veridian.ts`, and `npm ci` accepted the pair without complaint - it was checked by building the
+  mismatched manifest-plus-lockfile in a temporary directory and watching the install proceed past the
+  sync check. That is the **same shape** as the licence drift this repository already paid for, where
+  the lockfile said `UNLICENSED` while the manifest said `MIT` for as long as one had been edited
+  without the other. `name`, `version`, `license`, `bin`, `dependencies`, `devDependencies` and
+  `engines` are each written in **two** places and reconciled by nothing, so a change to any of them in
+  `package.json` has to move the lockfile's root entry in the same pass. `npm install
+  --package-lock-only --ignore-scripts` is the tool; `git diff --stat package-lock.json` should show
+  one line. *An identifier declared in several places is a claim that will disagree with itself if the
+  places are edited independently - and the thing you would expect to catch it does not even look.*
 
 ## Documentation
 
