@@ -454,6 +454,10 @@ is what makes that list easy to skip. Both are fixed (`include-hidden-files: tru
 whose name states an outcome must fail when that outcome does not happen, or the name is a claim.**
 Every green run up to this one carried the same silent no-op, which is why the defect was found by
 reading *this* run's annotations rather than by reading the workflow - the workflow looks correct.
+The fix is confirmed on run `34853562503`, where the same step now carries
+`veridian-evidence` at **257,359 bytes** - read from the API rather than inferred from a warning
+that stopped appearing, because "the warning is gone" and "the artifact exists" are different claims
+and only the second one is the one this step makes.
 
 *Written into `AGENTS.md`:* **a requirement that names a *place* must be resolved as a pointer, not
 read as a literal key**; **two implementations of one rule disagree the first time a world arrives
