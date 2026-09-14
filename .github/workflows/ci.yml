@@ -1,0 +1,73 @@
+# Veridian's own gate. There is no build step: Node 22 runs the TypeScript
+# source directly, so `npm run gate` is typecheck-then-tests and nothing else.
+#
+# Two jobs, because they answer different questions:
+#   gate  - does the source still hold? Runs on both platforms that matter.
+#   demo  - does the product still do the thing it exists to do? Needs a
+#           browser, so it is separate and does not slow the gate down.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: gate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run gate
+
+  demo:
+    name: canonical demo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # Playwright is deliberately not a dependency. This is the one bootstrap
+      # that downloads it, and it is the same command a developer runs.
+      - run: npm run e2e:install
+      # Exit 0 only when all four criteria pass with their evidence present.
+      - run: npm run demo
+      # This one exits 2 by design: every criterion is a browser observation,
+      # so the loop must refuse to judge. Asserting the refusal keeps
+      # "INCONCLUSIVE is not PASS" enforced by CI instead of by prose.
+      # `set +e` because Actions runs bash with -e and a 2 would abort the
+      # script before the exit code could be read.
+      - name: --browser none must exit 2, never 0
+        run: |
+          set +e
+          npm run demo:no-browser
+          code=$?
+          set -e
+          if [ "$code" -ne 2 ]; then
+            echo "expected exit 2 (INCONCLUSIVE) from --browser none, got $code"
+            exit 1
+          fi
+      - name: upload the evidence bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: veridian-evidence
+          path: .veridian/
+          if-no-files-found: warn
+          retention-days: 7

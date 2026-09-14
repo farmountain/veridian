@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://veridian.dev/schemas/result.schema.json",
+  "title": "RunResult",
+  "description": "The verdict. PLAN.md: a run is PASS only if ALL mandatory criteria pass AND the environment was valid AND there was no safety violation AND all required evidence exists. INCONCLUSIVE is never PASS.",
+  "type": "object",
+  "required": ["run_id", "goal_id", "verdict", "criteria", "state", "iteration", "reproducibility"],
+  "additionalProperties": false,
+  "properties": {
+    "run_id": { "type": "string" },
+    "goal_id": { "type": "string" },
+    "state": { "type": "string" },
+    "iteration": { "type": "integer", "minimum": 1 },
+    "verdict": { "$ref": "#/$defs/Verdict" },
+    "insufficientInformation": {
+      "type": "boolean",
+      "description": "True when an unresolved ambiguity prevented the run from being decided. Distinguishes 'we could not find out' from 'it failed'."
+    },
+    "environmentValid": { "type": "boolean" },
+    "safetyViolation": { "type": ["string", "null"] },
+    "criteria": { "type": "array", "items": { "$ref": "#/$defs/CriterionResult" } },
+    "failure": { "$ref": "#/$defs/Failure" },
+    "reasons": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "The human-readable grounds for the verdict. A verdict without its reasons is an assertion, not evidence."
+    },
+    "guards": { "$ref": "#/$defs/Guards" },
+    "limits": {
+      "type": "object",
+      "description": "The bounds the run was held to, and what it actually used. Recorded so a reviewer can see the loop was bounded rather than believe it.",
+      "required": ["maxIterations", "maxRuntimeMs", "elapsedMs"],
+      "properties": {
+        "maxIterations": { "type": "integer", "minimum": 1 },
+        "maxRuntimeMs": { "type": "integer", "minimum": 0 },
+        "elapsedMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "environment": {
+      "type": ["object", "null"],
+      "description": "The world this run measured, reproduced from the resolved environment plan."
+    },
+    "clarifications": { "$ref": "#/$defs/Clarifications" },
+    "iterations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/IterationSummary" },
+      "description": "One entry per ReAct iteration. The last entry is the iteration that produced this verdict."
+    },
+    "evidence": { "$ref": "#/$defs/Evidence" },
+    "reproducibility": { "$ref": "#/$defs/Reproducibility" }
+  },
+  "$defs": {
+    "Verdict": {
+      "enum": ["PASS", "FAIL", "INCONCLUSIVE"],
+      "description": "The run-level verdict. Never collapse INCONCLUSIVE into PASS."
+    },
+    "Status": {
+      "enum": ["PASS", "FAIL", "ERROR", "SKIPPED", "INCONCLUSIVE"],
+      "description": "The per-criterion status. SKIPPED means an optional criterion that was not evaluated; it never gates the verdict."
+    },
+    "FailureKind": {
+      "description": "PLAN.md §51. Never report every failure as 'test failed'.",
+      "enum": [
+        "TEST_FAILURE",
+        "ENVIRONMENT_FAILURE",
+        "VALIDATOR_ERROR",
+        "APPLICATION_ERROR",
+        "TIMEOUT",
+        "SECURITY_VIOLATION",
+        "INFRASTRUCTURE_FAILURE",
+        "RESET_FAILURE",
+        "UNKNOWN"
+      ]
+    },
+    "Failure": {
+      "type": ["object", "null"],
+      "required": ["kind", "message"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/FailureKind" },
+        "message": { "type": "string" },
+        "criterion_id": { "type": ["string", "null"] },
+        "detail": { "type": ["string", "null"] }
+      }
+    },
+    "CriterionResult": {
+      "type": "object",
+      "required": ["criterion_id", "status", "timestamp"],
+      "properties": {
+        "criterion_id": { "type": "string" },
+        "description": { "type": "string" },
+        "mandatory": { "type": "boolean" },
+        "status": { "$ref": "#/$defs/Status" },
+        "actual": {},
+        "expected": {},
+        "timestamp": { "type": "string", "format": "date-time" },
+        "message": { "type": ["string", "null"] },
+        "environment_id": { "type": ["string", "null"] },
+        "run_id": { "type": "string" },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Paths to artifacts that back this criterion."
+        },
+        "assertions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["validator", "status"],
+            "properties": {
+              "validator": { "type": "string" },
+              "target": { "type": ["string", "null"] },
+              "status": { "$ref": "#/$defs/Status" },
+              "actual": {},
+              "expected": {},
+              "message": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "Evidence": {
+      "type": "object",
+      "required": ["bundlePath", "complete", "artifacts"],
+      "properties": {
+        "bundlePath": { "type": "string" },
+        "complete": { "type": "boolean" },
+        "missing": { "type": "array", "items": { "type": "string" } },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "kind"],
+            "properties": {
+              "path": { "type": "string" },
+              "kind": { "enum": ["screenshot", "trace", "dom", "console", "network", "log", "json"] },
+              "criterion_id": { "type": ["string", "null"] },
+              "bytes": { "type": ["integer", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "Guards": {
+      "type": "object",
+      "description": "The conditions that must ALL hold for PASS. Recorded rather than merely checked, so 'zero false PASS' is reviewable after the fact.",
+      "additionalProperties": false,
+      "required": [
+        "noSafetyViolation",
+        "environmentValid",
+        "hasMandatoryCriteria",
+        "noMandatoryFailure",
+        "informationSufficient",
+        "requiredEvidencePresent",
+        "allMandatoryDecided"
+      ],
+      "properties": {
+        "noSafetyViolation": { "type": "boolean" },
+        "environmentValid": { "type": "boolean" },
+        "hasMandatoryCriteria": { "type": "boolean" },
+        "noMandatoryFailure": { "type": "boolean" },
+        "informationSufficient": { "type": "boolean" },
+        "requiredEvidencePresent": { "type": "boolean" },
+        "allMandatoryDecided": { "type": "boolean" }
+      }
+    },
+    "Rung": {
+      "enum": ["derived", "inferred", "defaulted", "answered", "deferred"],
+      "description": "How a recorded ambiguity was resolved. `deferred` is the only one that leaves the gap open."
+    },
+    "ClarificationRecord": {
+      "type": "object",
+      "description": "One gap and what was done about it. This is the audit trail of the Ambiguity Resolution Protocol.",
+      "required": ["id", "origin", "path", "kind", "question", "blocking", "via", "rungsAttempted"],
+      "properties": {
+        "id": { "type": "string" },
+        "origin": {
+          "$ref": "ambiguity.schema.json#/$defs/Origin",
+          "description": "Referenced, never re-listed. A second copy of this vocabulary lived here and fell one value behind the code (`iteration`), so a run that recorded a gap raised mid-run could not write its own result: the schema rejected the value its engine had just produced. There is one list, in ambiguity.schema.json, and tests/schema-vocabulary.test.ts fails if it stops matching AMBIGUITY_ORIGINS."
+        },
+        "path": { "type": "string" },
+        "kind": { "$ref": "ambiguity.schema.json#/$defs/Kind" },
+        "question": { "type": "string" },
+        "blocking": { "type": "boolean" },
+        "via": { "$ref": "#/$defs/Rung" },
+        "rungsAttempted": { "type": "array", "items": { "$ref": "#/$defs/Rung" } },
+        "value": {},
+        "evidence": { "type": ["string", "null"], "description": "Where a derived value came from: a schema default, a manifest field, a filename." },
+        "confidence": { "type": ["number", "null"] },
+        "source": { "type": ["string", "null"] },
+        "assumption": { "type": ["string", "null"], "description": "Why a fail-safe default cannot make the run report PASS more readily than the truth." },
+        "answer": { "type": ["string", "null"] },
+        "reason": { "type": ["string", "null"], "description": "Why the gap was deferred. Present only when via is `deferred`." }
+      }
+    },
+    "Clarifications": {
+      "type": "object",
+      "required": ["questionsAsked", "rounds", "elapsedMs", "budgetExhausted", "unresolvedBlocking", "byVia", "records"],
+      "properties": {
+        "questionsAsked": { "type": "integer", "minimum": 0 },
+        "rounds": { "type": "integer", "minimum": 0 },
+        "elapsedMs": { "type": "integer", "minimum": 0 },
+        "budgetExhausted": { "type": "boolean" },
+        "unresolvedBlocking": { "type": "integer", "minimum": 0 },
+        "byVia": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["derived", "inferred", "defaulted", "answered", "deferred"],
+          "properties": {
+            "derived": { "type": "integer", "minimum": 0 },
+            "inferred": { "type": "integer", "minimum": 0 },
+            "defaulted": { "type": "integer", "minimum": 0 },
+            "answered": { "type": "integer", "minimum": 0 },
+            "deferred": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "records": { "type": "array", "items": { "$ref": "#/$defs/ClarificationRecord" } }
+      }
+    },
+    "IterationSummary": {
+      "type": "object",
+      "required": ["iteration", "verdict", "passed", "failed", "undecided", "repaired", "note", "criteria"],
+      "properties": {
+        "iteration": { "type": "integer", "minimum": 1 },
+        "verdict": { "$ref": "#/$defs/Verdict" },
+        "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "undecided": { "type": "integer", "minimum": 0 },
+        "repaired": { "type": "boolean", "description": "Whether an external agent was invited to repair after this iteration." },
+        "note": { "type": "string" },
+        "criteria": {
+          "type": "array",
+          "description": "Every criterion's status as this iteration observed it. The three counts above collapse a contract into three numbers that different failures share, so a repeat-run comparison that compares counts alone would call two unequal runs equal. `$ref`s the one status vocabulary rather than re-listing it, because a second copy is a copy that falls behind.",
+          "items": {
+            "type": "object",
+            "required": ["criterion_id", "status"],
+            "properties": {
+              "criterion_id": { "type": "string" },
+              "status": { "$ref": "#/$defs/Status" }
+            }
+          }
+        }
+      }
+    },
+    "Reproducibility": {
+      "type": "object",
+      "description": "PLAN.md §19: reproducibility is recorded, not assumed.",
+      "required": ["capturedAt", "platform", "node", "veridian"],
+      "properties": {
+        "capturedAt": { "type": "string", "format": "date-time" },
+        "platform": { "type": "string" },
+        "arch": { "type": "string" },
+        "node": { "type": "string" },
+        "veridian": { "type": "string" },
+        "gitCommit": { "type": ["string", "null"] },
+        "gitDirty": { "type": ["boolean", "null"] },
+        "appVersion": { "type": ["string", "null"] },
+        "playwright": { "type": ["string", "null"] },
+        "browser": { "type": ["string", "null"] },
+        "seed": { "type": ["integer", "null"] },
+        "timezone": { "type": ["string", "null"] },
+        "networkPolicy": { "type": ["string", "null"] },
+        "env": {
+          "type": "object",
+          "description": "Non-secret environment configuration that affects behaviour.",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    }
+  }
+}

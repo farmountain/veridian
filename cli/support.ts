@@ -1,0 +1,290 @@
+/**
+ * The command line's boundary objects.
+ *
+ * Every export here is an *implementation of a port Core already declares*, and nothing here decides
+ * anything about a run. That separation is the reason this file can be dull: the interesting decisions
+ * live in `core/`, where they are testable without a terminal, and this file only answers the
+ * questions a terminal uniquely knows the answer to — is anyone watching, and is there a human at the
+ * other end of stdin.
+ *
+ * The one rule that shapes all of it: **a port that cannot do its job says so instead of waiting.**
+ * `available: false` travels up through the clarification ladder as `no_user_available` and through
+ * the manual repair gate as `stop`, so a headless run finishes with the verdict it has. There is no
+ * code path in this file that can block forever on a prompt.
+ */
+
+import { createInterface } from "node:readline/promises";
+import { stdin as processStdin, stdout as processStdout } from "node:process";
+
+import type { Clock, Logger, UserPromptPort } from "../core/clarification/index.ts";
+import type { RepairGate } from "../core/execution/index.ts";
+import { CommandRepairGate, ManualRepairGate, NoRepairGate } from "../core/execution/index.ts";
+import type { ProcessRunner } from "../core/process.ts";
+
+// ---------------------------------------------------------------------------------------------
+// Clock
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The real clock.
+ *
+ * A named constant rather than an inline object at the call site, because a run's reproducibility
+ * record and its iteration bounds must be measured by the *same* clock. Two `Date.now` readers in two
+ * places is how a `maxRuntimeMs` bound and an `elapsedMs` report end up disagreeing.
+ */
+export const systemClock: Clock = {
+  now: () => Date.now(),
+  iso: () => new Date().toISOString(),
+};
+
+// ---------------------------------------------------------------------------------------------
+// Logger
+// ---------------------------------------------------------------------------------------------
+
+export type LogLevel = "debug" | "info" | "warn";
+
+const LEVEL_ORDER: Readonly<Record<LogLevel, number>> = { debug: 10, info: 20, warn: 30 };
+
+export interface ConsoleLoggerOptions {
+  readonly level?: LogLevel;
+  /** Destination for log lines. Stderr by default, so `--json`-style stdout stays parseable. */
+  readonly sink?: (line: string) => void;
+}
+
+/**
+ * A logger that writes to stderr.
+ *
+ * Everything goes to stderr and nothing to stdout, deliberately: the run's *result* is a file
+ * (`.veridian/runs/<id>/result.json`) and the CLI's stdout is the summary a caller reads, so mixing
+ * progress chatter into it would make the one machine-readable stream on the command line
+ * machine-unreadable.
+ */
+export function consoleLogger(options: ConsoleLoggerOptions = {}): Logger {
+  const threshold = LEVEL_ORDER[options.level ?? "info"];
+  const sink =
+    options.sink ??
+    ((line: string): void => {
+      processStderr(line);
+    });
+
+  const emit = (level: LogLevel, message: string, fields?: Record<string, unknown>): void => {
+    if (LEVEL_ORDER[level] < threshold) return;
+    const label = level === "warn" ? "warning" : level;
+    sink(`veridian ${label}: ${message}${describe(fields)}`);
+  };
+
+  return {
+    debug: (message, fields) => {
+      emit("debug", message, fields);
+    },
+    info: (message, fields) => {
+      emit("info", message, fields);
+    },
+    warn: (message, fields) => {
+      emit("warn", message, fields);
+    },
+  };
+}
+
+function processStderr(line: string): void {
+  process.stderr.write(`${line}\n`);
+}
+
+/** Scalar fields inline; anything structured as compact JSON. Never throws on a cyclic value. */
+function describe(fields?: Record<string, unknown>): string {
+  if (fields === undefined) return "";
+  const entries = Object.entries(fields).filter(([, value]) => value !== undefined);
+  if (entries.length === 0) return "";
+  const parts = entries.map(([key, value]) => `${key}=${render(value)}`);
+  return ` (${parts.join(" ")})`;
+}
+
+function render(value: unknown): string {
+  if (value === null) return "null";
+  const type = typeof value;
+  if (type === "string" || type === "number" || type === "boolean") return String(value);
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return "[unserialisable]";
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// UserPromptPort
+// ---------------------------------------------------------------------------------------------
+
+export interface CliPromptPortOptions {
+  readonly input?: NodeJS.ReadableStream;
+  readonly output?: NodeJS.WritableStream;
+  /**
+   * Overridable so a test can assert the headless path without a terminal. Defaults to the real
+   * stdin's `isTTY`, which is the only honest source: an operator who pipes a file into the CLI has
+   * no way to answer a question, and pretending otherwise is how a CI job hangs at 3am.
+   */
+  readonly isTty?: boolean;
+  /**
+   * How long a single question waits for an answer. Default 120_000.
+   *
+   * This bound is not a nicety. Readline's `question` on a stream that has ended *never settles* —
+   * measured, not assumed: it neither resolves nor rejects, and the interface it left open keeps the
+   * process alive. So a port that relied on the stream to end the round would hang the CLI, which is
+   * the one failure mode this product may not have. An `AbortSignal` is what actually settles it, and
+   * this is how long it gets first. A human who leaves the keyboard is a human who left.
+   */
+  readonly answerTimeoutMs?: number;
+}
+
+const DEFAULT_ANSWER_TIMEOUT_MS = 120_000;
+
+/**
+ * The terminal, as a `UserPromptPort`.
+ *
+ * `available` is `false` whenever stdin is not an interactive terminal, and that single boolean is the
+ * anti-hang guarantee for the entire product: the clarification ladder never asks, and the manual
+ * repair gate refuses rather than waiting. It is not a heuristic about whether a human *might* answer
+ * — it is the only reliable statement Node can make about whether one *can*. Readline reports
+ * `isTTY === undefined` on a pipe and on a redirected file, both of which reach EOF instead of an
+ * answer.
+ *
+ * The timeout above covers the case the flag cannot: a terminal that *is* interactive and nobody is
+ * sitting at it.
+ */
+export function createCliPromptPort(options: CliPromptPortOptions = {}): UserPromptPort {
+  const input = options.input ?? processStdin;
+  const output = options.output ?? processStdout;
+  const available = options.isTty ?? isTty(input);
+  const answerTimeoutMs = options.answerTimeoutMs ?? DEFAULT_ANSWER_TIMEOUT_MS;
+
+  return {
+    available,
+    async ask(questions) {
+      const answers = new Map<string, string>();
+      if (questions.length === 0) return answers;
+
+      const rl = createInterface({ input, output, terminal: available });
+      try {
+        let index = 0;
+        for (const question of questions) {
+          index += 1;
+          output.write(`\n${String(index)}/${String(questions.length)}  ${question.question}\n`);
+          if (question.candidates !== undefined && question.candidates.length > 0) {
+            output.write(`    choices: ${question.candidates.map((c) => String(c)).join(" | ")}\n`);
+          }
+          if (question.defaultValue !== undefined) {
+            output.write(`    default: ${String(question.defaultValue)}\n`);
+          }
+
+          let raw: string;
+          try {
+            raw = await rl.question("    > ", { signal: AbortSignal.timeout(answerTimeoutMs) });
+          } catch {
+            // Ends the round rather than moving on. A stream that failed to answer this question will
+            // not answer the next one, and continuing would multiply one timeout by however many
+            // questions remain — which is how a bounded wait turns back into an unbounded one.
+            break;
+          }
+
+          // An empty answer is *not* recorded. The ladder treats a missing entry as unanswered and
+          // falls back on the ambiguity's own default, which is a conservative value its author
+          // argued for. Writing `""` in would look like an answer that happened to be blank.
+          const answer = raw.trim();
+          if (answer.length > 0) answers.set(question.id, answer);
+        }
+      } finally {
+        rl.close();
+      }
+
+      return answers;
+    },
+  };
+}
+
+function isTty(input: NodeJS.ReadableStream): boolean {
+  return (input as { isTTY?: boolean }).isTTY === true;
+}
+
+// ---------------------------------------------------------------------------------------------
+// RepairGate
+// ---------------------------------------------------------------------------------------------
+
+export interface RepairGateRequest {
+  /** The command and its arguments, when `--repair <command> [args...]` was given. */
+  readonly command: readonly string[] | null;
+  readonly noRepair: boolean;
+  readonly user: UserPromptPort;
+  readonly runner: ProcessRunner;
+  readonly cwd: string;
+  readonly logger: Logger;
+}
+
+export interface RepairGateSelection {
+  readonly gate: RepairGate;
+  /** Why this gate, printed with the run so a reader knows whether iteration was even possible. */
+  readonly reason: string;
+}
+
+/**
+ * Choose how — or whether — a failing iteration may be repaired.
+ *
+ * Three states, and the ordering is the design. `--no-repair` is honoured first because it is an
+ * explicit instruction. `--repair` next, because a command is a repair path that works with nobody
+ * watching. Otherwise the manual gate — which does *not* need a TTY check here, because it already
+ * refuses when its prompt port is unavailable and reports the same `"stop"` a `NoRepairGate` would.
+ * Skipping the check is the point: one place owns the anti-hang rule, so there is one place to get it
+ * wrong.
+ */
+export function selectRepairGate(request: RepairGateRequest): RepairGateSelection {
+  if (request.noRepair) {
+    return { gate: new NoRepairGate(), reason: "--no-repair: the run observes the application once" };
+  }
+
+  const [command, ...args] = request.command ?? [];
+  if (command !== undefined) {
+    return {
+      gate: new CommandRepairGate({
+        runner: request.runner,
+        command,
+        args,
+        cwd: request.cwd,
+        logger: request.logger,
+      }),
+      reason: `--repair ${[command, ...args].join(" ")}`,
+    };
+  }
+
+  return {
+    gate: new ManualRepairGate({ user: request.user, logger: request.logger }),
+    reason: request.user.available
+      ? "manual: a human repairs the application between iterations"
+      : "manual gate with no terminal attached: the run stops after one iteration",
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Exit codes
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Exit codes, as a total function of what happened.
+ *
+ * `INCONCLUSIVE` deliberately gets its own code. Collapsing it into the failure code would let a
+ * caller treat "we could not decide" as "the code is broken", and collapsing it into `0` would be the
+ * false PASS the whole product exists to prevent. A caller that only cares whether the code works can
+ * test `code === 0`; one that wants to know *why not* can distinguish the other two.
+ */
+export const EXIT_CODES = {
+  pass: 0,
+  fail: 1,
+  inconclusive: 2,
+  unusable: 3,
+} as const;
+
+export type ExitCode = (typeof EXIT_CODES)[keyof typeof EXIT_CODES];
+
+/** A verdict the loop can produce, as an exit code. */
+export function exitCodeForVerdict(verdict: string): ExitCode {
+  if (verdict === "PASS") return EXIT_CODES.pass;
+  if (verdict === "FAIL") return EXIT_CODES.fail;
+  return EXIT_CODES.inconclusive;
+}

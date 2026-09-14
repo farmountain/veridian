@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://veridian.dev/schemas/ambiguity.schema.json",
+  "title": "Ambiguity",
+  "description": "A recorded gap in a contract, and the provenance of how it was resolved. Produced by the Ambiguity Resolution Protocol (docs/IMPLEMENTATION-PLAN.md §3).",
+  "$defs": {
+    "Origin": {
+      "enum": ["goal", "acceptance", "environment", "validation", "execution", "evidence", "iteration"]
+    },
+    "Kind": {
+      "enum": [
+        "missing_value",
+        "underspecified",
+        "ambiguous_reference",
+        "conflicting",
+        "unresolvable_entity"
+      ]
+    },
+    "Resolution": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["via", "value", "evidence"],
+          "properties": {
+            "via": { "const": "derived" },
+            "value": {},
+            "evidence": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["via", "value", "confidence", "source"],
+          "properties": {
+            "via": { "const": "inferred" },
+            "value": {},
+            "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+            "source": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["via", "value", "assumption"],
+          "properties": {
+            "via": { "const": "defaulted" },
+            "value": {},
+            "assumption": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["via", "value", "answer"],
+          "properties": {
+            "via": { "const": "answered" },
+            "value": {},
+            "answer": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["via", "reason"],
+          "properties": {
+            "via": { "const": "deferred" },
+            "reason": {
+              "enum": [
+                "not_derivable",
+                "no_default",
+                "low_confidence",
+                "question_budget_exhausted",
+                "time_budget_exhausted",
+                "no_user_available",
+                "non_blocking"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "type": "object",
+  "required": ["id", "origin", "path", "kind", "question", "blocking"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "origin": { "$ref": "#/$defs/Origin" },
+    "path": { "type": "string", "description": "JSON pointer into the originating artifact." },
+    "kind": { "$ref": "#/$defs/Kind" },
+    "question": { "type": "string", "minLength": 1 },
+    "blocking": { "type": "boolean" },
+    "candidates": { "type": "array" },
+    "defaultValue": {
+      "description": "Present only when a fail-safe value exists, i.e. one whose selection cannot make the run report PASS more readily than the truth."
+    },
+    "context": { "type": "object" }
+  }
+}

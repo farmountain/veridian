@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://veridian.dev/schemas/acceptance.schema.json",
+  "title": "AcceptanceContract",
+  "description": "Acceptance criteria are the contract (PLAN.md §7). A criterion is a deterministic action sequence plus one or more declarative expectations over the resulting observation.",
+  "type": "object",
+  "required": ["version", "criteria"],
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "goal_id": { "type": "string" },
+    "criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/Criterion" }
+    }
+  },
+  "$defs": {
+    "Criterion": {
+      "type": "object",
+      "required": ["id", "expect"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^AC-[0-9]{3}$" },
+        "description": {
+          "type": "string",
+          "description": "Documentation only. Optional on purpose: a field that provably cannot change a verdict must never be the reason a run stops to ask a human."
+        },
+        "mandatory": {
+          "type": "boolean",
+          "default": true,
+          "description": "A run can only be PASS when every mandatory criterion passes. Optional criteria are reported but never gate the verdict."
+        },
+        "steps": {
+          "type": "array",
+          "description": "Deterministic actions executed in order before observation. A criterion with no steps validates the landing state.",
+          "items": { "$ref": "#/$defs/Step" }
+        },
+        "expect": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/Expectation" }
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "enum": ["screenshot", "trace", "dom", "console", "network"] },
+          "description": "Artifacts that must exist for this criterion to be satisfiable. Absence of a required artifact means the run is not PASS (PLAN.md §32, M5)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "Step": {
+      "description": "Exactly one action key per step.",
+      "oneOf": [
+        { "type": "object", "required": ["goto"], "properties": { "goto": { "type": "string" } }, "additionalProperties": false },
+        { "type": "object", "required": ["click"], "properties": { "click": { "type": "string" } }, "additionalProperties": false },
+        { "type": "object", "required": ["reload"], "properties": { "reload": { "type": "boolean" } }, "additionalProperties": false },
+        {
+          "type": "object",
+          "required": ["fill"],
+          "properties": {
+            "fill": {
+              "type": "object",
+              "required": ["target", "value"],
+              "properties": { "target": { "type": "string" }, "value": { "type": "string" } },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["select"],
+          "properties": {
+            "select": {
+              "type": "object",
+              "required": ["target", "value"],
+              "properties": { "target": { "type": "string" }, "value": { "type": "string" } },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["press"],
+          "properties": {
+            "press": {
+              "type": "object",
+              "required": ["target", "key"],
+              "properties": { "target": { "type": "string" }, "key": { "type": "string" } },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["waitFor"],
+          "properties": {
+            "waitFor": {
+              "type": "object",
+              "required": ["target"],
+              "properties": {
+                "target": { "type": "string" },
+                "state": { "enum": ["attached", "detached", "visible", "hidden"], "default": "visible" }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Expectation": {
+      "type": "object",
+      "required": ["validator"],
+      "properties": {
+        "validator": {
+          "type": "string",
+          "description": "A registered validator name, e.g. web.ui.text. An unregistered name is an unresolvable_entity ambiguity, caught before execution.",
+          "pattern": "^[a-z0-9]+(\\.[a-z0-9]+)+$"
+        },
+        "target": { "type": "string", "description": "A selector for target-based validators, or a URL for web.ui.url." },
+        "equals": {},
+        "contains": {},
+        "matches": { "type": "string", "description": "A regular expression, without delimiters." },
+        "atLeast": { "type": "number" },
+        "atMost": { "type": "number" },
+        "name": { "type": "string", "description": "Attribute name for web.ui.attribute." },
+        "message": { "type": "string", "description": "Human-readable failure text shown in latest-failure.md." }
+      },
+      "additionalProperties": false
+    }
+  }
+}

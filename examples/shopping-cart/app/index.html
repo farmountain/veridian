@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Shopping Cart</title>
+    <!--
+      An inline data-URI icon, so the browser does not send a request for /favicon.ico. Without it
+      the browser asks for a file this app does not have, the 404 is recorded on the wire, and
+      `web.network.ok` fails - correctly, and for a reason that has nothing to do with the cart.
+      A false failure is as corrosive as a false PASS.
+    -->
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        margin: 2rem auto;
+        max-width: 44rem;
+        line-height: 1.5;
+      }
+      .product {
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        padding: 0.75rem 1rem;
+        margin: 0 0 0.5rem;
+      }
+      .product h2 {
+        font-size: 1rem;
+        margin: 0 0 0.25rem;
+      }
+      .product p {
+        margin: 0 0 0.5rem;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 1rem 0;
+      }
+      th,
+      td {
+        border-bottom: 1px solid #ddd;
+        padding: 0.4rem 0.5rem;
+        text-align: left;
+      }
+      td.amount,
+      th.amount {
+        text-align: right;
+      }
+      dl {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        max-width: 18rem;
+        margin-left: auto;
+        gap: 0.25rem 1rem;
+      }
+      dt {
+        margin: 0;
+      }
+      dd {
+        margin: 0;
+        text-align: right;
+      }
+      #total {
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Shopping cart</h1>
+
+      <section id="catalogue" aria-label="Catalogue">
+        <article class="product">
+          <h2>Widget</h2>
+          <p>Unit price <span class="unit-price" data-unit-price="10">$10.00</span></p>
+          <label for="qty-widget">Quantity</label>
+          <input id="qty-widget" name="qty-widget" value="1" inputmode="numeric" />
+          <button id="add-widget" type="button" data-add="widget">Add to cart</button>
+        </article>
+
+        <article class="product">
+          <h2>Gadget</h2>
+          <p>Unit price <span class="unit-price" data-unit-price="25">$25.00</span></p>
+          <label for="qty-gadget">Quantity</label>
+          <input id="qty-gadget" name="qty-gadget" value="1" inputmode="numeric" />
+          <button id="add-gadget" type="button" data-add="gadget">Add to cart</button>
+        </article>
+
+        <article class="product">
+          <h2>Doodad</h2>
+          <p>Unit price <span class="unit-price" data-unit-price="5">$5.00</span></p>
+          <label for="qty-doodad">Quantity</label>
+          <input id="qty-doodad" name="qty-doodad" value="1" inputmode="numeric" />
+          <button id="add-doodad" type="button" data-add="doodad">Add to cart</button>
+        </article>
+      </section>
+
+      <table id="cart">
+        <caption>
+          Cart contents
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Item</th>
+            <th scope="col" class="amount">Unit price</th>
+            <th scope="col" class="amount">Quantity</th>
+            <th scope="col" class="amount">Line total</th>
+            <th scope="col"><span class="visually-hidden">Remove</span></th>
+          </tr>
+        </thead>
+        <tbody id="cart-body"></tbody>
+      </table>
+
+      <p id="cart-empty">Your cart is empty.</p>
+
+      <dl id="summary" aria-label="Summary">
+        <dt>Items</dt>
+        <dd id="item-count">0</dd>
+        <dt>Subtotal</dt>
+        <dd id="subtotal">$0.00</dd>
+        <dt>Tax</dt>
+        <dd id="tax">$0.00</dd>
+        <dt id="total-label">Total</dt>
+        <dd id="total">$0.00</dd>
+      </dl>
+    </main>
+
+    <script src="cart.js"></script>
+  </body>
+</html>

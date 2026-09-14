@@ -1,0 +1,32 @@
+{
+  "name": "veridian",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Veridian - the sandbox testing and validation layer for AI coding agents. The agents remain external.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "bin": {
+    "veridian": "./cli/veridian.ts"
+  },
+  "scripts": {
+    "test": "node --test",
+    "typecheck": "tsc --noEmit",
+    "gate": "npm run typecheck && npm test",
+    "veridian": "node cli/veridian.ts",
+    "clarify": "node cli/veridian.ts clarify",
+    "demo": "node examples/shopping-cart/demo.ts",
+    "demo:no-browser": "node examples/shopping-cart/demo.ts --browser none",
+    "e2e:install": "node scripts/e2e-install.mjs",
+    "e2e": "node examples/shopping-cart/demo.ts --browser playwright"
+  },
+  "dependencies": {
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.1",
+    "typescript": "^5.9.3"
+  }
+}

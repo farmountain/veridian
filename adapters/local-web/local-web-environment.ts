@@ -1,0 +1,665 @@
+/**
+ * The MVP environment: a local web application, a browser, and a process boundary.
+ *
+ * This is the first *real* {@link EnvironmentAdapter} — the thing that turns the abstract lifecycle
+ * into a specific world. It owns four concerns and nothing else: start a process, prove it is alive,
+ * drive a browser through the criterion's steps, and write down what was seen. It reasons about none
+ * of them. It does not know what a criterion means, whether an assertion should pass, or how to fix
+ * anything: it hands a *fact* to the validation layer and lets that layer decide.
+ *
+ * ## Why the plan arrives through the constructor
+ *
+ * `EnvironmentAdapter`'s methods take an environment id and a request, never the plan — the interface
+ * was designed so that a manager can run any adapter without knowing what it is. A real adapter still
+ * has to know *which* application it was asked to bring up, and there is exactly one honest way to
+ * tell it: the plan is resolved before the run starts, so it is handed over at construction. The
+ * alternative — re-reading `environment.yaml` here — would give the world a second opinion about its
+ * own configuration, and when the two disagree the winner is whichever parsed last.
+ *
+ * ## Why every failure here is an `EnvironmentError`
+ *
+ * The run's failure taxonomy exists to keep "the application is broken" apart from "the sandbox could
+ * not be brought up". A browser that will not launch, a process that never prints its readiness
+ * signal, a dependency install that exits non-zero — none of those is a defect in the application
+ * under test, and reporting any of them as a test failure would send an external agent to repair code
+ * that was never given a chance to run. `EnvironmentError` is the marker the loop reads to record
+ * `ENVIRONMENT_FAILURE`, so it is raised for all of them and for nothing else.
+ */
+
+import { decodeStep } from "../../core/acceptance/plan.ts";
+import type { Clock, Logger } from "../../core/clarification/types.ts";
+import type {
+  ArtifactKind,
+  EnvironmentAdapter,
+  EnvironmentPlan,
+  EvidenceArtifact,
+  Observation,
+  ObservationRequest,
+} from "../../core/environment/types.ts";
+import { probeUrl } from "../../core/environment/load.ts";
+import type { WebObservationData, WebTargetObservation } from "../../core/environment/web-observation.ts";
+import { WEB_OBSERVATION_KIND } from "../../core/environment/web-observation.ts";
+import { BUNDLE_FILES, bundleLayout } from "../../core/evidence/index.ts";
+import { EnvironmentError, failure } from "../../core/failure.ts";
+import type { IoPort } from "../../core/io.ts";
+import type { ProcessHandle, ProcessRunner } from "../../core/process.ts";
+import { runToCompletion } from "../../core/process.ts";
+import { PLAYWRIGHT_MISSING } from "./browser-port.ts";
+import type { BrowserPage, BrowserPort, BrowserSession } from "./browser-port.ts";
+
+/** The subset of `fetch` this adapter needs, so a test can probe without a server. */
+export interface HttpResponseLike {
+  readonly status: number;
+  /** Release the socket. A fake may make this a no-op. */
+  dispose(): void;
+}
+
+export type FetchLike = (
+  url: string,
+  init: { readonly signal: AbortSignal },
+) => Promise<HttpResponseLike>;
+
+export interface LocalWebEnvironmentOptions {
+  readonly io: IoPort;
+  readonly clock: Clock;
+  readonly logger: Logger;
+  readonly processes: ProcessRunner;
+  /** Veridian's state directory, relative to the io root — `.veridian`. Evidence is written under it. */
+  readonly stateDir: string;
+  /**
+   * The browser. `null` means the environment was planned without one, and every criterion then
+   * fails as an environment failure rather than silently judging `about:blank`.
+   */
+  readonly browser?: BrowserPort | null;
+  readonly fetch?: FetchLike;
+  /** Per-action cap for a browser step. The run's per-criterion cap is the outer bound. */
+  readonly stepTimeoutMs?: number;
+  /** How long to wait for the readiness pattern after starting the application. */
+  readonly startTimeoutMs?: number;
+  /** How long a dependency install may take. Generous: it is a one-off, not a retry. */
+  readonly installTimeoutMs?: number;
+}
+
+const defaultFetch: FetchLike = async (url, init) => {
+  const response = await fetch(url, { signal: init.signal, redirect: "follow" });
+  return {
+    status: response.status,
+    dispose: () => {
+      void response.body?.cancel().catch(() => undefined);
+    },
+  };
+};
+
+/** The tail of a process's output, for a message a human has to read at three in the morning. */
+const tail = (text: string, limit = 600): string => {
+  const trimmed = text.trim();
+  return trimmed.length <= limit ? trimmed : `...${trimmed.slice(trimmed.length - limit)}`;
+};
+
+const describe = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+export class LocalWebEnvironment implements EnvironmentAdapter {
+  readonly kind = "local-web";
+
+  readonly #plan: EnvironmentPlan;
+  readonly #io: IoPort;
+  readonly #clock: Clock;
+  readonly #logger: Logger;
+  readonly #processes: ProcessRunner;
+  readonly #browser: BrowserPort | null;
+  readonly #fetch: FetchLike;
+  readonly #stepTimeoutMs: number;
+  readonly #startTimeoutMs: number;
+  readonly #installTimeoutMs: number;
+  readonly #stateDir: string;
+
+  #id: string | null = null;
+  #child: ProcessHandle | null = null;
+  #session: BrowserSession | null = null;
+  /** The child's exit result once it settles. Used only to say *why* readiness never arrived. */
+  #exit: Awaited<ProcessHandle["exited"]> | null = null;
+
+  constructor(plan: EnvironmentPlan, options: LocalWebEnvironmentOptions) {
+    this.#plan = plan;
+    this.#io = options.io;
+    this.#clock = options.clock;
+    this.#logger = options.logger;
+    this.#processes = options.processes;
+    this.#browser = options.browser ?? null;
+    this.#fetch = options.fetch ?? defaultFetch;
+    this.#stepTimeoutMs = options.stepTimeoutMs ?? 15_000;
+    this.#startTimeoutMs = options.startTimeoutMs ?? 120_000;
+    this.#installTimeoutMs = options.installTimeoutMs ?? 600_000;
+    // Normalised once, here, so no other method has to remember that Windows writes separators the
+    // other way. Every path below is either this (io-relative) or derived from it.
+    this.#stateDir = options.stateDir.replace(/[\\/]+$/, "");
+  }
+
+  // ---- lifecycle ------------------------------------------------------------------------------
+
+  async create(): Promise<{ readonly id: string }> {
+    if (this.#id === null) {
+      // Derived from the plan rather than counted, so the same contract yields the same environment id
+      // on every run. M1 measures repeat consistency; an id that changed per run would make two runs of
+      // one contract incomparable in the bundle.
+      this.#id = `local-web:${this.#plan.app.replace(/\\/g, "/")}`;
+    }
+    this.#logger.debug("environment.create", { id: this.#id, appPath: this.#plan.appPath });
+    return { id: this.#id };
+  }
+
+  async start(id: string): Promise<void> {
+    this.#requireId(id);
+    await this.#installDependencies();
+    this.#spawn();
+    await this.#awaitReady();
+  }
+
+  /**
+   * Nothing to copy into the world.
+   *
+   * The application under test is the user's own working tree, served in place, and whatever the
+   * start command needs has already been installed by `start`. A `deploy` that copied files would
+   * give the run a *different* tree from the one the agent edited — and then a PASS would be evidence
+   * about a copy nobody repairs. Left as an explicit no-op with a recorded reason rather than an
+   * empty body, so a reader can tell the difference between "nothing to do" and "not implemented".
+   */
+  async deploy(id: string): Promise<void> {
+    this.#requireId(id);
+    this.#logger.debug("environment.deploy", {
+      id,
+      note: "the application runs in place from its own directory; there is nothing to deploy",
+      command: this.#plan.start.command,
+    });
+  }
+
+  async execute(id: string, request: ObservationRequest): Promise<Observation> {
+    return this.#capture(id, request, true);
+  }
+
+  async observe(id: string, request: ObservationRequest): Promise<Observation> {
+    return this.#capture(id, request, false);
+  }
+
+  async probe(id: string): Promise<{ readonly statusCode: number | null; readonly message: string | null; readonly patternSeen: boolean | null }> {
+    this.#requireId(id);
+    const url = probeUrl(this.#plan);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.#probeTimeoutMs());
+    timer.unref?.();
+
+    try {
+      const response = await this.#fetch(url, { signal: controller.signal });
+      const statusCode = response.status;
+      response.dispose();
+      return { statusCode, message: null, patternSeen: this.#patternSeen() };
+    } catch (error) {
+      return { statusCode: null, message: describe(error), patternSeen: this.#patternSeen() };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * No snapshotting. `snapshot-restore` is refused for the same reason `restore` throws: a snapshot of
+   * a live process is not a thing this adapter can produce, and the only alternative — returning a
+   * token that `restore` ignores — would make a reset look like it happened when it did not.
+   */
+  async snapshot(id: string): Promise<string> {
+    this.#requireId(id);
+    throw new EnvironmentError(noSnapshot(this.#plan.reset.strategy));
+  }
+
+  async restore(id: string, snapshotId: string): Promise<void> {
+    this.#requireId(id);
+    throw new EnvironmentError(noSnapshot(this.#plan.reset.strategy, snapshotId));
+  }
+
+  /**
+   * Reset is first-class: kill the application and bring a *new* one up, then wait for readiness
+   * again.
+   *
+   * Restarting the process is what makes the reset real. An in-memory cart, a module-level cache, a
+   * mutated module registry — the whole class of contamination a previous criterion can leave behind
+   * lives in the process image, and there is no way to unload it short of a new process. Waiting for
+   * the readiness pattern afterwards matters just as much: returning while the new process is still
+   * booting would hand the next criterion a world that is *nearly* ready, which is how a run becomes
+   * flaky for a reason nobody can reproduce (M4).
+   *
+   * The browser is deliberately *not* restarted. Criterion-level isolation already comes from a fresh
+   * context per page, so tearing the browser down here would add seconds per reset and change nothing
+   * about what the next criterion can see.
+   */
+  async reset(id: string): Promise<void> {
+    this.#requireId(id);
+    const { strategy, command } = this.#plan.reset;
+
+    if (strategy === "snapshot-restore") {
+      throw new EnvironmentError(noSnapshot(strategy));
+    }
+
+    if (strategy === "custom" && command !== null) {
+      const result = await runToCompletion(
+        this.#processes,
+        {
+          command,
+          args: [],
+          cwd: this.#plan.appPath,
+          env: this.#plan.env,
+          onStdout: (chunk) => this.#logger.debug("reset.stdout", { chunk: chunk.trimEnd() }),
+          onStderr: (chunk) => this.#logger.warn("reset.stderr", { chunk: chunk.trimEnd() }),
+        },
+        this.#installTimeoutMs,
+      );
+      if (result.timedOut || result.code !== 0) {
+        // Thrown rather than absorbed: the manager turns this into a RESET_FAILURE, and the run is
+        // stopped instead of being judged in a world whose reset silently did nothing.
+        throw new EnvironmentError(
+          result.timedOut
+            ? `the reset command \`${command}\` did not finish within ${String(this.#installTimeoutMs)}ms`
+            : `the reset command \`${command}\` exited with code ${String(result.code)}: ${tail(result.stderr)}`,
+        );
+      }
+      this.#logger.debug("environment.reset", { id, strategy, command });
+      return;
+    }
+
+    if (strategy === "custom") {
+      this.#logger.warn("environment.reset", {
+        id,
+        strategy,
+        note: "a custom strategy was requested without a command; falling back to restarting the application",
+      });
+    }
+
+    await this.#restart();
+  }
+
+  async stop(id: string): Promise<void> {
+    this.#requireId(id);
+    const session = this.#session;
+    this.#session = null;
+    if (session !== null) {
+      try {
+        await session.close();
+      } catch (error) {
+        // The browser is an implementation detail of observation; failing to tidy it must not turn a
+        // verdict into an error. Recorded so it is not invisible.
+        this.#logger.warn("environment.stop", { id, browser: describe(error) });
+      }
+    }
+
+    const child = this.#child;
+    this.#child = null;
+    if (child !== null) {
+      this.#logger.debug("environment.stop", { id, pid: child.pid });
+      await child.stop();
+    }
+  }
+
+  /**
+   * Tear down, and nothing more.
+   *
+   * It must not remove the application directory: that directory is the user's source tree, and an
+   * adapter that deletes it on the failure path is a bug that takes a working copy with it. Only what
+   * the environment created — a process, a browser — is the environment's to destroy.
+   */
+  async destroy(id: string): Promise<void> {
+    this.#requireId(id);
+    await this.stop(id);
+    this.#id = null;
+  }
+
+  // ---- observation ----------------------------------------------------------------------------
+
+  async #capture(id: string, request: ObservationRequest, act: boolean): Promise<Observation> {
+    this.#requireId(id);
+    const base = {
+      kind: WEB_OBSERVATION_KIND,
+      capturedAt: this.#clock.iso(),
+      environmentId: id,
+      runId: request.runId,
+    };
+
+    const browser = this.#browser;
+    if (browser === null) {
+      const reason = this.#plan.browser.enabled
+        ? PLAYWRIGHT_MISSING
+        : "the environment was planned with `browser.enabled: false`, so there is no page to observe";
+      return { ...base, data: null, artifacts: [], error: failure("ENVIRONMENT_FAILURE", reason) };
+    }
+
+    // The run directory is derived from the same helper the writer uses, so the adapter cannot write
+    // evidence to one place while the bundle looks for it in another.
+    const relativeRunDir = bundleLayout(this.#stateDir, request.runId).runDir;
+    const relativeTrace = `${BUNDLE_FILES.trace}/${request.criterionId}.zip`;
+    const wantsTrace = request.evidence.includes("trace");
+    // One path, two spellings, both derived from `relativeTrace`: the bundle records where a *reader*
+    // finds the file (relative to the run directory, so the bundle can be moved), and Playwright needs
+    // where the *OS* finds it. Derived rather than written twice, because two hand-written paths for
+    // one file is how evidence goes missing while every check still reports completeness.
+    const tracePath = wantsTrace ? this.#io.resolve(`${relativeRunDir}/${relativeTrace}`) : null;
+
+    try {
+      const session = await this.#sessionFor(browser);
+      if (tracePath !== null) {
+        // Playwright writes the archive itself and does not create its parent.
+        await this.#io.mkdirp(`${relativeRunDir}/${BUNDLE_FILES.trace}`);
+      }
+      const page = await session.newPage(tracePath);
+      try {
+        if (act) await this.#replay(page, request);
+        const data = await this.#read(page, request);
+        const artifacts = await this.#captureEvidence(page, request, data, relativeRunDir);
+        return { ...base, data, artifacts, error: null };
+      } finally {
+        try {
+          await page.close();
+        } catch (error) {
+          this.#logger.warn("environment.page", { id, criterionId: request.criterionId, close: describe(error) });
+        }
+      }
+    } catch (error) {
+      return { ...base, data: null, artifacts: [], error: failure("ENVIRONMENT_FAILURE", describe(error)) };
+    }
+  }
+
+  /** Launch once and reuse; a fresh *page* per criterion is what provides isolation, not a new browser. */
+  async #sessionFor(browser: BrowserPort): Promise<BrowserSession> {
+    if (this.#session !== null) return this.#session;
+    const session = await browser.launch({
+      viewport: this.#plan.browser.viewport,
+      locale: this.#plan.browser.locale,
+      timezoneId: this.#plan.browser.timezoneId,
+    });
+    this.#session = session;
+    return session;
+  }
+
+  /**
+   * Replay the criterion's steps.
+   *
+   * The wire records are decoded with `decodeStep` — the same function that produced them — rather
+   * than by a second decoder written here. An adapter that carried its own idea of the step format
+   * would keep working on documents the contract layer had stopped emitting, and the divergence would
+   * show up as a step that silently did nothing.
+   */
+  async #replay(page: BrowserPage, request: ObservationRequest): Promise<void> {
+    const timeout = this.#stepTimeoutMs;
+    for (const [index, raw] of request.steps.entries()) {
+      const step = decodeStep(raw, request.criterionId, index);
+      this.#logger.debug("environment.step", { criterionId: request.criterionId, index, kind: step.kind });
+      switch (step.kind) {
+        case "goto":
+          await page.goto(step.url, timeout);
+          break;
+        case "reload":
+          await page.reload(timeout);
+          break;
+        case "click":
+          await page.click(step.target, timeout);
+          break;
+        case "fill":
+          await page.fill(step.target, step.value, timeout);
+          break;
+        case "select":
+          await page.select(step.target, step.value, timeout);
+          break;
+        case "press":
+          await page.press(step.target, step.key, timeout);
+          break;
+        case "waitFor":
+          await page.waitFor(step.target, step.state, timeout);
+          break;
+      }
+    }
+  }
+
+  /**
+   * One instant, every target the criterion asked about.
+   *
+   * A selector the port returned nothing for becomes an explicit *error* rather than `found: false`.
+   * The two are not the same claim: one says the adapter never looked, the other says the page does
+   * not have it. Collapsing them would let a broken reading masquerade as a missing element, and the
+   * external agent would go and add an element that was already there.
+   */
+  async #read(page: BrowserPage, request: ObservationRequest): Promise<WebObservationData> {
+    const raw = await page.read(request.targets);
+    const targets: Record<string, WebTargetObservation> = {};
+    for (const selector of request.targets) {
+      const entry = raw[selector];
+      targets[selector] =
+        entry === undefined
+          ? {
+              found: false,
+              count: 0,
+              text: null,
+              value: null,
+              visible: false,
+              error: `the adapter returned no reading for \`${selector}\``,
+            }
+          : { ...entry };
+    }
+
+    return {
+      url: page.url(),
+      title: await page.title(),
+      targets,
+      console: page.consoleEntries(),
+      network: page.networkEntries().map((entry) => ({
+        method: entry.method,
+        url: entry.url,
+        status: entry.status,
+        // Derived here, where the status is authoritative, instead of by every validator that cares.
+        // `ok` is deliberately a *code* judgement: a 304 is not a failure and a 404 is not a success.
+        ok: entry.status !== null && entry.status >= 200 && entry.status < 400,
+        at: entry.at,
+      })),
+      viewport: this.#plan.browser.viewport,
+    };
+  }
+
+  /**
+   * Write down what was seen.
+   *
+   * The reading itself is always written, whatever the criterion declared, because a judgement cites
+   * `actual` values that came from here — and an assertion about a page state that was never stored
+   * is a claim with no evidence behind it (M5). The declared kinds are written on top of that: they
+   * are what the criterion asked to be able to *show*, and a bundle missing one of them fails the
+   * required-evidence guard rather than being quietly accepted.
+   */
+  async #captureEvidence(
+    page: BrowserPage,
+    request: ObservationRequest,
+    data: WebObservationData,
+    relativeRunDir: string,
+  ): Promise<readonly EvidenceArtifact[]> {
+    const id = request.criterionId;
+    const artifacts: EvidenceArtifact[] = [];
+    const write = async (relative: string, kind: ArtifactKind, contents: string): Promise<void> => {
+      await this.#io.writeTextFile(`${relativeRunDir}/${relative}`, contents);
+      artifacts.push({ path: relative, kind, criterionId: id, bytes: contents.length });
+    };
+
+    await write(
+      `${BUNDLE_FILES.artifacts}/${id}.observation.json`,
+      "json",
+      `${JSON.stringify(data, null, 2)}\n`,
+    );
+
+    for (const kind of request.evidence) {
+      switch (kind) {
+        case "screenshot": {
+          const relative = `${BUNDLE_FILES.screenshots}/${id}.png`;
+          const pixels = await page.screenshot();
+          await this.#io.writeBinaryFile(`${relativeRunDir}/${relative}`, pixels);
+          artifacts.push({ path: relative, kind, criterionId: id, bytes: pixels.length });
+          break;
+        }
+        case "dom":
+          await write(`${BUNDLE_FILES.artifacts}/${id}.dom.html`, kind, await page.content());
+          break;
+        case "console":
+          await write(`${BUNDLE_FILES.artifacts}/${id}.console.json`, kind, `${JSON.stringify(data.console, null, 2)}\n`);
+          break;
+        case "network":
+          await write(`${BUNDLE_FILES.artifacts}/${id}.network.json`, kind, `${JSON.stringify(data.network, null, 2)}\n`);
+          break;
+        case "trace":
+          // Declared here, written when the page closes: the trace is a recording of the whole
+          // criterion, so its bytes cannot exist until the criterion's last action has happened. The
+          // path is the same string the port was handed, so the file that lands on disk is the file
+          // this artifact names.
+          artifacts.push({
+            path: `${BUNDLE_FILES.trace}/${id}.zip`,
+            kind,
+            criterionId: id,
+            bytes: null,
+          });
+          break;
+        case "log":
+        case "json":
+          // Not criterion-requestable — `acceptance.schema.json` restricts the evidence vocabulary to
+          // the five kinds above. Listed so that adding a kind to `ArtifactKind` is a compile error
+          // here rather than a silently ignored request.
+          this.#logger.warn("environment.evidence", {
+            criterionId: id,
+            kind,
+            note: "this artifact kind is not produced by the local-web adapter",
+          });
+          break;
+      }
+    }
+    return artifacts;
+  }
+
+  // ---- process --------------------------------------------------------------------------------
+
+  async #installDependencies(): Promise<void> {
+    const command = this.#plan.dependencyInstall;
+    if (command === null) return;
+
+    this.#logger.info("environment.install", { command, cwd: this.#plan.appPath });
+    const result = await runToCompletion(
+      this.#processes,
+      {
+        command,
+        args: [],
+        cwd: this.#plan.appPath,
+        env: this.#plan.env,
+        onStderr: (chunk) => this.#logger.debug("install.stderr", { chunk: chunk.trimEnd() }),
+      },
+      this.#installTimeoutMs,
+    );
+
+    if (result.timedOut) {
+      throw new EnvironmentError(
+        `dependency installation (\`${command}\`) did not finish within ${String(this.#installTimeoutMs)}ms`,
+      );
+    }
+    if (result.code !== 0) {
+      throw new EnvironmentError(
+        `dependency installation (\`${command}\`) exited with code ${String(result.code)}: ${tail(result.stderr)}`,
+      );
+    }
+  }
+
+  #spawn(): ProcessHandle {
+    const { command, args } = this.#plan.start;
+    this.#logger.info("environment.start", { command, args, cwd: this.#plan.appPath });
+    const handle = this.#processes.run({
+      command,
+      args,
+      cwd: this.#plan.appPath,
+      env: this.#plan.env,
+      // Output is read back through `handle.output()`, which is the single source for the text; these
+      // callbacks exist so a long boot is visible while it is happening rather than only in the bundle.
+      onStdout: (chunk) => this.#logger.debug("app.stdout", { chunk: chunk.trimEnd() }),
+      onStderr: (chunk) => this.#logger.warn("app.stderr", { chunk: chunk.trimEnd() }),
+    });
+    this.#child = handle;
+    this.#exit = null;
+    void handle.exited.then((result) => {
+      this.#exit = result;
+    });
+    return handle;
+  }
+
+  /**
+   * Wait for the application to say it is ready.
+   *
+   * Spawning a process is not starting an application: the parent returns immediately and the port is
+   * not bound yet. The readiness pattern is the application's own signal that it got there, and
+   * without it every criterion would race the boot and the run would be flaky for reasons the report
+   * could not explain. When no pattern was declared there is nothing to wait for here — the manager's
+   * health check is the only gate, and it is a real one.
+   */
+  async #awaitReady(): Promise<void> {
+    const pattern = this.#plan.start.readyPattern;
+    const child = this.#child;
+    if (pattern === null || child === null) return;
+
+    const seen = await child.waitForPattern(pattern, this.#startTimeoutMs);
+    if (seen) return;
+
+    const exit = this.#exit;
+    throw new EnvironmentError(
+      exit === null
+        ? `the application did not print /${pattern}/ within ${String(this.#startTimeoutMs)}ms. Output so far: ${tail(child.output())}`
+        : `the application exited with code ${String(exit.code)}${exit.signal === null ? "" : ` (signal ${exit.signal})`} before printing /${pattern}/. stderr: ${tail(child.error())}`,
+    );
+  }
+
+  async #restart(): Promise<void> {
+    const child = this.#child;
+    this.#child = null;
+    if (child !== null) await child.stop();
+    const spawned = this.#spawn();
+    await this.#awaitReady();
+    this.#logger.debug("environment.reset", { id: this.#id, strategy: "restart", pid: spawned.pid });
+  }
+
+  /** `null` when the adapter has no stdout signal to offer — never `false`, which would read as "not ready". */
+  #patternSeen(): boolean | null {
+    const pattern = this.#plan.start.readyPattern;
+    const child = this.#child;
+    if (pattern === null || child === null) return null;
+    try {
+      return new RegExp(pattern).test(child.output());
+    } catch (error) {
+      this.#logger.warn("environment.probe", { pattern, error: describe(error) });
+      return null;
+    }
+  }
+
+  /**
+   * One probe must fail fast.
+   *
+   * The manager owns the retry policy, and it can only own it if a single probe returns. A probe that
+   * waited for the whole health budget would make `attempts` a count of one and the retry interval a
+   * fiction — the deadline would be spent inside the first call.
+   */
+  #probeTimeoutMs(): number {
+    return Math.max(1_000, this.#plan.health.intervalMs);
+  }
+
+  #requireId(id: string): void {
+    if (this.#id === null) {
+      throw new EnvironmentError("this environment has not been created; call create() first");
+    }
+    if (this.#id !== id) {
+      // A manager driving two environments, or a stale handle. Cheap to catch, and catching it beats
+      // watching one application's output appear in another's evidence.
+      throw new EnvironmentError(`this environment is \`${this.#id}\`, but it was addressed as \`${id}\``);
+    }
+  }
+}
+
+function noSnapshot(strategy: string, snapshotId?: string): string {
+  const subject = snapshotId === undefined ? "a snapshot" : `snapshot \`${snapshotId}\``;
+  return (
+    `the local-web adapter cannot restore ${subject}: it brings up a process and drives a browser, and neither can be ` +
+    `photographed and put back. reset.strategy is \`${strategy}\`, which asks for exactly that. Use \`restart\`, which is a ` +
+    "real reset - a new process with none of the previous run's memory in it - rather than a reset in name only."
+  );
+}

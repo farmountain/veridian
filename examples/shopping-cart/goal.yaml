@@ -1,0 +1,40 @@
+# The goal: an observable end state, not an activity.
+#
+# "Make the cart work" is not a goal. "Adding two Widgets shows $20.00, tax is $1.60 at the
+# jurisdiction's 8%, and removing the last line returns every total to $0.00" is a goal, because a
+# third party can look at the page and decide whether it is true. Veridian never chooses this; it
+# validates against it.
+
+version: 1
+id: shopping-cart
+
+statement: >-
+  A shopper can add products to a cart and see a subtotal, 8% sales tax and total that are correct
+  for the quantities actually in the cart, and that return to zero when the last line is removed.
+
+acceptance: acceptance.yaml
+environment: environment.yaml
+
+# Optional prose. Never load-bearing: every claim that matters is a criterion in acceptance.yaml.
+# If a criterion needed this paragraph to be understood, that criterion would be underspecified.
+context: |-
+  The application under test is a single static page with client-side cart logic. It has no
+  backend, so no failure in this demo can be explained away by a network or a database: the only
+  things that can be wrong are the code and the browser, which is what makes it a good first
+  demonstration of the loop.
+
+tags:
+  - canonical-demo
+  - mvp
+
+# Safety boundaries. Every field is required and has a hard ceiling as well as a default, because
+# Veridian executes potentially untrusted AI-generated code (PLAN.md §52).
+limits:
+  # 10 is the MVP ceiling. The demo needs 4: one to observe the defects, and three repairs.
+  maxIterations: 10
+  maxRuntimeMs: 300000
+  maxCriterionMs: 30000
+  # The app is served from 127.0.0.1 and needs nothing else. Recorded in the run's
+  # reproducibility block. Note honestly: this MVP records the policy, it does not yet enforce it.
+  networkPolicy: deny
+  filesystemWrite: sandbox

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://veridian.dev/schemas/goal.schema.json",
+  "title": "Goal",
+  "description": "What the user wants the software to do, expressed as an observable end state. Veridian never chooses the goal; it only validates against one.",
+  "type": "object",
+  "required": ["version", "id", "statement", "acceptance", "environment", "limits"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "integer", "minimum": 1, "default": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "statement": {
+      "type": "string",
+      "minLength": 1,
+      "description": "One sentence. Must describe an observable end state, not an activity."
+    },
+    "context": {
+      "type": "string",
+      "description": "Optional prose. Never load-bearing — if a criterion depends on it, the criterion is underspecified."
+    },
+    "acceptance": {
+      "type": "string",
+      "description": "Path to the acceptance contract, relative to the goal file.",
+      "default": "acceptance.yaml"
+    },
+    "environment": {
+      "type": "string",
+      "description": "Path to the environment definition, relative to the goal file.",
+      "default": "environment.yaml"
+    },
+    "limits": { "$ref": "#/$defs/Limits" },
+    "tags": { "type": "array", "items": { "type": "string" } }
+  },
+  "$defs": {
+    "Limits": {
+      "type": "object",
+      "description": "Safety boundaries (PLAN.md §52). Veridian executes potentially untrusted code, so every limit has a hard ceiling as well as a default.",
+      "required": ["maxIterations", "maxRuntimeMs", "maxCriterionMs", "networkPolicy", "filesystemWrite"],
+      "properties": {
+        "maxIterations": { "type": "integer", "minimum": 1, "maximum": 10, "default": 10 },
+        "maxRuntimeMs": { "type": "integer", "minimum": 1000, "default": 300000 },
+        "maxCriterionMs": { "type": "integer", "minimum": 100, "default": 30000 },
+        "networkPolicy": { "enum": ["deny", "allow-list", "allow"], "default": "deny" },
+        "filesystemWrite": { "enum": ["deny", "sandbox"], "default": "sandbox" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

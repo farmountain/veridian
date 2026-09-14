@@ -1,0 +1,52 @@
+# How to create, start, observe and reset one environment instance.
+#
+# Read this next to `schemas/environment.schema.json`: there is no `version` key here, and the
+# document is closed to unknown keys, because an environment definition is a description of a
+# running world rather than a versioned contract of its own.
+
+# The only MVP adapter. `local-web` starts a local application, health-checks it, drives a real
+# browser at it, and can restart it from scratch.
+adapter: local-web
+
+# Relative to this file. The adapter runs `start` with the working directory set here.
+app: app
+
+# Environment variables, merged over the inherited environment. Values are treated as untrusted.
+env:
+  PORT: "4317"
+
+# Null means "this app has no dependencies to install". It is stated rather than omitted because
+# "we checked and there is nothing to install" and "nobody thought about it" look identical when
+# the key is absent.
+dependencyInstall: null
+
+start:
+  # Executed verbatim - never a shell string built by pasting configuration into it.
+  command: node
+  args:
+    - serve.mjs
+  # Wait for the app to say it is listening. This is a fact; a sleep is a race, and a race is how
+  # run-to-run consistency is lost.
+  readyPattern: 'shopping-cart listening on http://127\.0\.0\.1:4317'
+
+url: "http://127.0.0.1:4317"
+
+health:
+  path: /
+  expectStatus: 200
+  timeoutMs: 10000
+  intervalMs: 100
+
+# Reset is first-class, not test cleanup: a later criterion must never inherit the browser state,
+# the DOM state or the process state of an earlier one. `restart` tears the process down and starts
+# it again, which is the strongest guarantee available to this adapter.
+reset:
+  strategy: restart
+
+browser:
+  enabled: true
+  viewport:
+    width: 1280
+    height: 800
+  locale: en-US
+  timezoneId: UTC

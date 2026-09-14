@@ -1,0 +1,16 @@
+# Veridian runtime state — filesystem-first, portable, never committed.
+.veridian/
+
+# Node
+node_modules/
+npm-debug.log*
+*.tgz
+
+# Playwright artifacts that escape the run bundle
+test-results/
+playwright-report/
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+*.swp

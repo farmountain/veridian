@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://veridian.dev/schemas/run.schema.json",
+  "title": "RunRecord",
+  "description": "Run identity, iteration state and the full transition history. PLAN.md §50: CREATED → PREPARING → READY → EXECUTING → OBSERVING → VALIDATING; PASS → COMPLETED; FAIL → FAILED → RESETTING → READY.",
+  "type": "object",
+  "required": ["id", "goal_id", "state", "iteration", "createdAt", "transitions"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "pattern": "^run-[0-9]{8}-[0-9]{6}-[a-z0-9]{6}$" },
+    "goal_id": { "type": "string" },
+    "environment_id": { "type": ["string", "null"] },
+    "state": { "$ref": "#/$defs/State" },
+    "iteration": { "type": "integer", "minimum": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "endedAt": { "type": ["string", "null"], "format": "date-time" },
+    "transitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to", "at", "reason"],
+        "properties": {
+          "from": { "$ref": "#/$defs/State" },
+          "to": { "$ref": "#/$defs/State" },
+          "at": { "type": "string", "format": "date-time" },
+          "reason": { "type": "string" },
+          "iteration": { "type": "integer", "minimum": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "reproducibility": { "$ref": "result.schema.json#/$defs/Reproducibility" }
+  },
+  "$defs": {
+    "State": {
+      "description": "Terminal states are COMPLETED, ABORTED, ERROR and MAX_ITERATIONS. No ambiguous execution paths.",
+      "enum": [
+        "CREATED",
+        "PREPARING",
+        "READY",
+        "EXECUTING",
+        "OBSERVING",
+        "VALIDATING",
+        "COMPLETED",
+        "FAILED",
+        "RESETTING",
+        "ABORTED",
+        "ERROR",
+        "MAX_ITERATIONS"
+      ]
+    }
+  }
+}

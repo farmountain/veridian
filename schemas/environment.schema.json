@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://veridian.dev/schemas/environment.schema.json",
+  "title": "EnvironmentDefinition",
+  "description": "How to create, start, deploy into, observe and reset one environment instance. The adapter implements the lifecycle (PLAN.md §5); this file only parameterises it.",
+  "type": "object",
+  "required": ["adapter", "app"],
+  "properties": {
+    "adapter": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "A registered adapter kind. 'local-web' is the only MVP adapter (PLAN.md §9)."
+    },
+    "app": { "type": "string", "description": "Directory of the application under test, relative to this file." },
+    "env": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Environment variables. Values are treated as untrusted."
+    },
+    "dependencyInstall": {
+      "type": ["string", "null"],
+      "description": "Command run once before start, inside `app`. Null means the app has no dependencies to install."
+    },
+    "start": {
+      "type": "object",
+      "required": ["command"],
+      "properties": {
+        "command": { "type": "string", "description": "Executed verbatim, not through a shell string built from user input." },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "readyPattern": {
+          "type": "string",
+          "description": "A regular expression matched against stdout to decide the app has started. Use this instead of sleeping."
+        }
+      },
+      "additionalProperties": false
+    },
+    "url": { "type": "string", "description": "Base URL of the running app, e.g. http://127.0.0.1:4317." },
+    "health": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string" },
+        "expectStatus": { "type": "integer", "default": 200 },
+        "timeoutMs": { "type": "integer", "minimum": 100, "default": 20000 },
+        "intervalMs": { "type": "integer", "minimum": 20, "default": 100 }
+      },
+      "additionalProperties": false
+    },
+    "reset": {
+      "type": "object",
+      "description": "Reset is first-class (PLAN.md §20). A validator must never inherit contaminated state from a previous run.",
+      "properties": {
+        "strategy": { "enum": ["restart", "snapshot-restore", "custom"], "default": "restart" },
+        "command": { "type": ["string", "null"], "description": "Required when strategy is custom." }
+      },
+      "additionalProperties": false
+    },
+    "browser": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "viewport": {
+          "type": "object",
+          "properties": { "width": { "type": "integer" }, "height": { "type": "integer" } },
+          "additionalProperties": false
+        },
+        "locale": { "type": "string" },
+        "timezoneId": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

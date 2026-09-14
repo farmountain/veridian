@@ -1,0 +1,133 @@
+# The acceptance contract: the only authority on whether the software works.
+#
+# Four criteria, four deliberately different shapes:
+#
+#   AC-001  arithmetic for a quantity          - fails while D1 is present
+#   AC-002  a rate the code was never told     - fails while D2 is present (and, transitively, D1)
+#   AC-003  state after a mutation             - fails while D3 is present
+#   AC-004  the landing state, console and wire - passes from the start
+#
+# AC-004 passing on iteration one is not decoration. A contract in which every criterion failed
+# would be a contract that has never demonstrated it can say "yes", and a validator that can only
+# ever say "no" is indistinguishable from one that is broken.
+
+version: 1
+goal_id: shopping-cart
+
+criteria:
+  # ---------------------------------------------------------------------------------------------
+  # A quantity must multiply.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-001
+    description: Adding two Widgets puts $20.00 in the subtotal and exactly one line in the cart.
+    mandatory: true
+    steps:
+      # `goto` takes an absolute URL: the criterion is a statement about a specific addressable
+      # end state, and the adapter navigates to what the contract names rather than to what the
+      # environment happens to be configured with.
+      - goto: "http://127.0.0.1:4317/"
+      - fill:
+          target: "#qty-widget"
+          value: "2"
+      - click: "#add-widget"
+      # A barrier between acting and observing: the row is attached only once the cart has
+      # rendered, and reading the subtotal before that would be reading a different page.
+      - waitFor:
+          target: "#cart-body tr"
+          state: attached
+    expect:
+      # $10.00 unit price x 2. A cart that sums unit prices reports $10.00 here, and the failure
+      # text will quote both numbers so a repair agent does not have to guess which one is wrong.
+      - validator: web.text
+        target: "#subtotal"
+        equals: "$20.00"
+        message: the subtotal must account for the quantity on the line, not just the unit price
+      - validator: web.count
+        target: "#cart-body tr"
+        equals: 1
+    evidence:
+      - screenshot
+
+  # ---------------------------------------------------------------------------------------------
+  # The tax rate is a fact about a jurisdiction, not a preference of the code.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-002
+    description: Tax on a $20.00 subtotal is $1.60, so the total is $21.60.
+    mandatory: true
+    steps:
+      - goto: "http://127.0.0.1:4317/"
+      - fill:
+          target: "#qty-widget"
+          value: "2"
+      - click: "#add-widget"
+    expect:
+      - validator: web.text
+        target: "#tax"
+        equals: "$1.60"
+        message: 8% of $20.00 is $1.60
+      - validator: web.text
+        target: "#total"
+        equals: "$21.60"
+    evidence:
+      - screenshot
+
+  # ---------------------------------------------------------------------------------------------
+  # A mutation must be observable afterwards. This is the criterion that catches the class of
+  # defect a screenshot of the *added* state can never catch.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-003
+    description: Removing the only line empties the cart and returns every total to $0.00.
+    mandatory: true
+    steps:
+      - goto: "http://127.0.0.1:4317/"
+      - fill:
+          target: "#qty-widget"
+          value: "2"
+      - click: "#add-widget"
+      - click: 'button.remove[data-id="widget"]'
+    expect:
+      - validator: web.count
+        target: "#cart-body tr"
+        equals: 0
+      - validator: web.text
+        target: "#total"
+        equals: "$0.00"
+      - validator: web.visible
+        target: "#cart-empty"
+        equals: true
+    evidence:
+      - screenshot
+      # The one criterion here that asks for a trace, and the choice is not arbitrary. AC-003 is
+      # the criterion about a *transition*: it fails while the cart renders a row it should have
+      # removed, and a screenshot of the end state shows only that the cart is wrong, never what it
+      # did to get there. A trace is the only artifact that replays the click and the render that
+      # followed it, so this is where the bundle's `trace/` directory earns its place - and it is
+      # the only line in the canonical demo that exercises the adapter's tracing path end to end.
+      - trace
+
+  # ---------------------------------------------------------------------------------------------
+  # The state a first-time visitor sees, and the two things a DOM assertion cannot see.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-004
+    description: The landing page shows an empty cart at $0.00, with nothing on the console and no failed request.
+    mandatory: true
+    steps:
+      - goto: "http://127.0.0.1:4317/"
+    expect:
+      - validator: web.text
+        target: "#total"
+        equals: "$0.00"
+      - validator: web.visible
+        target: "#cart-empty"
+        equals: true
+      # `web.console.clean` and `web.network.ok` are cheap to forget and impossible to fake: each
+      # is INCONCLUSIVE, never PASS, when its artifact was not captured, so the `evidence` block
+      # below is not a preference. An unwatched console and a silent console look identical.
+      - validator: web.console.clean
+        equals: true
+      - validator: web.network.ok
+        equals: true
+    evidence:
+      - screenshot
+      - console
+      - network
