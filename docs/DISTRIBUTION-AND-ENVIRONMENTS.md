@@ -290,7 +290,7 @@ rather than locally, and the run id is cited below rather than the word "works".
 | `schemas/` carried into `dist/` | **done** | `copy-assets: schemas/ -> dist/schemas/`; all 6 present |
 | Asset root resolved from the module | **done** | `core/assets.ts`; `tests/assets.test.ts` holds both halves |
 | `package.json` packaging | **done** | `files: ["dist"]`, `bin.veridian`, `prepublishOnly`, `prepare` |
-| Gate stays green | **done** | `427 tests / 85 suites / 0 fail`, exit 0 |
+| Gate stays green | **done** | `495 tests / 94 suites / 0 fail`, exit 0 |
 | Smoke test exists **and discriminates** | **done** | falsified by reverting the asset root in the built `.js`: `FAIL ... exits 2, not 3`, exit 1 |
 | `npm pack` -> clean install -> run | **done** | 65 files, 124.5 kB; `npx veridian help` exit 0; a browserless validate exit 2 with schemas resolved from `node_modules` |
 | `Dockerfile` + `image` CI job | **done, in CI** | This machine has no container runtime, so the verification is where the runtime is. Run 34845548864 on `41d16f8`: job `container image` succeeded - the image builds, the container runs the CLI, and a browserless validate inside it resolves the schemas the image carries. |
@@ -322,14 +322,14 @@ database example runs the whole loop against a real SQLite file and reaches `PAS
 | Step | Status | Evidence |
 |------|--------|----------|
 | A second `EnvironmentAdapter` exists | **done** | `adapters/local-db/`, registered in `cli/worlds.ts`; the interface admitted it with no change to `EnvironmentAdapter` itself |
-| A second validator family exists | **done** | `validators/database/` - `db.query`, `db.value`, `db.count`, `db.table`, `db.column`, each declaring its own `targetNoun` |
+| A second validator family exists | **done** | `validators/database/` - `db.table`, `db.column`, `db.count`, `db.value`, each declaring its own `targetNoun` |
 | The world is a seam, not a browser | **done** | `examples/inventory-db/demo.ts` reaches exit 0 with no process, no socket, no page and no console |
 | The loop can fail, be repaired and pass against a database | **done** | iteration 1 `FAIL AC-001/AC-002/AC-003` + `PASS AC-004`; iterations 2-4 each remove exactly one failure; `4/4 mandatory criteria passed, environment valid, no safety violation, evidence complete` |
 | M1/M4/M5 hold for a non-web world | **done** | `core/metrics/history.ts` reads the bundle, not the adapter, so the same metrics run unchanged over a database bundle |
 | The simulated engine is recorded | **done** | every reading carries `engine: "sqlite"`, and `environment.json` records the world that was actually used |
 | The example is held by tests | **done** | `tests/inventory-db-demo.test.ts` (16) and `tests/local-db-environment.test.ts` (22) |
 
-**Five real defects were found by building this, and every one of them was found by *running* or by
+**Six real defects were found by building this, and every one of them was found by *running* or by
 *measuring*, never by reasoning.** That is the whole argument for a second adapter, stated as a result
 rather than as a hope.
 
@@ -365,6 +365,26 @@ rather than as a hope.
    asymmetry, because `nodeIo` returns an absolute path and `at()` accepts one. *A test double that
    resolves paths differently from the port it stands in for makes the suite lie in one direction or
    the other* - and this one made it lie by failing a world that was fine.
+
+6. **Three documents named a validator that does not exist.** `db.query` appeared as a member of this
+   family in `README.md`, **in this document's own table one section above**, and in `AGENTS.md`'s
+   layout roster - while `DB_VALIDATORS` held four entries and no source file mentioned the name at
+   all. Nothing failed, because a roster in prose is read by nothing that could disagree with it.
+   Found by writing `validators/database/db-validators.test.ts` and pinning `registry.names()` to the
+   four names the code actually exports - a measurement of the code, against which the prose was wrong
+   three times. *A list of names in a document is a claim about the code, and the cheapest way to hold
+   it is a test that reads the code.* It is the same shape as a count that does not match the run, and
+   as an identifier written in both `package.json` and its lockfile.
+
+**And the family had no unit coverage at all, which is the finding behind the finding.**
+`validators/playwright/` carried a 26 kB suite; `validators/database/` carried none, so the four
+validators that decide *every* database criterion's status were exercised only end to end, by one demo,
+through one contract. `validators/database/db-validators.test.ts` is 68 tests over the family's own
+documents: the roster, the malformed-observation path, every comparison, the status semantics, and the
+M3 rule that nothing unobserved may be reported as a pass. It was falsified rather than trusted -
+with the number branch in `compareCell` replaced by a single text comparison, four subtests fail, each
+naming a different property. *A suite that has only ever passed is indistinguishable from a suite that
+cannot fail.*
 
 **What the second adapter settled about the `PASS` rule.** `AGENTS.md`'s "Rules this build has paid
 for" carries the finding that a vocabulary re-listed by a schema falls behind its engine. The register

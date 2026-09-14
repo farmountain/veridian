@@ -8,7 +8,7 @@ instructions file for this workspace — do not add a second one
 > `local-web` adapter, the Playwright validators, the CLI, the schemas and the canonical demo all exist.
 > `local-db` - a second adapter and a second validator family, against a SQLite file with no browser -
 > exists beside them, and is the proof that `EnvironmentAdapter` is a seam. `npx tsc --noEmit` is silent
-> and `node --test` reports 427 passing tests. Two distribution routes ship - a clone and an npm package -
+> and `node --test` reports 495 passing tests. Two distribution routes ship - a clone and an npm package -
 > and there is still **no build step between the source tree and the running program**: Node 22 strips
 > types and runs `.ts` straight from the source. `npm run build` exists only to produce the *compiled*
 > copy an installed package needs, because Node refuses type-stripping under `node_modules`. Read
@@ -258,7 +258,7 @@ adapters/local-db/      LocalDbEnvironment - build a SQLite file, read it, reset
                         dynamic `import`, so there is no dependency to install either.
 validators/playwright/  Playwright web validators (element, value, text, count, url, console,
                         network).
-validators/database/    Database validators (query, value, count, table, column). Judge a reading in
+validators/database/    Database validators (table, column, count, value). Judge a reading in
                         core/environment/db-observation.ts, which is what keeps them from importing
                         an adapter. Each declares its own `targetNoun`, so the clarification ladder
                         asks "which table" rather than "which element".
@@ -352,7 +352,7 @@ on this machine and is quoted from its real output.
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 427 tests, ~1s. No directory argument.
+node --test                # the whole suite. 495 tests, ~1.3s. No directory argument.
 npm run gate               # typecheck then test. Run this before claiming anything is done.
 
 npm run build              # tsc -p tsconfig.build.json, then node scripts/copy-assets.mjs
@@ -732,6 +732,30 @@ port had none, which is why the defect reached a demo run.
   --package-lock-only --ignore-scripts` is the tool; `git diff --stat package-lock.json` should show
   one line. *An identifier declared in several places is a claim that will disagree with itself if the
   places are edited independently - and the thing you would expect to catch it does not even look.*
+
+- **A validator family that decides every verdict in its world had no unit coverage, while the other
+  family had 26 kB of it.** `validators/playwright/web-ui-validators.test.ts` is a thorough suite;
+  `validators/database/` had none, so `db.table`, `db.column`, `db.count` and `db.value` - the four
+  functions that decide *every* database criterion's status - were exercised only end to end, by one
+  demo, through one contract. The whole family's status semantics were held by a single example. This
+  is the same shape as "the shipped artifact is the one no test in `tests/` can reach", one layer in: a
+  *verdict path* reachable only through one happy-path demo is a path whose failure modes are untested.
+  `validators/database/db-validators.test.ts` now holds the roster, the malformed-observation path, each
+  comparison and each status, at 68 tests - **and it was falsified rather than trusted**: replacing the
+  number branch in `compareCell` with a single text comparison makes four subtests fail, each naming a
+  different property. *Compare families by the coverage they declare, not by whether they are
+  implemented - "it works" and "it is tested" are different claims.*
+
+- **A roster in prose and a roster in a registry are two lists of the same thing, and only one of them
+  is executable.** `db.query` was named as a member of the database validator family in `README.md`,
+  in `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` **and** in this file's own layout table, while
+  `DB_VALIDATORS` held four entries and no source file mentioned the name anywhere. Nothing failed,
+  because a list of names in a document is read by nothing that could disagree with it. It was found
+  by the new suite's *first* assertion, which pins `registry.names()` to the four the code exports -
+  a measurement of the code, against which three documents were wrong. *A list of names in a document
+  is a claim about the code, and the cheapest way to hold it is a test that reads the code.* **This is
+  the same shape as a count that does not match the run, and as an identifier written in both
+  `package.json` and its lockfile**: a fact recorded in prose drifts because nothing reads it.
 
 ## Documentation
 
