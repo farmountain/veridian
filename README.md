@@ -118,9 +118,9 @@ real sandbox.** Each iteration repaired one defect, so the failure set shrank
 `{AC-001, AC-002, AC-003}` -> `{AC-002, AC-003}` -> `{AC-003}` -> `{}`.
 
 The bundle for that run lands in `.veridian/runs/<run-id>/`: the definition it was given, the
-environment record, the execution log, the result, a screenshot per criterion, a Playwright trace and
-`failure.md`. `.veridian/latest-result.json` and `.veridian/latest-failure.md` are the artifacts an
-external agent reads to learn what failed **without Veridian having to drive it**.
+environment record, the execution log, the result, a screenshot and a Playwright trace per criterion,
+and `failure.md`. `.veridian/latest-result.json` and `.veridian/latest-failure.md` are the artifacts
+an external agent reads to learn what failed **without Veridian having to drive it**.
 
 ---
 

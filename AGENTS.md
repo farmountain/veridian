@@ -281,9 +281,18 @@ Git-friendly, and independently inspectable:
 │       ├── execution.log
 │       ├── result.json
 │       ├── screenshots/AC-00N.png
-│       └── trace/playwright.zip
+│       └── trace/AC-00N.zip
 └── snapshots/
 ```
+
+**A `trace` artifact reports `bytes: null`, and that is a contract rather than a gap.** The archive is
+declared when the criterion is observed, but Playwright writes it when the page closes, so its length
+does not exist yet at declaration time; the adapter records `null` rather than a guess. The *path* is
+derived once and used for both the bundle's spelling and the OS's, so the file the bundle names is the
+file on disk - which is the property a reader needs, because a size can be read from the filesystem
+and a wrong size cannot be detected from the bundle at all. One trace per criterion, not one per run:
+the file is a recording of that criterion's actions, and `tests/local-web-environment.test.ts` holds
+the path.
 
 `.veridian/latest-result.json` and `.veridian/latest-failure.md` are the Level-2 agent feedback
 artifacts — an external agent reads them to learn what failed without Veridian having to drive it.
@@ -520,6 +529,7 @@ Add a one-line index entry here for each new doc instead of duplicating its cont
 | [`docs/PLAN.md`](./docs/PLAN.md) | Any design, scope, or architecture decision. |
 | [`.github/skills/hipcortex-memory/`](./.github/skills/hipcortex-memory/SKILL.md) | Any read or write of project memory. |
 | [`.github/instructions/tests.instructions.md`](./.github/instructions/tests.instructions.md) | Auto-attaches to test files via `applyTo`. |
+| [`.github/instructions/typescript.instructions.md`](./.github/instructions/typescript.instructions.md) | Auto-attaches to every `*.ts` file via `applyTo`. |
 | [`.github/agents/verifier.agent.md`](./.github/agents/verifier.agent.md) | Delegated gate runs. Read-only by design. |
 | [`.github/prompts/new-module.prompt.md`](./.github/prompts/new-module.prompt.md) | `/` → **Add a Module**. |
 | [`.github/hooks/format.json`](./.github/hooks/format.json) | `PostToolUse` on every file write. |
@@ -532,5 +542,8 @@ whenever the manifest configures them. Since the stack is now settled on TypeScr
 `prettier` to activate as soon as a `package.json` declaring it as a dependency lands.
 
 Once the first TypeScript source lands, add a language-specific `applyTo` instruction (e.g.
-`**/*.ts`) for style conventions.
+`**/*.ts`) for style conventions. **Done:** `typescript.instructions.md` is that instruction, and it
+auto-attaches to `**/*.ts`. It was written from the flags in `tsconfig.json` and from the shape the
+tree already holds rather than from a preference, because a style guide invented for a codebase that
+already has a style is a second rulebook rather than a description.
 
