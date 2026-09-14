@@ -534,6 +534,44 @@ export function servedActions(): readonly string[] {
   return sorted(names);
 }
 
+/**
+ * Why this request target is not one this world serves, or `null` when it is.
+ *
+ * This is the *one* implementation of "is this address mine", and it has two callers on purpose.
+ * {@link HttpCloud} refuses a request that fails it, and the adapter asks it before a `call` step so
+ * that the same target is also recorded as a boundary crossing - because a criterion aiming at
+ * another host is the one network reach this world can genuinely refuse, and a refusal the boundary
+ * report never saw is a refusal the loop cannot use to withhold a `PASS`.
+ *
+ * Two conditions, and both are about the *target* rather than about reachability:
+ *
+ *  - A scheme or a leading `//` names a host. `new URL("http://elsewhere.example/v1/metering",
+ *    base)` resolves to `/v1/metering`, so before this existed the world answered a request
+ *    addressed to somebody else as its own - and recorded it under the path alone, so a reader could
+ *    not tell that the criterion had asked elsewhere.
+ *  - An unrooted path has no base. `v1/metering` is relative to something this world was never told,
+ *    and inventing the base is how a request ends up somewhere nobody named.
+ *
+ * The HTTP path can never reach either branch: `#handle` builds its path from a `URL` whose base is
+ * this world, so a `//`-leading request line arrives already rooted.
+ */
+export function targetProblem(path: string): string | null {
+  const namesAHost = /^[A-Za-z][A-Za-z0-9+.-]*:/.test(path) || path.startsWith("//");
+  if (namesAHost) {
+    return (
+      `the request path ${JSON.stringify(path)} names a host, and this world serves its own ` +
+      "address - a request addressed elsewhere answered here would be a request no client made"
+    );
+  }
+  if (!path.startsWith("/")) {
+    return (
+      `the request path ${JSON.stringify(path)} is not rooted, and a request target begins with ` +
+      "`/` - this world will not invent the address a relative path was relative to"
+    );
+  }
+  return null;
+}
+
 /** The address family a refusal can name, derived from the table so the two cannot drift. */
 const SERVE_HEADLINES: readonly string[] = [
   "GET /v1/version and GET /v1/identity - what this account is",
@@ -1033,6 +1071,44 @@ class HttpCloud implements CloudPort {
   #invoke(request: CloudRequest, source: CloudCallSource): CloudCallOutcome {
     const method = request.method.toUpperCase();
     const caller = request.principal ?? this.#identity.principal;
+    // A GET and a HEAD carry no body. HTTP says so, `#handle` never reads one for them, and a client
+    // cannot send one at all - `fetch` and `undici` refuse outright. So an in-process `call` carrying
+    // one is a request **no client could have made**, which is the same class as a request addressed
+    // to another host, and it is refused rather than quietly stripped. Stripping it would judge the
+    // criterion on a request it did not write, record a request it did not write either, and leave
+    // the body it named nowhere in the evidence - and the entry point it arrives through is the one a
+    // criterion's `call` step uses, so a divergence here is a criterion judging a world that does not
+    // exist. The HTTP path can never reach this branch.
+    if ((method === "GET" || method === "HEAD") && (request.body ?? "") !== "") {
+      return this.#record(source, method, request.path, caller, "", null, {
+        result: "invalid",
+        status: 400,
+        reason:
+          `the request carries a body on ${method}, and a ${method} carries none - a request no ` +
+          "client could have made is refused rather than answered with the body it named dropped",
+      });
+    }
+    // A request's path is a *request target*, and this world serves its own address. Parsed with a
+    // base, `http://elsewhere.example/v1/metering` was accepted and answered as this world's own
+    // `/v1/metering` - a request addressed to a different host, answered by this one, and recorded
+    // under the path alone so a reader could not see that the criterion had asked someone else. An
+    // absolute URL or an authority-relative reference is a question about a world this one is not, so
+    // it is refused by name. The HTTP path can never reach this branch: `#handle` builds it from a
+    // `URL` whose host is this world, so a `//`-leading request line arrives here already rooted.
+    //
+    // The rule is one function rather than two conditions, because the *adapter* needs the same
+    // answer: a `call` step naming a foreign host is the one network reach this world can genuinely
+    // refuse, and it is recorded as a boundary crossing. Two copies of this test would disagree the
+    // first time one of them was extended, and the copy in the adapter would then be enforcing a
+    // boundary the port did not hold - which is the defect the project has paid for twice already.
+    const problem = targetProblem(request.path);
+    if (problem !== null) {
+      return this.#record(source, method, request.path, caller, "", null, {
+        result: "invalid",
+        status: 400,
+        reason: problem,
+      });
+    }
     let url: URL;
     try {
       url = new URL(request.path, "http://cloud.invalid");

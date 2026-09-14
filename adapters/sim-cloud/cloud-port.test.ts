@@ -61,6 +61,7 @@ import {
   coversAction,
   httpCloud,
   servedActions,
+  targetProblem,
 } from "./cloud-port.ts";
 import type { CloudCallOutcome, CloudIdentity, CloudPort, CloudRequest } from "./cloud-port.ts";
 
@@ -335,6 +336,73 @@ describe("a request this world cannot answer", () => {
     const outcome = call(port, "PUT", "/v1/storage/buckets/cart-assets", { body: "not json" });
     assert.equal(outcome.status, 400);
     assert.equal(outcome.result, "invalid");
+  });
+
+  it("refuses a request addressed to another host rather than answering it as this world's own", () => {
+    const port = fresh();
+    // The defect this holds: parsed with a base, the absolute URL resolved to `/v1/metering` on this
+    // world, was answered by the meter, and was recorded under the path alone - so a criterion that
+    // asked a different host was judged by this one and the record could not show it. Two spellings
+    // of one mistake: a scheme, and an authority-relative reference.
+    const absolute = call(port, "GET", "http://elsewhere.example/v1/metering");
+    assert.equal(absolute.result, "invalid");
+    assert.equal(absolute.status, 400);
+    assert.equal(absolute.action, "");
+    assert.match(String(absolute.reason), /names a host/);
+    const recorded = port.calls()[0];
+    assert.equal(recorded?.path, "http://elsewhere.example/v1/metering", "the record kept the address it was given");
+
+    const authority = call(port, "GET", "//elsewhere.example/v1/metering");
+    assert.equal(authority.result, "invalid");
+    assert.equal(authority.status, 400);
+  });
+
+  it("refuses an unrooted path rather than inventing what it was relative to", () => {
+    const port = fresh();
+    const outcome = call(port, "GET", "v1/metering");
+    assert.equal(outcome.result, "invalid");
+    assert.equal(outcome.status, 400);
+    assert.match(String(outcome.reason), /not rooted/);
+  });
+
+  it("refuses a body on a GET, because no client could have sent one", () => {
+    // The in-process entry point is the one a criterion's `call` step uses, and the wire cannot carry
+    // a body on a GET at all - `fetch` refuses to build the request. A world that answered one anyway
+    // would be answering a request the application could never make, and the body the criterion named
+    // would be nowhere in the evidence it kept.
+    const port = fresh();
+    const refused = call(port, "GET", "/v1/version", { body: "a body a GET cannot carry" });
+    assert.equal(refused.result, "invalid");
+    assert.equal(refused.status, 400);
+    assert.match(String(refused.reason), /carries none/);
+    assert.equal(port.calls().at(-1)?.result, "invalid", "the refusal is in the record, like every other");
+    assert.equal(port.calls().at(-1)?.path, "/v1/version", "and it names the address that was asked");
+    // The same request without a body is unaffected, so the refusal is about the body, not the route.
+    assert.equal(call(port, "GET", "/v1/version").result, "ok");
+    // And a method that may carry one still does: this is not a blanket refusal of bodies.
+    assert.equal(call(port, "POST", "/v1/queues", { body: json({ name: "cart-jobs" }) }).result, "ok");
+  });
+
+  it("refuses with the one predicate's own words, because the adapter asks the same question", () => {
+    // The rule has two callers - this port, and the adapter's `call` step, which records a target
+    // naming a foreign host as a boundary crossing. Two copies would disagree the first time one was
+    // extended, and the copy in the adapter would then be refusing something the port served. So the
+    // property held here is agreement, not a spelling: whatever the predicate answers is what the
+    // world says, verbatim.
+    const port = fresh();
+    for (const path of ["http://elsewhere.example/v1/metering", "//elsewhere.example/v1", "v1/version"]) {
+      const predicate = targetProblem(path);
+      assert.notEqual(predicate, null, `${path} must be a target this world refuses`);
+      const outcome = call(port, "GET", path);
+      assert.equal(outcome.reason, predicate, "the refusal is the predicate's own sentence");
+      assert.equal(outcome.result, "invalid");
+    }
+    // And a target this world does serve answers nothing from the predicate.
+    assert.equal(targetProblem("/v1/version"), null);
+    assert.equal(call(port, "GET", "/v1/version").result, "ok");
+    // A path without a scheme but with a colon is a path, not an address: `//` and a scheme are the
+    // whole signal, and a stricter rule would refuse a legal object key.
+    assert.equal(targetProblem("/v1/storage/buckets/b/objects/a:b"), null);
   });
 });
 
