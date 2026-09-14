@@ -124,6 +124,14 @@ for audit ("what did we know on date X?").
 
 ## Pitfalls
 
+- **A write can be refused with a bare `403` and no stated reason, and it is the payload's digits.**
+  A `target` containing a long run of digits — a raw CI run id, for instance — is refused with an
+  empty body, while the same prose without that identifier is accepted. Isolate it by bisecting the
+  payload against `POST /memory/add`, then **omit** the identifier and say in the record that you
+  did, rather than disguising it to slip past a guard. Distinguish this from a content refusal,
+  which *does* state its reason (`{"error":"precondition blocked: PII risk=… patterns=[…]"}`).
+  **Report the reason the substrate actually gave.** A refusal is not an outage: emailing
+  "HipCortex unreachable" about a `403` sends the reader to check the one thing that works.
 - **Answering from the context window when memory was consulted and returned nothing.**
   Report "no prior record" explicitly — silence reads as confirmation.
 - **Storing symptoms.** "Fixed the parser" is useless next session. "Parser crashed because
