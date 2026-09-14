@@ -30,6 +30,7 @@ import { LocalWebEnvironment } from "../adapters/local-web/index.ts";
 import type { BrowserPort } from "../adapters/local-web/index.ts";
 import { LocalDbEnvironment } from "../adapters/local-db/index.ts";
 import { SimK8sEnvironment } from "../adapters/sim-k8s/index.ts";
+import { SimPosixEnvironment } from "../adapters/sim-posix/index.ts";
 import type { AdapterDescriptor, AdapterRequirement } from "../core/clarification/detect.ts";
 import type { Logger } from "../core/clarification/types.ts";
 import type { EnvironmentAdapter, EnvironmentPlan } from "../core/environment/index.ts";
@@ -143,6 +144,55 @@ const WORLDS: readonly World[] = [
     ],
     build: ({ environment, io, logger, processes, stateDir }) =>
       new SimK8sEnvironment(environment, {
+        io,
+        clock: systemClock,
+        logger,
+        processes,
+        stateDir,
+      }),
+  },
+  {
+    kind: "sim-posix",
+    summary: "a simulated POSIX-like system the application provisions itself, with no container and no VM",
+    // Three fields, and each is a fact that decides what a reading *means* rather than a convenience.
+    // A permission is judged against an account, so a world that defaulted the account would produce
+    // a verdict about nobody; a distribution is what "this is the image we hardened" is a claim
+    // about; and a sandbox root that drifted from the directory the adapter wrote to would make every
+    // reading about a different tree than the one the criteria acted on. The *sandbox directory* is
+    // not asked for, because `sim-posix` builds it - it is a declared place, not an input.
+    requires: [
+      {
+        field: "posix.distribution",
+        question: "Which system is this world standing in for?",
+        why:
+          "Every reading records the distribution, because a criterion of the form \"this is the " +
+          "image we hardened\" is a claim about a named system and not about systems in general. " +
+          "There is no default: this adapter substitutes a POSIX-like system, and a substituted " +
+          "system that will not say which one cannot be judged against anything.",
+      },
+      {
+        field: "posix.user",
+        question: "Which account do the criteria act as?",
+        why:
+          "A file's permissions decide whether the account running the criterion can read it, so the " +
+          "substituted world keeps an inode's owner and mode and answers `open(2)` the way the real " +
+          "call would. Without a named account there is no \"as whom\", and a hardening contract " +
+          "judged as nobody is not a hardening contract. `root` is refused rather than defaulted, " +
+          "because root reads every file and would pass a contract no ordinary user can satisfy.",
+      },
+      {
+        field: "posix.root",
+        question: "Where should the sandbox tree live?",
+        why:
+          "This is the host path the machine opens the world from, and it is resolved against the " +
+          "application directory the way every other path in this document is. There is no default: " +
+          "a sandbox root that drifted from the directory the adapter wrote to would make every " +
+          "reading describe a different tree than the one the criteria acted on, and the failure " +
+          "would look like a missing file rather than a misdescribed world.",
+      },
+    ],
+    build: ({ environment, io, logger, processes, stateDir }) =>
+      new SimPosixEnvironment(environment, {
         io,
         clock: systemClock,
         logger,

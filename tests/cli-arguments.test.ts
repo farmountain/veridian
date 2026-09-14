@@ -18,8 +18,8 @@ import type { EnvironmentPlan } from "../core/environment/types.ts";
  *
  * `cli/veridian.ts` is a bin whose last statement runs `main()`, so every rule it enforces about
  * arguments would otherwise only be checkable by spawning a process and reading its exit code. Those
- * rules are the CLI's public surface — which flags exist, which contradict each other, what a missing
- * value does — and they are exactly the kind of thing that rots silently.
+ * rules are the CLI's public surface �?which flags exist, which contradict each other, what a missing
+ * value does �?and they are exactly the kind of thing that rots silently.
  *
  * Two of the cases below are not stylistic. `--repair` swallowing the remainder of the line is the
  * reason the usage text says it must come last; if the parser ever started trying to find where the
@@ -55,6 +55,7 @@ function environmentPlan(browserEnabled: boolean): EnvironmentPlan {
     url: "http://127.0.0.1:4173/",
     databasePath: null,
     cluster: null,
+  posix: null,
     health: { path: "/", expectStatus: 200, timeoutMs: 15000, intervalMs: 250, readyPattern: null },
     reset: { strategy: "snapshot-restore", command: null },
     browser: { enabled: browserEnabled, viewport: null, locale: null, timezoneId: null },
@@ -217,7 +218,7 @@ describe("parseArguments: the repair command", () => {
 
   it("rejects --repair that swallowed only the conflicting switch", () => {
     // `--repair` consumes the rest unconditionally, so this is *not* the conflict case: there is a
-    // command, and it happens to be named like a switch. Asserted so the ordering is recorded — the
+    // command, and it happens to be named like a switch. Asserted so the ordering is recorded �?the
     // conflict check below only fires when --no-repair was seen *before* --repair.
     const parsed = parse("validate", "--repair", "--no-repair");
     assert.deepEqual(parsed.repair, ["--no-repair"]);

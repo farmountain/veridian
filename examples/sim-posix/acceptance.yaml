@@ -1,0 +1,295 @@
+# The contract. Deterministic actions (`run`), then declarative expectations (`expect`).
+#
+# Every criterion here is a question put to the system the world stands in for. Each one is phrased so
+# that exactly one plausible wrong answer exists, because a criterion that could be satisfied by the
+# wrong world is not a criterion.
+#
+# Read this next to `environment.yaml`: a `run` step's arguments are written the way the *sandbox*
+# spells a path (`/etc/veridian/policy.conf`), never the way this machine spells the directory the tree
+# lives in. Nothing in this file restates the distribution, the account or the port - those are facts
+# about the world and the application, and copying them here would create a third place for them to
+# disagree.
+#
+# ## The split this file is built on
+#
+# AC-001 asks what the application's own provisioning program *asked the world to do*. Every criterion
+# after it asks what the world *holds*. Collapsing the two is the classic shortcut and it is a false
+# pass with a longer name: a package that was in the base image, or a file that was already there, is
+# not evidence that this run provisioned anything. The validators keep the two apart because the
+# readings keep them apart - the action record is `execs`, the state record is `files`/`users`/
+# `packages`/`services`/`ports`.
+#
+# ## Why there are two criteria for one file, and two for one unit
+#
+# AC-006 and AC-007 read the same path and AC-004/AC-005 read the same unit, on purpose. "The file is
+# there" and "the file says what it must say" are different questions with different failure modes, and
+# a defect that moves a file moves them *differently*: the presence reading is decisive and FAILs, while
+# the contents reading cannot judge what it was not handed and answers INCONCLUSIVE, naming the
+# criterion that owns the question. A contract with only the contents criterion would report the same
+# defect as "unable to judge", which reads as a limitation of the tool rather than as a defect in the
+# application.
+#
+# AC-010 and AC-011 read the unit's consequence from two sides for the same reason: the service status
+# is the world's bookkeeping, and the port is a real socket this world really connected to.
+
+version: 1
+goal_id: sim-posix
+
+criteria:
+  # ---- the action record: what the application asked the world to do -----------------------------
+
+  - id: AC-001
+    description: >-
+      The application's own provisioning program asked this world to install its packages, and the
+      world answered the request by executing it. Observed with no `run` step on purpose: this
+      criterion judges what the application did on its own during `start`, so a contract that had to
+      issue the install itself would be validating the contract rather than the software.
+    expect:
+      - validator: posix.ran
+        target: apt-get
+        equals: completed
+        message: >-
+          This run holds no completed execution of `apt-get` issued by the application. Read
+          artifacts/AC-001.execs.json: the world records every command line it was handed, with the
+          exit code and the reason it gave, so a refusal is visible there rather than only here. Note
+          what this criterion does not say - it does not say the packages are present, which is AC-002's
+          question, because a command that succeeded and a system that changed are two facts.
+    evidence:
+      - json
+
+  - id: AC-002
+    description: >-
+      The world holds the packages the application named, and the provenance of the ones this project
+      cares about is this run. Two expectations, because they can disagree: a package can be present
+      because the base image carried it, which is why `installedBy` exists as a reading of its own.
+    expect:
+      - validator: posix.installed
+        target: ufw
+        equals: application
+        message: >-
+          The world holds no package named ufw that this run installed. The reading separates "the
+          package is there" from "this run put it there": check `posix.package` first, because a
+          package present since the image was built satisfies it and this criterion cannot report it.
+      - validator: posix.package
+        target: fail2ban
+        equals: present
+        message: >-
+          The world holds no installed fail2ban. `present` means *installed* rather than *mentioned*:
+          this world keeps a package it has removed in its own database with its status changed, so a
+          criterion that asked whether the name appeared would pass on a system where the package had
+          been uninstalled.
+    evidence:
+      - json
+
+  # ---- the account the unit runs as --------------------------------------------------------------
+
+  - id: AC-003
+    description: >-
+      The world holds the account the application's own unit names as its service account. This reads
+      the account record rather than the unit's text, because an account is state the world holds: a
+      unit that names a user nobody created is a unit that will not start.
+    expect:
+      - validator: posix.user
+        target: cart
+        equals: present
+        message: >-
+          The world holds no account named cart. Read artifacts/AC-003.observation.json: the users list
+          carries every account the world knows, with its uid, its shell and its home, so a differently
+          spelled account is visible by name rather than inferred from this failure.
+    evidence:
+      - json
+
+  # ---- the unit the world will start -------------------------------------------------------------
+
+  - id: AC-004
+    description: >-
+      The world holds the service unit the application installs. The state record, and the reason the
+      word "installed" in AC-003's description is not a description of a command: the application
+      wrote this file itself, through the host path the world gave it, and this criterion reads it the
+      way a later run would.
+    expect:
+      - validator: posix.file
+        target: /etc/systemd/system/cart-web.service
+        equals: present
+        message: >-
+          The sandbox holds no cart-web.service unit. Check the path as the sandbox spells it: the
+          application writes its files through the host path this world provides, and a criterion that
+          named this machine's directory would be asking about the developer's disk instead.
+    evidence:
+      - json
+
+  - id: AC-005
+    description: >-
+      The unit names the port that AC-011 then asks the world to be listening on. This is what ties the
+      two criteria together: the world binds whatever `Port=` says, so a unit that named a different
+      port would leave AC-011 judging a socket nobody bound.
+    expect:
+      - validator: posix.contents
+        target: /etc/systemd/system/cart-web.service
+        contains: Port=18080
+        message: >-
+          The unit does not name the port the criteria check. The world reads `Port=` out of this file
+          to decide what to bind, so this is not a formatting question: a unit with a different value
+          here is a service that would listen somewhere else.
+    evidence:
+      - json
+
+  # ---- the hardening baseline the review audits --------------------------------------------------
+
+  - id: AC-006
+    description: >-
+      The world holds the hardening baseline the application installs, at the path its own policy names.
+      Presence, not contents: a reader who wants to know what the file must say wants AC-007, and the
+      two are split so that "the file is missing" and "the file says something else" are reported as the
+      different defects they are.
+    expect:
+      - validator: posix.file
+        target: /etc/veridian/policy.conf
+        equals: present
+        message: >-
+          The sandbox holds no policy.conf under /etc/veridian. This criterion owns the question of
+          whether the file exists, which matters because the criterion that reads its contents cannot
+          answer it - a validator may not open a file, so a missing file reaches AC-007 as an inability
+          to judge rather than as a failure.
+    evidence:
+      - json
+
+  - id: AC-007
+    description: >-
+      The baseline tells the service to bind loopback. This is the kind of question only a
+      contents reading can answer: nothing about the file's existence, its mode or its owner
+      distinguishes a service told to listen on 127.0.0.1 from one told to listen on every interface,
+      and the difference is the whole of the hardening claim.
+    expect:
+      - validator: posix.contents
+        target: /etc/veridian/policy.conf
+        contains: CART_WEB_BIND=127.0.0.1
+        message: >-
+          The baseline does not tell the service to bind loopback, or the reading could not carry its
+          contents. The two are distinguished by the status rather than by this sentence: a FAIL means
+          the file was read and says something else, and INCONCLUSIVE means the file is not in the
+          reading at all - in which case AC-006 is the criterion that answers for it.
+    evidence:
+      - json
+
+  # ---- the secret, and the two questions the world keeps apart -----------------------------------
+
+  - id: AC-008
+    description: >-
+      The secrets file carries the mode the application's own policy states. Read as text rather than
+      as a number, deliberately: `0600` is a spelling of a permission set and not a quantity, so
+      comparing it numerically would make `600` and `0600` different values for one mode.
+    expect:
+      - validator: posix.permission
+        target: /etc/veridian/secrets.env
+        equals: "0600"
+        message: >-
+          The secrets file is not mode 0600. The reading carries the mode and the owner it judged, and
+          AC-009 asks about the owner separately: a file owned by the account the criteria act as would
+          be readable by them at 0600, which is why one criterion cannot stand for both.
+    evidence:
+      - json
+
+  - id: AC-009
+    description: >-
+      The secrets file is owned by root. The other half of the previous question, and the half a
+      mode-only reading would miss: mode and owner together decide whether an account can read a file,
+      and this criterion is deliberately checking the owner of a file whose contents no criterion in
+      this contract ever compares - so the secret never reaches the evidence bundle.
+    expect:
+      - validator: posix.owner
+        target: /etc/veridian/secrets.env
+        equals: root
+        message: >-
+          The secrets file is not owned by root. The world's own account table decided this reading, so
+          check artifacts/AC-009.observation.json for the record it judged rather than the file on this
+          machine, which this world's permissions were never derived from.
+    evidence:
+      - json
+
+  # ---- the service, by its status and by a real socket -------------------------------------------
+
+  - id: AC-010
+    description: >-
+      The application's own provisioning program started the unit, and the world holds it running. The
+      `systemctl start` line is the one that binds the socket, so this criterion is the difference
+      between a unit that is installed and a service that is up.
+    expect:
+      - validator: posix.running
+        target: cart-web
+        equals: running
+        message: >-
+          The world does not hold cart-web running. A unit that exists and a service that is running are
+          different facts and this criterion reports the second: read AC-001's exec artifact to see
+          whether the start was ever asked for, and this criterion's own observation for what the world
+          answered if it was.
+    evidence:
+      - json
+
+  - id: AC-011
+    description: >-
+      A socket really listens on the port the unit names. The world binds it in answer to the
+      application's own `systemctl start` and this criterion is judged on a real connect, not on the
+      world's bookkeeping: a reading that named a listening port it had not reached reports itself as
+      unverified, and this validator refuses to call that listening.
+    expect:
+      - validator: posix.port
+        target: "18080"
+        equals: listening
+        message: >-
+          Nothing is listening on 18080 in this world. The reading is taken by connecting, so a closed
+          port here is a real refusal rather than a stale table entry - and a port the world claimed but
+          did not reach is reported as unable to judge instead of as listening.
+    evidence:
+      - json
+
+  # ---- the contract acts on this world, and judges what it got -----------------------------------
+
+  - id: AC-012
+    description: >-
+      The account the criteria act as cannot read the secrets file. This is the criterion the whole
+      world is shaped for: `run` executes the command as that account, and `posix.probe` reads what the
+      world did with the criterion's own command rather than what the application did. Judged as a
+      pass when the command fails, which is the point - a hardening contract that asserted a command
+      *succeeded* would be asserting the opposite of what it claims.
+    steps:
+      - run:
+          - cat
+          - /etc/veridian/secrets.env
+    expect:
+      - validator: posix.probe
+        target: cat
+        equals: nonzero
+        message: >-
+          Reading the secrets file as the account the criteria act as did not fail. Either the mode or
+          the owner is wrong - AC-008 and AC-009 are the criteria that answer for each - or the world
+          answered the command with something other than a plain non-zero exit, which is visible in
+          this criterion's own exec artifact. The expected value is `nonzero` rather than `refused`:
+          the world ran the command and the account was denied, and those are different words for
+          different facts.
+    evidence:
+      - json
+
+  - id: AC-013
+    description: >-
+      The world refuses a command that climbs out of the sandbox. Judged as a pass, deliberately, and it
+      is the only way a contract can state that containment held: an argument vector naming `..` is
+      resolved against the sandbox root, and resolving it would read the developer's tree while the
+      reading described it as the sandbox's. One limitation, stated rather than discovered later - the
+      validator compares the world's *result* and not its stated *reason*, so this criterion cannot tell
+      a path that escapes from a command the world does not implement. The world's own wording is kept
+      in this criterion's exec artifact for a reader.
+    steps:
+      - run:
+          - cat
+          - ../../etc/passwd
+    expect:
+      - validator: posix.probe
+        target: cat
+        equals: refused
+        message: >-
+          The world did not refuse a command naming a path outside the sandbox. A simulated world that
+          resolved it would be reporting a verdict about the host's files while claiming to judge the
+          sandbox, which would make every other reading in this run untrustworthy.
+    evidence:
+      - json

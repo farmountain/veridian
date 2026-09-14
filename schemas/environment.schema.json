@@ -53,6 +53,17 @@
       "required": ["name", "namespace", "images"],
       "additionalProperties": false
     },
+    "posix": {
+      "type": ["object", "null"],
+      "description": "The POSIX-like system this world stands in for, when the world is one. Present for a simulated system such as `sim-posix`; absent for every other world. Same reasoning as `cluster`: stated here rather than as an adapter-private option, so the plan every reader sees names the same distribution, account and sandbox root the run measured, and so that 'this world is not a system' stays distinguishable from 'nobody filled the field in'. A world declaring `posix` has no url and no cluster, exactly as a database world has no url.",
+      "properties": {
+        "distribution": { "type": "string", "description": "The distribution the readings name, so a result says which system produced it." },
+        "user": { "type": "string", "pattern": "^[a-z_][a-z0-9_-]*$", "description": "The account the criteria act as. Readings are decided as this account, never as root - a hardening contract judged as root passes for a system no ordinary user can log into. The loader refuses `root` by name." },
+        "root": { "type": "string", "description": "The sandbox directory, relative to `app`. The world's filesystem is rebuilt here on every reset, which is why it is a directory of the world's own rather than the application directory: resetting a world rooted at the application would delete the code under test." }
+      },
+      "required": ["distribution", "user", "root"],
+      "additionalProperties": false
+    },
     "health": {
       "type": "object",
       "properties": {

@@ -34,6 +34,14 @@ examples/inventory-db/app/**.db
 # never produced pull successfully - a false PASS in the world's own evidence, kept in the repository.
 examples/sim-k8s/app/build/
 
+# The sandbox tree the `sim-posix` example's world builds. Same reasoning again, with the sharper
+# version of the k8s case: this directory *is* the system the run is judged against, so a committed
+# copy would let a criterion read a file the run did not install, a mode the run did not record, or a
+# socket nobody bound - and the bundle would then hold a PASS for a world this machine did not produce.
+# It sits under `app/` because `environment.yaml` resolves `posix.root` against its own `app:` value,
+# so the tree the world creates and the tree this rule excludes are the same one by construction.
+examples/sim-posix/app/sandbox/
+
 # Editors / OS
 .DS_Store
 Thumbs.db

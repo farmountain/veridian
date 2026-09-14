@@ -37,23 +37,25 @@ in `extension/vscode/`, if you want the same engine with a UI.
 git clone <this-repository-url> veridian
 cd veridian
 npm ci                    # runtime dependency: yaml. dev: typescript, @types/node.
-npm run gate              # tsc --noEmit, then the whole test suite. 694 tests, about two seconds
-                          # (this tree's own 634 plus the Cockpit's 60, which the runner discovers
+npm run gate              # tsc --noEmit, then the whole test suite. 856 tests, about two seconds
+                          # (this tree's own 796 plus the Cockpit's 60, which the runner discovers
                           # because it walks the tree; the extension has its own gate as well).
 
 npm run e2e:install       # one-time, ~150 MB: fetch the Playwright browser
 npm run demo              # the canonical demo: 3 defects, FAIL -> repair -> PASS
 npm run demo:db           # the second demo: the same loop against SQLite, no browser at all
 npm run demo:k8s          # the third demo: the app deploys itself into a SIMULATED control plane
+npm run demo:posix        # the fourth: the app provisions a SIMULATED Linux system it is judged on
 ```
 
-Run those five in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
+Run those six in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
 Playwright is installed **outside** the lockfile on purpose, so installing the browser before `npm ci`
 would discard it.
 
-`demo` and `demo:db` need no extra setup. `demo:k8s` needs neither a cluster nor `kubectl` - there is
-no cluster software anywhere in that run - which is the point of it: Veridian builds worlds, and a
-world may be simulated.
+`demo`, `demo:db` and `demo:posix` need no extra setup. `demo:k8s` needs neither a cluster nor
+`kubectl`, and `demo:posix` needs neither a virtual machine nor a Linux host - there is no cluster
+software and no guest kernel anywhere in those runs - which is the point of them: Veridian builds
+worlds, and a world may be simulated.
 
 Requires **Node 22.18.0 or newer**.
 
@@ -408,6 +410,60 @@ browser: { enabled: true, viewport: { width: 1280, height: 800 }, locale: en-US,
 failing has never demonstrated that it can say *yes*, and a validator that can only ever say "no" is
 indistinguishable from one that is broken.
 
+### Criteria that act, not only observe
+
+A step is one of seven kinds, and each is the *only* way to act in the world it belongs to: `goto`,
+`fill`, `click` and `waitFor` in a browser; `sql` in a database world, which has no page to click; 
+`apply` in a cluster world, which has no form to fill; and `run` in a system world, which has neither.
+They exist because some questions cannot be answered by looking: whether a service survives a restart,
+whether a path outside the sandbox is really refused, whether a hardening change actually hardened
+anything.
+
+`run` is an argument vector rather than a shell string, and that is deliberate - a shell string would
+need a shell, and the shell would be a second substitution with its own quoting rules to get wrong,
+while the interesting question (can this account read that file?) is asked perfectly well by naming the
+program and its arguments.
+
+```yaml
+# acceptance.yaml, against the sim-posix world
+  - id: AC-013
+    description: The world refuses a command that climbs out of the sandbox.
+    mandatory: true
+    steps:
+      - run:
+          - cat
+          - ../../etc/passwd
+    expect:
+      - validator: posix.probe
+        target: cat
+        equals: refused
+        message: The world did not refuse a command naming a path outside the sandbox.
+```
+
+The world's document says which system is being stood in for, and which account the criteria act as -
+which is what makes a hardening verdict possible at all, since a world whose criteria run as `root`
+reads every file and would report a pass for a system no ordinary account can use:
+
+```yaml
+# environment.yaml, against the sim-posix world
+adapter: sim-posix
+app: app
+url: null                       # no HTTP surface to probe
+dependencyInstall: null         # the app's own program needs no package manager to fetch it
+posix:
+  distribution: debian          # written into the sandbox as /etc/os-release, by the world's own seed
+  user: cart-audit              # the account criteria act as; the loader refuses `root` by name
+  root: sandbox                 # resolved against the application directory
+start: { command: node, args: [provision.mjs], readyPattern: 'cart-web provisioned: \d+ files installed' }
+health: { timeoutMs: 30000, intervalMs: 100 }
+reset: { strategy: restart }
+```
+
+`npm run demo:posix` drives this: four deliberate defects, thirteen criteria, and a `FAIL` → repair →
+`PASS` descent in five iterations (measured, verbatim: iteration 1 fails `AC-003`, `AC-006`, `AC-008`,
+`AC-010`, `AC-011`, `AC-012` and cannot judge `AC-007`; iteration 5 is `PASS` on all thirteen with the
+reason `13/13 mandatory criteria passed, environment valid, no safety violation, evidence complete.`).
+
 ---
 
 ## How the code is arranged
@@ -421,17 +477,21 @@ core/goal/              goal definition, loading, persistence, versioning
 core/acceptance/        AcceptanceCriterion, and the engine that turns a contract into a sequence
 core/execution/         the run controller: state machine, bounded exits, repair gate
 core/validation/        ValidationResult, the validator registry, status semantics, verdict rollup
-core/environment/       EnvironmentAdapter, the environment manager, the shared web and database
-                        vocabularies that keep validators from importing an adapter
+core/environment/       EnvironmentAdapter, the environment manager, the shared web, database, k8s
+                        and posix vocabularies that keep validators from importing an adapter
 core/evidence/          the evidence engine and the run bundle
 core/run/               run identity, history, iteration state
 core/metrics/           M1..M5, measured over the bundles on disk
 adapters/local-web/     starts, health-checks, resets a local app; drives Playwright lazily
 adapters/local-db/      builds a SQLite file, reads it, resets by rebuilding; no dependency to add
 adapters/sim-k8s/      starts the app against a substitute control plane it serves itself; no cluster
+adapters/sim-posix/     provisions a real tree while a substitute holds accounts, modes, packages,
+                        units and sockets; no virtual machine and no guest kernel
 validators/playwright/  web.element/text/value/count/url/console/network
 validators/database/    db.table/column/count/value
 validators/k8s/         k8s.applied/deployment/image/ready/pod/service/event
+validators/posix/       posix.ran/package/installed/user/file/contents/permission/owner/
+                        service/running/port/probe
 schemas/                goal / acceptance / environment / run / result / ambiguity
 scripts/                bootstrap and build steps that must run before anything is checked
 examples/shopping-cart/ the canonical demo: correct app, defect overlay, goal, contract, world
@@ -439,9 +499,11 @@ examples/inventory-db/  the second demo: the same loop against a world with no p
                         no page and no console
 examples/sim-k8s/       the third demo, and the first simulated world: the app deploys itself into a
                         substitute control plane and is judged on what the substitute holds
+examples/sim-posix/     the fourth demo: the app provisions a substitute Linux system through commands
+                        it really issues, and is judged as a named account rather than as root
 extension/vscode/       the VS Code Cockpit: a thin client, no validation logic. The one directory
                         with a build step, because the extension host is not Node's loader
-tests/                  694 tests in a root `node --test` run: this tree's own 634 plus the
+tests/                  856 tests in a root `node --test` run: this tree's own 796 plus the
                         Cockpit's 60
 
 dist/                   GENERATED by `npm run build`. Never edited, never committed.
@@ -467,19 +529,23 @@ ValidationResult:    criterion_id, status, actual, expected, timestamp, evidence
 
 Layering is enforced by hand, and `core/*` may not import `adapters/*`, `validators/*` or `cli/*`;
 `validators/*` may not import `adapters/*` (the shared vocabulary lives in
-`core/environment/web-observation.ts`, `db-observation.ts` and `k8s-observation.ts` for exactly that
-reason); `cli/*` is the only layer that may import all three.
+`core/environment/web-observation.ts`, `db-observation.ts`, `k8s-observation.ts` and
+`posix-observation.ts` for exactly that reason); `cli/*` is the only layer that may import all three.
 
 ---
 
 ## Scope
 
 **In, for the MVP:** VS Code + Veridian Core + a local application + a browser + Playwright +
-deterministic acceptance criteria + evidence + reset/replay. Three adapters exist: `local-web`,
+deterministic acceptance criteria + evidence + reset/replay. Four adapters exist: `local-web`,
 `local-db` - the proof that `EnvironmentAdapter` is a seam rather than a browser harness with an
-interface bolted on - and `sim-k8s`, the first *simulated* world: a real application process really
-deploying itself into a substitute control plane, over a real HTTP surface it really calls, with no
-cluster software anywhere in the loop.
+interface bolted on - and two *simulated* worlds: `sim-k8s`, in which a real application process
+really deploys itself into a substitute control plane over a real HTTP surface it really calls, with
+no cluster software anywhere in the loop, and `sim-posix`, in which a real application process really
+provisions a substitute Linux system through commands it really issues, with no virtual machine and
+no guest kernel anywhere in the loop. In both, the substitution is **declared**: `environment.json`
+names what was stood in for, so a `PASS` is traceable to a named substitute rather than to unexamined
+reality.
 
 **Out, deliberately:** Kubernetes, cloud deployment, VM or mobile orchestration, distributed
 execution, data lakes, multi-agent orchestration, LLM training, a plugin marketplace, a SaaS backend.

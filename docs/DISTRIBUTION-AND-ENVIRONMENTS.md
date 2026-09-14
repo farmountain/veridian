@@ -20,7 +20,7 @@ the MVP, this one covers what comes after it.
 | 2 | Docker install route | Never attempted | this doc, Phase A2 |
 | 3 | VS Code extension | **Built** (Phase B) | `PLAN.md` §30, this doc, Phase B |
 | 4 | Database environment | Roadmap "Later" | `PLAN.md` §38, this doc, Phase C |
-| 5 | Linux / Kali / Windows / macOS | Roadmap Tier 2-3 | blocked, §5 |
+| 5 | Linux / Kali / Windows / macOS | Roadmap Tier 2-3 | Linux built as a **simulated** world, `sim-posix` (Phase C3); Windows/macOS planned (`sim-os`), §5 |
 | 6 | Kubernetes, cloud, data platform | Roadmap Tier 4-5 | Kubernetes built as a **simulated** world, `sim-k8s`; cloud and data planned (§5) |
 
 Nothing in this list is forbidden. `PLAN.md` §3 forbids Veridian becoming a *Kubernetes management
@@ -156,7 +156,7 @@ What exists instead is the nearest thing that can be run here, and the two are n
 | Typecheck | `npx tsc --noEmit` | silent (exit 0) |
 | Decisions, headless | `node --test` | 60 tests, 0 failing |
 | Build | `npm run build` | `out/` - 6 files |
-| **Compiled artifact** | `npm run smoke:out` | 14 checks, exit 0 |
+| **Compiled artifact** | `npm run smoke:out` | 15 checks, exit 0 |
 | All of the above | `npm run gate` | exit 0 |
 
 The third row is the reason this phase could be built at all: the extension host is not Node's
@@ -239,6 +239,37 @@ to a named substitute rather than to unexamined reality.
 rewrites the manifests, `PASS` on the last - with no cluster anywhere on the machine, and
 `environment.json` names what was simulated.
 
+### Phase C3 - the fourth adapter: `sim-posix`, the operating-system world
+
+Phases C and C2 proved the seam admits a second and a third world. This one attacks the axis neither
+of them touched: a world whose subject is the *operating system itself* - accounts, file modes,
+ownership, service state, a listening socket and the refusal of a path that escapes the sandbox.
+
+There is no virtual machine, no image, no `qemu` and no guest kernel anywhere in the loop. A real
+Node process provisions a real tree under the application's own directory, issuing the commands a
+real provisioning script issues (`apt-get`, `adduser`, `install`, `chmod`, `systemctl`, `nmap`) as
+JSON vectors on its own stdout; the substitute executes them and holds the resulting system - users,
+groups, packages, files with modes and owners, units and their state, sockets - in a small state
+file. Permissions are decided **as a named account** the environment declares, which is what makes a
+hardening contract judgeable: a world whose criteria act as `root` cannot produce a hardening verdict
+at all.
+
+- `core/` gains `core/environment/posix-observation.ts` and one more plan field (`PosixPlan`), and
+  nothing else a validator could have reached through an adapter.
+- A fourth validator family - `posix.ran`, `posix.package`, `posix.installed`, `posix.user`,
+  `posix.file`, `posix.contents`, `posix.permission`, `posix.owner`, `posix.service`, `posix.running`,
+  `posix.port`, `posix.probe` - is addable without touching `core/validation` or `core/execution`.
+- A criterion can **act** in this world through a `run` step: two of the demo's criteria execute a
+  command as the acting account and judge what the world did. That is the step kind `sim-k8s` needed,
+  and the register that owns step kinds is where it is declared once.
+- The sandbox refuses an escaping path, and the difference between a crossing by the *application* and
+  a crossing by a *criterion* is a boundary fact rather than a verdict: the first makes the `PASS`
+  rule's third clause false, the second is a reading.
+
+**Acceptance:** the demo runs the whole loop against a tree with four deliberate defects, an external
+repair agent rewrites the provisioning program one defect per iteration, and `environment.json` names
+which system was stood in for.
+
 ### Phase D - the rest of Tier 1
 
 `local-api` and `local-process` (`PLAN.md` §36 Tier 1). Both need only a child process and an HTTP
@@ -301,7 +332,7 @@ run ids rather than adjectives.
 | `sim-k8s` | real app process against a real HTTP control plane | scheduler, kubelet, etcd, CNI, admission | **built** |
 | `sim-cloud` | real app process against real HTTP endpoints | the AWS / Azure / GCP services | planned |
 | `sim-container` | real app process | the runtime, the image store, cgroup semantics | planned |
-| `sim-posix` (linux, kali) | real process runner + real sandboxed filesystem | the kernel, the distro, the package manager; Kali's attack network | planned |
+| `sim-posix` (linux, kali) | real process runner + real sandboxed filesystem | the kernel, the distro, the package manager; Kali's attack network | **built** (Linux/Debian; Kali is the same world with a different declared distribution) |
 | `sim-os` (windows, macos) | real process runner | registry / plist, path and ACL semantics, the OS API surface | planned |
 | `sim-data` | real app process against real protocol endpoints | the Kafka / Spark / Hadoop / Airflow runtimes | planned |
 | `sim-mobile` | real app code against a real device API surface | the device, the emulator, the touch OS | planned |
@@ -530,3 +561,62 @@ The plan's own §35 claim survives a third sample.
    *An environment predicate duplicated across two layers is a claim about agreement that nothing
    checks - and its divergence is `INCONCLUSIVE` on every criterion at best and a false promise at
    worst.*
+
+### Phase C3: the POSIX world, and what the fourth adapter proved
+
+| Step | Status | Evidence |
+|------|--------|----------|
+| Substitute system | built | `adapters/sim-posix/posix-port.ts` holds the accounts, groups, packages, files with modes and owners, units and their state, and sockets; it executes the command vectors the provisioning program prints and answers a reading derived from that state. `posix-port.test.ts` is 20 tests over it. |
+| Adapter lifecycle | built | `adapters/sim-posix/sim-posix-environment.ts` implements all ten `EnvironmentAdapter` methods. `reset` rebuilds the tree and re-provisions it, `stop` keeps the tree so the paths a bundle quotes stay readable, and a `snapshot-restore` reset it cannot perform is **refused by name** rather than silently downgraded to a restart. |
+| Observation vocabulary | built | `core/environment/posix-observation.ts`, so no validator imports an adapter. The fourth family needed **no core change** beyond this and the name registration - the same claim Phases C and C2 made, now against a world whose subject is an operating system. |
+| Validator family | built | `validators/posix/` - twelve validators, 89 tests, falsified by breaking a comparison rather than trusted. Each declares its own `targetNoun`, so the clarification ladder asks "which account" rather than "which element". |
+| Acting criteria | built | The `run` step kind: a criterion executes a command as the account the world declared and judges the result. That is the step kind `sim-k8s` first needed; the register in `core/acceptance/` owns it once, so the schema and the engine cannot fall behind one another. |
+| Schema and plan | built | `EnvironmentPlan.posix` + `readPosix`, so a bundle's `environment.json` says which system stood in. `readPosix` resolves the declared root against the **application's own directory**, and refuses `user: "root"` by name. |
+| Demo | built | `examples/sim-posix/` - four deliberate defects, thirteen criteria, `npm run demo:posix`. Measured, verbatim: iteration 1 `FAIL`s `AC-003`, `AC-006`, `AC-008`, `AC-010`, `AC-011`, `AC-012` and cannot judge `AC-007`; iterations 2-4 each repair one defect in criterion order and lose exactly the criteria that defect controls, including the two pairs that move **together** - `AC-008` and `AC-012` from the one mode change, `AC-010` and `AC-011` from the unit never being started; iteration 5 is `PASS` on all thirteen with the reason `13/13 mandatory criteria passed, environment valid, no safety violation, evidence complete.` Each configuration was run twice from a tree the previous run had left behind, and the two progressions were identical iteration for iteration. |
+| Refusal as a result | built | `AC-013` runs `cat ../../etc/passwd` as the acting account and expects the world to **refuse** it. The substitute answers with the containment reason naming that path, and the criterion judges the refusal rather than the exit code alone. |
+| Regression tests | built | `tests/sim-posix-demo.test.ts` (15 tests, over the table's criterion order and discrimination claim, the one multi-line block and the line-ending rule, and the real file's round trip) plus `tests/sim-posix-environment.test.ts` (37 tests over the adapter's refusals and lifecycle). |
+
+**What the fourth world settled.** `core/` changed by an observation vocabulary and a name - the same
+claim, made now against a world with no process boundary it owns, no socket it serves and no page at
+all, but a filesystem and a permission model. The plan's §35 claim survives a fourth sample.
+
+**Three defects this world's build produced.**
+
+1. **A flag's value read as an operand.** The substitute's `adduser` took "the words that do not start
+   with `-`" as its operands, so `adduser --system --home /var/lib/cart-web cart` made an account
+   named `/var/lib/cart-web` and treated the real name as a group to join - and it exited 0, so the
+   world reported success for a command it had not performed. A criterion asking whether `cart` exists
+   could then never pass, however many times the loop re-observed it. The demo's progression, which
+   had been a clean descent through the other three defects, showed `AC-003` as the one criterion that
+   did not move - which is exactly the signature this file's own rule describes: *a criterion that
+   stays `FAIL` after its defect has been repaired is a defect in the criterion, the target spelling,
+   the substitute, or the reading - not in the repair.* Found by reading the bundle's own transcript
+   for that criterion, where an account name beginning with `/` was sitting in plain sight. Held now
+   by two tests, each falsified by deleting one `index += 1`.
+
+2. **A world a run inherits is not a world that run built.** `stop()` keeps the sandbox on purpose - a
+   bundle quotes paths inside it - so the *next* run's first observation can read the previous run's
+   files. `prepare()` made directories without clearing, so the first iteration of the second run read
+   a `/etc/veridian/policy.conf` that run had never installed - its own application had written
+   `policy.cfg`, which is the defect under test - and two criteria passed on someone else's artifact.
+   The following iteration's `reset()` wiped it, so the symptom was a progression one iteration out of
+   step rather than an error, and the run still ended in `PASS`. It is a **false `PASS`**, the class
+   this product exists to make impossible, and it was found by running the demo twice in a row and
+   comparing the two progressions rather than by reading the port. `prepare()` and `reset()` are now
+   one implementation - *two implementations of one rule disagree the first time a world arrives that
+   only one of them was written for* - and `posix-port.test.ts` holds it by writing a file into the
+   tree by hand and requiring it to be gone after a fresh `prepare()`.
+
+3. **A repair the world never observed.** The first measured run's second iteration was identical to
+   its first: the repair agent had written a change the running world had not yet re-read, so the
+   criterion it repaired was still reading the state from before the fix. On this world the repair is
+   a file write against a tree the *next* iteration rebuilds, so the fix is the reset rather than a
+   reload - but the rule generalises: *a repair the world never observed is not a repair, and a loop
+   that reports progress from its own intentions is reporting the wrong run.*
+
+**And one gap recorded rather than closed.** The repair agent's own stdout is **not** in the run
+bundle. Diagnosing defect 1 required reading the injected program, the exec record and the reading to
+reconstruct what the agent had done, because the bundle holds the criteria's evidence and not the
+actor's transcript - *an evidence bundle that omits the actor's own transcript is a bundle a reader
+cannot audit.* Persisting it is a change to the evidence writer, and it is recorded here as owed
+rather than attempted in the same pass as the world it would have helped.

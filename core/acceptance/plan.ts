@@ -17,58 +17,36 @@ import type { AcceptanceContract, AcceptanceCriterion, EvidenceKind } from "./ty
  */
 
 /**
- * Every action a criterion may take, across every world.
+ * The step vocabulary moved to `steps.ts`, and this line is the whole of what is left of it here.
  *
- * This is a closed vocabulary *inside `core/`*, and writing that down is worth more than the entry
- * added to it. A world whose actions are not in this list cannot express them without an edit here,
- * so adding the first non-web adapter makes the list one entry longer and the coupling between
- * `core/` and a world one degree more visible - not smaller. The right shape is a register each
- * adapter contributes to, and it has one caller today; `docs/DISTRIBUTION-AND-ENVIRONMENTS.md`
- * records it as the change a *second* non-web adapter should force, rather than a list of one.
+ * What stood above was a comment promising a register and a nine-string list that kept it from
+ * existing: *the right shape is a register each adapter contributes to, ... the change a second
+ * non-web adapter should force*. Two non-web adapters have since arrived, and a third is arriving,
+ * so the register is written - `core/acceptance/steps.ts` - and these are re-exports rather than a
+ * second copy. Every import path in the tree still resolves, and there is no longer a place where a
+ * new action can be half-added.
  */
-export const STEP_KINDS = [
-  "goto",
-  "click",
-  "reload",
-  "fill",
-  "select",
-  "press",
-  "waitFor",
-  "sql",
-  "apply",
-] as const;
-export type StepKind = (typeof STEP_KINDS)[number];
+export {
+  STEP_CODEC_COVERAGE,
+  STEP_KINDS,
+  WAIT_STATES,
+  decodeStep,
+  describeStepKinds,
+  encodeStep,
+  type StepCodec,
+  type StepKind,
+  type ValidationStep,
+  type WaitState,
+} from "./steps.ts";
 
-export const WAIT_STATES = ["attached", "detached", "visible", "hidden"] as const;
-export type WaitState = (typeof WAIT_STATES)[number];
+// Re-exported for callers, and imported for use here: a re-export is not a binding, so the union and
+// the decoder have to be named twice for one of them to be in scope. Two lines, one source.
+import { decodeStep } from "./steps.ts";
+import type { ValidationStep } from "./steps.ts";
 
-/** A step decoded from its wire shape. The contract has one action key; this has one discriminant. */
-export type ValidationStep =
-  | { readonly kind: "goto"; readonly url: string }
-  | { readonly kind: "click"; readonly target: string }
-  | { readonly kind: "reload" }
-  | { readonly kind: "fill"; readonly target: string; readonly value: string }
-  | { readonly kind: "select"; readonly target: string; readonly value: string }
-  | { readonly kind: "press"; readonly target: string; readonly key: string }
-  | { readonly kind: "waitFor"; readonly target: string; readonly state: WaitState }
-  /**
-   * One statement executed against the world's own database, before the criterion is observed.
-   *
-   * It is the criterion's *action*, not its judgement: it sets the world up, or tries to violate a
-   * constraint, and the `expect` entries read what actually happened. One statement rather than a
-   * batch, so a failure names the statement that produced it.
-   */
-  | { readonly kind: "sql"; readonly statement: string }
-  /**
-   * One manifest put to the world's own cluster, before the criterion is observed.
-   *
-   * The cluster counterpart of `sql`, and it follows the same rule for the same reason: the step is
-   * the criterion's *action*, not its judgement. The path is read relative to the application
-   * directory, so a criterion judges the manifests the application actually ships. A manifest
-   * embedded in the contract would be judged instead of the artifact - and an operator repairing the
-   * application would be repairing a file the run never read.
-   */
-  | { readonly kind: "apply"; readonly manifest: string };
+/** A step decoded from its wire shape. Declared once, in `steps.ts`, beside the codecs that produce
+ * it - a union declared twice is the same class of duplication the register above removed. */
+
 
 export const COMPARISON_KEYS = ["equals", "contains", "matches", "atLeast", "atMost"] as const;
 export type ComparisonKey = (typeof COMPARISON_KEYS)[number];
@@ -120,106 +98,6 @@ function requireString(value: unknown, path: string, what: string): string {
     throw defect(path, `${what} must be a non-empty string`);
   }
   return value;
-}
-
-const stepPath = (criterionId: string, index: number, key?: string): string =>
-  `${criterionId}.steps[${index}]${key ? `.${key}` : ""}`;
-
-/** Decode one wire step into a discriminated step. */
-export function decodeStep(
-  raw: Readonly<Record<string, unknown>>,
-  criterionId: string,
-  index: number,
-): ValidationStep {
-  const present = STEP_KINDS.filter((kind) => raw[kind] !== undefined);
-  if (present.length !== 1) {
-    throw defect(
-      stepPath(criterionId, index),
-      `a step must name exactly one action; found ${present.length === 0 ? "none" : present.join(", ")}`,
-    );
-  }
-  const kind = present[0] as StepKind;
-  const body = raw[kind];
-  const path = stepPath(criterionId, index, kind);
-
-  switch (kind) {
-    case "goto":
-      return { kind, url: requireString(body, path, "goto") };
-    case "click":
-      return { kind, target: requireString(body, path, "click") };
-    case "reload":
-      return { kind };
-    case "fill":
-    case "select": {
-      if (!isPlainObject(body)) throw defect(path, `${kind} must be an object with target and value`);
-      return {
-        kind,
-        target: requireString(body["target"], `${path}.target`, `${kind}.target`),
-        value: requireString(body["value"], `${path}.value`, `${kind}.value`),
-      };
-    }
-    case "press": {
-      if (!isPlainObject(body)) throw defect(path, "press must be an object with target and key");
-      return {
-        kind,
-        target: requireString(body["target"], `${path}.target`, "press.target"),
-        key: requireString(body["key"], `${path}.key`, "press.key"),
-      };
-    }
-    case "waitFor": {
-      if (!isPlainObject(body)) throw defect(path, "waitFor must be an object with a target");
-      // Defaulted here rather than through the protocol: `waitFor.state` is applied during decode,
-      // where its meaning is local and its default is fail-safe in the only direction that matters.
-      // Waiting for `visible` is *stricter* than `attached`, so the default cannot let a step pass
-      // that would have failed — it can only fail a step that a laxer reading would have allowed.
-      const state = body["state"] ?? "visible";
-      if (typeof state !== "string" || !(WAIT_STATES as readonly string[]).includes(state)) {
-        throw defect(`${path}.state`, `waitFor.state must be one of ${WAIT_STATES.join(", ")}`);
-      }
-      return {
-        kind,
-        target: requireString(body["target"], `${path}.target`, "waitFor.target"),
-        state: state as WaitState,
-      };
-    }
-    case "sql":
-      return { kind, statement: requireString(body, path, "sql") };
-    case "apply":
-      return { kind, manifest: requireString(body, path, "apply") };
-  }
-}
-
-/**
- * Encode a decoded step back into the wire record an adapter receives.
- *
- * The encoder sits beside {@link decodeStep} on purpose. A round-trip pair split across two files
- * drifts, and the drift is silent: the decoder keeps accepting documents the encoder no longer
- * produces, and the adapter is handed a shape only one of the two knows about.
- *
- * `waitFor.state` is written out even when it was defaulted, because what the adapter receives must
- * be what was actually decided — not what the author happened to type.
- */
-export function encodeStep(step: ValidationStep): Readonly<Record<string, unknown>> {
-  switch (step.kind) {
-    case "goto":
-      return { goto: step.url };
-    case "click":
-      return { click: step.target };
-    case "reload":
-      return { reload: {} };
-    case "fill":
-      return { fill: { target: step.target, value: step.value } };
-    case "select":
-      return { select: { target: step.target, value: step.value } };
-    case "press":
-      return { press: { target: step.target, key: step.key } };
-    case "waitFor":
-      return { waitFor: { target: step.target, state: step.state } };
-    case "sql":
-      return { sql: step.statement };
-    case "apply":
-      return { apply: step.manifest };
-  }
 }
 
 function decodeExpectation(

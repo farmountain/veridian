@@ -119,6 +119,12 @@
           "required": ["apply"],
           "properties": { "apply": { "type": "string", "description": "One manifest submitted to the cluster the world stands in for, producing the objects the criterion's `k8s.*` expectations read. This is how a cluster world is acted on: it has no page to click and no form to fill, so the equivalent of an interaction is a manifest with an observable result. The path is read relative to the application directory, so the criterion judges the manifests the application actually ships rather than a copy embedded in the contract." } },
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["run"],
+          "properties": { "run": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "description": "One command executed inside the system the world stands in for, as an argument vector rather than a command line, producing the files, permissions, users, services and ports the criterion's `posix.*` expectations read. This is how a system world is acted on: it has no page to click and no form to fill, so the equivalent of an interaction is a command with an observable result. An argument vector rather than a shell string because a shell string would need a shell, and the shell would be a second substitution with its own quoting rules to get wrong - while the interesting question (can this user read that file?) is asked perfectly well by naming the program and its arguments. The world resolves the program name against its own bin directory, so the same record drives a substituted system and a real one." } },
+          "additionalProperties": false
         }
       ]
     },

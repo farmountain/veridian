@@ -18,7 +18,7 @@ estimated:
 | Typecheck | `npx tsc --noEmit` | silent (exit 0) |
 | Tests | `node --test` | 60 tests, 0 failing |
 | Build | `npm run build` | `out/` - 6 files |
-| Compiled artifact | `npm run smoke:out` | 14 checks, exit 0 |
+| Compiled artifact | `npm run smoke:out` | 15 checks, exit 0 |
 | All of the above | `npm run gate` | exit 0 |
 
 ## Running it
@@ -93,7 +93,13 @@ Three layers, because the extension has three execution surfaces:
    aliases `vscode` to `scripts/vscode-stub.mjs`, loads the real compiled entry point, calls
    `activate`, and asserts that the commands it registers are exactly the six the manifest declares.
    It was falsified rather than trusted: pointing `main` at a path the build does not produce makes it
-   fail, naming the manifest as the cause.
+   fail, naming the manifest as the cause. Its two dashboard checks were fixed and re-falsified in the
+   same way. They used to wait a single turn of the loop for the refresh - which does not await itself -
+   to land, and *one turn* is a statement about the machine's schedule rather than about the extension:
+   the refresh awaits real `fs` I/O, so under load the turn ended before the read did and a healthy
+   extension failed a check. The wait is now bounded and keyed on the condition (`settled`), rather than
+   on a turn count, and the probe that shows it does work is to make the dashboard arrive one turn
+   later: the bounded wait passes, the old fixed-turn wait fails both checks.
 3. **The editor** - **not covered here, and it cannot be.** `@types/vscode` is types only; there is no
    `vscode` module to import in a Node process. The following are exercised *only* by a real VS Code
    test host, which this repository does not yet have:

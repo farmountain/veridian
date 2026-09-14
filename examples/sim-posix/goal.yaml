@@ -1,0 +1,78 @@
+# The goal, in the form the engine reads. `docs/PLAN.md` calls this the DEFINE end of the lifecycle.
+#
+# The statement is deliberately an *observable end state* rather than a description of what the
+# application's provisioning program does. "Harden the system" is not a goal: it names an intention,
+# and an intention cannot be observed, so no criterion could fail it. "The world holds the files, the
+# account, the unit and the listening socket the application asked it for, at the paths and modes its
+# own policy states" is a goal, because every clause of it is a reading somebody can take.
+#
+# It also does not claim a real system would have succeeded. This world is *simulated* - see the
+# `context` block - and a goal that read as though the application had hardened a real machine would be
+# the one thing a simulated world may never do: let a substitute be mistaken for the thing it stands
+# in for.
+
+version: 1
+id: sim-posix
+
+statement: >-
+  The application hands its own hardening to the system it was given. This run's provisioning program
+  installed the packages it named, created the service account its own unit runs as, installed its
+  hardening baseline and its secrets at the paths and with the modes its own policy states, and started
+  its service unit - so the world holds those files, that account, that unit and a socket really
+  listening on the port the unit names, and refuses to hand the secrets to the account the criteria act
+  as.
+
+acceptance: acceptance.yaml
+environment: environment.yaml
+
+context: |-
+  The application under test is a provisioning program. Its artifacts are a policy, a secrets file, a
+  service unit and a list of commands; there is no page to click, no file to query and no object to
+  submit, so the equivalent of an interaction is `run` and the equivalent of a reading is `posix.*`.
+
+  The world is a POSIX-like system, and it is *simulated*, which is a claim with three obligations
+  (docs/DISTRIBUTION-AND-ENVIRONMENTS.md section 5):
+
+    1. The application executes for real. `start.command` is the application's own `provision.mjs`,
+       run as a child process with the operator's own privileges. It writes real files into the
+       sandbox tree through the host path the world gives it, and it prints real command lines that
+       the world really executes against that tree.
+    2. The interfaces are real. The sandbox root is a directory on this machine and the files in it
+       are real files with real bytes, real modes and a real `sha256`. The programs are answered by
+       name with their real exit codes, their real wording on stderr, and - for `systemctl start` - a
+       socket really bound on 127.0.0.1, so a criterion that asks whether a port is listening is
+       answered by a real connect and not by a table entry.
+    3. The substitution is declared. Every reading carries `simulated`, naming each surface that is
+       not real: `kernel`, `distribution`, `package-manager`, `package-index`, `permissions`,
+       `egress` and `provisioning`. So a result says which parts of the system were substituted
+       rather than leaving a reader to infer it.
+
+  What is never simulated: whether the application's code ran, which files it wrote, what the world did
+  in answer to each command, the reading taken afterwards, the verdict each criterion reaches, and the
+  reset between iterations.
+
+  One limit worth stating at the top rather than discovering at the bottom: the account the criteria
+  act as reads *this* world's permission table, which the world maintains rather than the kernel. A
+  verdict of "the account cannot read the secrets file" is therefore a statement about the world's own
+  bookkeeping, and the reading names the mode and the owner it judged so a reader can check it.
+
+tags:
+  - posix-world
+  - simulated
+  - fourth-adapter
+  - hardening
+
+limits:
+  # 10 is the MVP ceiling. The demo needs 5: one to observe all four defects, then one repair each.
+  maxIterations: 10
+  maxRuntimeMs: 300000
+  maxCriterionMs: 30000
+  # The world binds a loopback socket the application's own `nmap` really connects to, and the adapter
+  # reports the boundary as `unsupported` rather than `enforced`: the application is an ordinary child
+  # process that can open any socket it likes. A boundary this adapter cannot hold is stated as unheld
+  # rather than implied to be safe.
+  networkPolicy: deny
+  # `sandbox` rather than `deny`: the provisioning program writes the files it installs into the
+  # sandbox tree, which is a write inside the world. A path that climbs out of the sandbox with `..` is
+  # refused by the world and recorded as a crossing.
+  filesystemWrite: sandbox

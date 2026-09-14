@@ -1,20 +1,23 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { STEP_KINDS, WAIT_STATES, decodeStep, encodeStep } from "../core/acceptance/plan.ts";
+import { STEP_CODEC_COVERAGE, STEP_KINDS, WAIT_STATES, decodeStep, encodeStep } from "../core/acceptance/plan.ts";
 import type { ValidationStep } from "../core/acceptance/plan.ts";
 import { nodeIo } from "../core/io.ts";
 
 /**
- * `STEP_KINDS` and `schemas/acceptance.schema.json` must describe the same set of actions.
+ * The step register and `schemas/acceptance.schema.json` must describe the same set of actions.
  *
- * `tests/schema-vocabulary.test.ts` holds the vocabularies that a schema writes out as an `enum`. The
+ * The register itself is `core/acceptance/steps.ts`; this file is the guard that holds it to the
+ * schema, and it is the reason the register could replace a hand-kept list without losing a check.
+ * `tests/schema-vocabulary.test.ts` holds the vocabularies a schema writes out as an `enum`. The
  * step register is not one of those and could not be: a step is a *single-key object*, so the schema
  * states its members as `oneOf` branches whose `required` key is the action name, and there is no
- * `enum` anywhere for the other guard to find. That is exactly why this file exists. `apply` was
- * added for the cluster world, and the only thing that stopped it from being a kind `decodeStep`
- * accepted and the schema rejected - or the reverse, a branch no decoder implements - was that
- * somebody edited both files in one pass. *A list written in two places is reconciled by nothing.*
+ * `enum` anywhere for the other guard to find. That is why this file exists. `apply` was added for
+ * the cluster world and `run` for the system world, and before the register each of those was an
+ * entry in a nine-string list plus a `case` in two switches - the kind `decodeStep` accepted and the
+ * schema rejected, or the reverse, was one forgotten edit away. *A list written in three places is
+ * reconciled by nothing.*
  *
  * The second half is the executable half. A register that agrees with its schema and whose decoder
  * cannot decode every member is still broken, and the failure is invisible until a contract uses the
@@ -78,6 +81,7 @@ const WIRE: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   waitFor: { waitFor: { target: "#total", state: "visible" } },
   sql: { sql: "SELECT COUNT(*) FROM cart_items" },
   apply: { apply: "manifests/deployment.yaml" },
+  run: { run: ["cat", "/etc/veridian/secret.conf"] },
 };
 
 describe("the step register describes every world's actions", () => {
@@ -171,13 +175,32 @@ describe("the step register describes every world's actions", () => {
 });
 
 describe("the decode of a kind is total, not partial", () => {
-  it("narrows every member of the register, leaving no kind the switch forgot", () => {
-    // The switch in `decodeStep` has no `default`, so a kind added to `STEP_KINDS` and not to the
-    // switch is a type error rather than a runtime hole. This asserts the *observable* half of that:
-    // every decoded step carries a `kind` the register names.
+  it("narrows every member of the register, leaving no kind without a codec", () => {
+    // The switch that used to live in `decodeStep` had no `default`, so a kind added to `STEP_KINDS`
+    // and not to the switch was a type error rather than a runtime hole. The register keeps that
+    // guarantee in a stronger form - `STEP_CODEC_COVERAGE` is a `Record<StepKind, true>`, so a member
+    // of the union with no entry is a typecheck failure - and this asserts the *observable* half:
+    // the coverage record and the derived list are the same set, and every kind decodes to itself.
+    assert.deepEqual(
+      Object.keys(STEP_CODEC_COVERAGE).sort(),
+      [...STEP_KINDS].sort(),
+      "STEP_KINDS is derived from the register, so a kind in one and not the other means the " +
+        "coverage record and the codec table were edited apart",
+    );
     const kinds = STEP_KINDS.map((kind) => decodeStep(WIRE[kind] ?? {}, "AC-001", 0).kind);
     assert.deepEqual([...kinds].sort(), [...STEP_KINDS].sort());
     const steps: readonly ValidationStep[] = STEP_KINDS.map((kind) => decodeStep(WIRE[kind] ?? {}, "AC-001", 0));
     assert.equal(steps.length, STEP_KINDS.length);
+  });
+
+  it("refuses an argument vector that is empty or carries a blank", () => {
+    // `run` is the only branch whose value is an array, and an empty one is the interesting
+    // refusal: `[]` would spawn nothing and exit 0, which a criterion would read as "the command
+    // succeeded" - a pass earned by never running the command.
+    assert.throws(() => decodeStep({ run: [] }, "AC-001", 0), /run must be a non-empty array/);
+    assert.throws(() => decodeStep({ run: ["cat", ""] }, "AC-001", 0), /run\[1\] must be a non-empty string/);
+    assert.throws(() => decodeStep({ run: "cat /etc/shadow" }, "AC-001", 0), /run must be a non-empty array/);
+    const parsed = decodeStep({ run: ["cat", "/etc/shadow"] }, "AC-001", 0);
+    assert.deepEqual(parsed, { kind: "run", argv: ["cat", "/etc/shadow"] });
   });
 });

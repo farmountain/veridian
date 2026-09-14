@@ -4,15 +4,19 @@ Agent instructions for the **Veridian** repository. This is the single always-on
 instructions file for this workspace — do not add a second one
 (`.github/copilot-instructions.md`) alongside it.
 
-> **Status: the MVP is implemented and green, and two more sandbox worlds have landed.** Core, the
+> **Status: the MVP is implemented and green, and three more sandbox worlds have landed.** Core, the
 > `local-web` adapter, the Playwright validators, the CLI, the schemas and the canonical demo all exist.
 > `local-db` - a second adapter and a second validator family, against a SQLite file with no browser -
 > exists beside them, and is the proof that `EnvironmentAdapter` is a seam. `sim-k8s` is the third, and
 > the first **simulated** world: a real application process really deploying itself into a substitute
 > control plane over routes it really calls, with scheduler, kubelet, etcd and admission standing in.
-> `npx tsc --noEmit` is silent and `node --test` reports 694 passing tests - Veridian's own 634 plus
-> the 60 the VS Code Cockpit contributes, which the root runner discovers because it walks the tree.
-> Three distribution routes ship - a clone, an npm package, and the Cockpit - and there is still **no
+> `sim-posix` is the fourth and the second simulated one, and it attacks a different axis: a real
+> application process really provisioning a substitute Linux system through commands it really issues,
+> judged as a **named account** rather than as root, with no virtual machine and no guest kernel
+> anywhere in the loop. `npx tsc --noEmit` is silent and `node --test` reports 856 passing tests -
+> Veridian's own 796 plus the 60 the VS Code Cockpit contributes, which the root runner discovers
+> because it walks the tree. Four distribution routes ship - a clone, an npm package, the Cockpit, and
+> a container image - and there is still **no
 > build step between the source tree and the running program**: Node 22 strips types and runs `.ts`
 > straight from the source. `npm run build` exists only to produce the *compiled* copy an installed
 > package needs, because Node refuses type-stripping under `node_modules`, and the Cockpit has its own
@@ -239,13 +243,16 @@ core/clarification/     The ambiguity protocol: ladder (derived → inferred →
 core/schema/            JSON Schema validation + the loader that reads schemas/.
 core/goal/              Goal definition, loading, persistence, versioning.
 core/acceptance/        AcceptanceCriterion + the engine that turns a contract into an
-                        executable validation sequence (core/acceptance/plan.ts).
+                        executable validation sequence (core/acceptance/plan.ts) + the register of
+                        step kinds (core/acceptance/steps.ts), which is the one place a kind is
+                        declared that the schema and the engine both read.
 core/execution/         Run controller implementing the state machine above + the repair gate.
 core/validation/        ValidationResult, validator registry, status semantics, verdict rollup.
 core/environment/       EnvironmentAdapter interface + Environment Manager (lifecycle,
                         health checks, reset, snapshot/restore) + web-observation.ts, the shared
                         vocabulary that keeps validators from depending on adapters + db-observation.ts,
-                        the same idea for the database family + the boundary vocabulary
+                        the same idea for the database family + k8s-observation.ts for the cluster
+                        family + posix-observation.ts for the system family + the boundary vocabulary
                         (BoundaryPolicy/BoundaryReport) that keeps a declared safety limit from being
                         mistaken for an enforced one.
 core/evidence/          Evidence Engine. Writes the run bundle.
@@ -274,6 +281,14 @@ adapters/sim-k8s/       SimK8sEnvironment - the first SIMULATED world, and the f
                         anywhere in the loop. `cluster-port.ts` is the substitute (its own HTTP
                         surface, so the application cannot tell the difference) and `index.ts` is the
                         front door; the substitution is declared in the plan and in `environment.json`.
+adapters/sim-posix/     SimPosixEnvironment - the second SIMULATED world, and the one whose subject
+                        is the operating system. A real application process provisions a real tree
+                        by printing command vectors on its stdout; the substitute executes them and
+                        holds accounts, groups, packages, inodes with modes and owners, units and
+                        sockets. No VM, no image, no boot. `posix-port.ts` is the substitute (and
+                        `posix-port.test.ts` is 20 tests over it), and `sim-posix-environment.ts` is
+                        the adapter, which **refuses by name** a `snapshot-restore` reset it cannot
+                        perform rather than silently downgrading it to a restart.
 validators/playwright/  Playwright web validators (element, value, text, count, url, console,
                         network).
 validators/database/    Database validators (table, column, count, value). Judge a reading in
@@ -283,6 +298,11 @@ validators/database/    Database validators (table, column, count, value). Judge
 validators/k8s/         Cluster validators (applied, deployment, image, ready, pod, service, event).
                         Judge a reading in core/environment/k8s-observation.ts, on the same rule as
                         the database family - and the reason the third family needed no core change.
+validators/posix/        System validators (ran, package, installed, user, file, contents,
+                        permission, owner, service, running, port, probe). Judge a reading in
+                        core/environment/posix-observation.ts - the fourth family, and the second
+                        reason that rule holds. `owner` and `permission` are deliberately different
+                        questions, which is why AC-009 exists to prove it.
 cli/                    The interface that exists today: arguments, support, worlds.ts (the adapter
                         register and the requirements each adapter declares), veridian.ts.
 schemas/                goal/acceptance/environment/run/result/ambiguity .schema.json - the
@@ -296,6 +316,10 @@ examples/sim-k8s/       The third demo, and the first simulated one: the applica
                         into a substitute control plane and is judged on what the substitute holds.
                         Two defects, ten criteria, and the world's composition recorded so a PASS is
                         traceable to a named substitute rather than to unexamined reality.
+examples/sim-posix/     The fourth demo, and the first whose subject is an operating system: the
+                        application provisions a substitute Linux system and is judged as a named
+                        account. Four defects, thirteen criteria, one of which acts in the world
+                        through a `run` step and one of which expects the world to **refuse** it.
 examples/defect-text.ts One implementation of the CRLF rule for a textual overlay on a source file.
                         Two demos injecting defects is two chances to teach the rule differently;
                         a third copy is where the rule gets broken.
@@ -380,8 +404,8 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 694 tests, 1.7s. No directory argument.
-                           # 694 = the root's own 634 + the Cockpit's 60, because the runner walks
+node --test                # the whole suite. 856 tests, 1.7s. No directory argument.
+                           # 856 = the root's own 796 + the Cockpit's 60, because the runner walks
                            # the tree and reaches extension/vscode/src/*.test.ts. Neither figure is
                            # the whole story on its own: the root tsconfig EXCLUDES extension/**, so
                            # `npx tsc --noEmit` here does not typecheck the Cockpit and the root gate
@@ -403,7 +427,7 @@ npm run gate               # typecheck, test, build, smoke:out - in that order.
                            # npx tsc --noEmit  -> silent
                            # node --test       -> 60 tests, 0 failing
                            # npm run build     -> out/, 6 files
-                           # npm run smoke:out -> loads the compiled entry point, 14 checks
+                           # npm run smoke:out -> loads the compiled entry point, 15 checks
 npm run smoke:out          # alone: resolve the manifest's `main`, activate it twice under a
                            # recording double of `vscode` (scripts/vscode-stub.mjs), and assert the
                            # registered commands equal the six the manifest declares. Exit 1 if the
@@ -442,6 +466,10 @@ npm run demo:db                             # the second demo: the same loop aga
 npm run demo:k8s                            # the third demo, and the first simulated world: the app
                                             # deploys itself into a substitute control plane. Exit 0
                                             # when it passes.
+npm run demo:posix                          # the fourth demo, and the second simulated world: the app
+                                            # provisions a substitute Linux system through commands it
+                                            # really issues, judged as a named account. Exit 0 when it
+                                            # passes.
 npm run demo:no-browser                     # the same demo with `--browser none`. Every criterion is
                                             # a browser observation, so this must end INCONCLUSIVE
                                             # (exit 2). It shows the refusal, not the aha.
@@ -590,7 +618,7 @@ What the phase produced, all measured on this machine:
 npx tsc --noEmit    silent (exit 0)
 node --test         60 tests, 0 failing
 npm run build       out/, 6 files
-npm run smoke:out   14 checks, exit 0
+npm run smoke:out   15 checks, exit 0
 npm run gate        exit 0
 ```
 
@@ -979,6 +1007,70 @@ port had none, which is why the defect reached a demo run.
   parser anything would use to check it. The comment was moved into the documentation and the file
   reduced to JSON that parses, after which its four path facts could be - and were - asserted.
   *Anything you cannot check, you have to take on faith, and this repository does not.*
+
+- **A flag's value is not an operand.** The `sim-posix` substitute's `adduser` took "the words that do
+  not start with `-`" as its operands, so `adduser --system --home /var/lib/cart-web cart` created an
+  account named `/var/lib/cart-web` and treated the real name as a group to join - and it **exited 0**,
+  so the world reported success for a command it had not performed. A criterion asking whether `cart`
+  exists could then never pass, however many iterations re-observed it, and the symptom was a single
+  criterion that stopped moving while the rest of the progression descended cleanly. Found by reading
+  the bundle's own exec artifact for that criterion, where the account name beginning with `/` was
+  sitting in plain sight. *A criterion that stays `FAIL` after its defect has been repaired is a
+  defect in the criterion, the target spelling, the substitute, or the reading - not in the repair*,
+  and an exit code of 0 is not evidence that a command did what its name says. Held by two tests, each
+  falsified by deleting one `index += 1`.
+
+- **A world a run inherits is not a world that run built.** `stop()` keeps the `sim-posix` sandbox on
+  purpose, because a bundle quotes paths inside it - so the *next* run's first observation can read the
+  previous run's files. `prepare()` made directories without clearing, so the second run's first
+  iteration read a `/etc/veridian/policy.conf` that run had never installed (its own application had
+  written `policy.cfg`, which is the defect under test) and **two criteria reported `PASS` on an
+  artifact from someone else's run**. The next `reset()` wiped it, so the symptom was a progression one
+  iteration out of step rather than an error, and the run still ended `PASS` with 13/13 - a false
+  `PASS`, the class this product exists to make impossible. It was found by running the demo twice in a
+  row and comparing the two progressions, not by reading the port, and the demo's own narration had
+  been *right* the whole time while the world was wrong. `prepare()` and `reset()` are now one
+  implementation, `rebuild()` - *two implementations of one rule disagree the first time a world arrives
+  that only one of them was written for* - and `posix-port.test.ts` holds it by writing a file into the
+  tree by hand, asserting it **is** readable first (so the test cannot pass vacuously), then requiring
+  it to be gone after a fresh `prepare()`. Falsified: restoring the old `prepare()` fails that test
+  alone, 19/20.
+
+- **A repair the world never observed is not a repair.** The first measured `sim-posix` run's second
+  iteration was identical to its first, because a change written to the tree had not been re-read by
+  the world that judged it. On this adapter the repair is a file write against a tree the *next*
+  iteration rebuilds, so the reset is what makes the fix observable - but the rule generalises: *a loop
+  that reports progress from its own intentions is reporting the wrong run.*
+
+- **An evidence bundle that omits the actor's own transcript is a bundle a reader cannot audit.** The
+  repair agent's stdout is not persisted; diagnosing the `adduser` defect required reconstructing what
+  the agent had done from the injected program, the exec record and the reading. Recorded as owed
+  rather than attempted in the same pass as the world it would have helped: the bundle holds the
+  criteria's evidence and not the actor's decisions.
+
+- **A step whose name states an outcome must fail when that outcome does not happen** - restated one
+  layer in, because the fourth demo is where it was found again. `AC-013` expects the world to *refuse*
+  a command naming a path outside the sandbox, and judges the refusal rather than the exit code, so a
+  substitute that resolved the escaping path would read the developer's own tree while calling it the
+  sandbox's. The criterion's own description carries the limitation it knows about: the validator reads
+  the world's *result* and not its stated *reason*, so it cannot distinguish a path that escapes from a
+  command the world does not implement. *A verdict may only claim what its reading observed.*
+
+- **A check that waits a fixed number of turns is asserting the machine's schedule, not the program's
+  behaviour.** `extension/vscode/scripts/smoke-out.mjs` activated the compiled Cockpit and then awaited
+  a single `setTimeout(..., 0)` before reading the status bar, justified by a comment saying one turn
+  "is enough for a synchronous dashboard read to have landed". That justification was false about the
+  read: `refresh()` awaits `readLastSummary`, which is real `fs` I/O. So the turn is a race, and the run
+  that lost it printed `1 of the compiled extension's checks failed` about a **healthy** extension - the
+  next three runs of the same gate, one of them from a deleted `out/`, passed unchanged. That is what a
+  schedule assertion looks like when it breaks, and *"it passed twice" is not evidence about the run it
+  failed on*. The wait is now bounded and keyed on the condition (`settled`), and **the probe is to make
+  the thing being awaited arrive late**: with one extra turn injected before the dashboard is written,
+  the bounded wait passes and the old fixed-turn wait fails **both** dashboard checks. The bound is the
+  other half - a wait that cannot fail would be worse than the sleep it replaced, because it would turn
+  every check after it into a formality. The same edit added a check nothing had: the no-folder window
+  must *hide* the status bar, which the old sequence never asserted. *A test that waits on a clock is
+  testing the clock.*
 
 ## Documentation
 

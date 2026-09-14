@@ -129,6 +129,8 @@ export interface EnvironmentLike {
   readonly browser?: { readonly enabled?: unknown };
   /** Present when the world stands in for a cluster. The address is the cluster's, not a URL's. */
   readonly cluster?: unknown;
+  /** Present when the world stands in for a POSIX-like system. It has no address at all. */
+  readonly posix?: unknown;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -142,22 +144,26 @@ const isMissing = (value: unknown): boolean =>
  * Whether the document describes a world with no HTTP surface of its own.
  *
  * Decided from the *document*, not from the adapter name, because `core/clarification` is the lowest
- * layer and may not import an adapter to ask it. Two shapes have no HTTP: a world reached by opening
- * a file (`databasePath`) and one whose address is a substitute control plane (`cluster`). Anything
- * else is a socket world, and is still asked for its URL.
+ * layer and may not import an adapter to ask it. Three shapes have no HTTP: a world reached by
+ * opening a file (`databasePath`), one whose address is a substitute control plane (`cluster`), and
+ * one that is a system rather than a service (`posix`). Anything else is a socket world, and is still
+ * asked for its URL.
  *
- * Getting this wrong is not cosmetic, and the second shape is how the cost was measured. Every
- * question gated below is an HTTP question - the address, the health path, the health status, whether
- * to drive a browser - and `core/environment/load.ts` answers all four the same way for a document
- * with no url: `health.path` and `health.expectStatus` become `null`, `browser.enabled` becomes
- * `false`, and `browser.enabled: true` next to no url is refused outright. The loader had that rule
- * and the detector did not share it, so the ladder derived `browser.enabled = true` for a world with
- * no page and demanded a URL for a world whose adapter never reads one. *Two implementations of one
- * rule disagree the first time a world arrives that only one of them was written for.*
+ * Getting this wrong is not cosmetic, and each new shape is how the cost was measured. Every question
+ * gated below is an HTTP question - the address, the health path, the health status, whether to drive
+ * a browser - and `core/environment/load.ts` answers all four the same way for a document with no
+ * url: `health.path` and `health.expectStatus` become `null`, `browser.enabled` becomes `false`, and
+ * `browser.enabled: true` next to no url is refused outright. The loader had that rule and the
+ * detector did not share it, so the ladder derived `browser.enabled = true` for a world with no page
+ * and demanded a URL for a world whose adapter never reads one. *Two implementations of one rule
+ * disagree the first time a world arrives that only one of them was written for* - and the answer is
+ * not a third implementation. There is one predicate, and every new kind of world is added here.
  */
 const hasNoHttp = (environment: EnvironmentLike): boolean =>
   isMissing(environment.url) &&
-  (!isMissing(environment.databasePath) || !isMissing(environment.cluster));
+  (!isMissing(environment.databasePath) ||
+    !isMissing(environment.cluster) ||
+    !isMissing(environment.posix));
 
 const asArray = <T>(value: readonly T[] | undefined): readonly T[] => value ?? [];
 

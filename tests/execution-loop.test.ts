@@ -32,7 +32,7 @@ import { fixedClock, silentLogger } from "./helpers/clock.ts";
  * Every assertion here is about a property that would otherwise be claimed in a comment:
  *
  *  - **No repair gate means exactly one iteration.** This is the anti-infinite-loop guarantee, and it
- *    is the property that would break silently — a loop that keeps re-observing unchanged code
+ *    is the property that would break silently �?a loop that keeps re-observing unchanged code
  *    produces a plausible-looking bundle with an ever-growing iteration count.
  *  - **`INCONCLUSIVE` never becomes `PASS`.** The whole product rests on it, and the tempting
  *    simplification ("treat an unmeasurable criterion as passed with a note") is a one-line change.
@@ -59,6 +59,7 @@ const environmentPlan: EnvironmentPlan = {
   url: "http://127.0.0.1:4173",
   databasePath: null,
   cluster: null,
+  posix: null,
   health: { path: "/health", expectStatus: 200, timeoutMs: 20_000, intervalMs: 100, readyPattern: null },
   reset: { strategy: "restart", command: null },
   browser: { enabled: true, viewport: null, locale: null, timezoneId: null },
@@ -473,7 +474,7 @@ describe("the loop is bounded by two independent exits", () => {
 describe("indeterminacy is recorded, never rounded up to success", () => {
   it("keeps a criterion with missing evidence INCONCLUSIVE even though every assertion passed", async () => {
     // The application is correct and the assertion agrees. The proof is absent, so the criterion is
-    // not proven — and an unproven pass is not a pass.
+    // not proven �?and an unproven pass is not a pass.
     const world = scriptedWorld({ totals: ["$30.00"], produces: [] });
     const result = await harness().run(world, new NoRepairGate());
 
@@ -489,7 +490,7 @@ describe("indeterminacy is recorded, never rounded up to success", () => {
     assert.notEqual(result.verdict, "PASS");
     assert.equal(result.criteria[0]?.status, "FAIL");
     // The caller declares the layer, because it is the only layer that knows. A bare throw from
-    // `execute` is the application-or-harness layer, so it stays `TEST_FAILURE` — not "unknown".
+    // `execute` is the application-or-harness layer, so it stays `TEST_FAILURE` �?not "unknown".
     assert.equal(result.criteria[0]?.assertions[0]?.failureKind, "TEST_FAILURE");
   });
 
@@ -546,8 +547,8 @@ describe("the runtime protocol resolves without interrupting anyone", () => {
     const world = scriptedWorld({ totals: ["$30.00"], produces: [] });
     await h.run(world, new NoRepairGate());
 
-    // Both runtime questions fire in this run — the iteration decision and the missing-evidence note
-    // — and neither may reach a human. A run's indeterminacy belongs in the bundle, not in a prompt.
+    // Both runtime questions fire in this run �?the iteration decision and the missing-evidence note
+    // �?and neither may reach a human. A run's indeterminacy belongs in the bundle, not in a prompt.
     assert.equal(h.engine.questionsAsked, 0);
   });
 

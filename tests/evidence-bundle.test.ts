@@ -38,6 +38,7 @@ const plan: EnvironmentPlan = {
   url: "http://127.0.0.1:4173",
   databasePath: null,
   cluster: null,
+  posix: null,
   health: { path: "/health", expectStatus: 200, timeoutMs: 20_000, intervalMs: 100, readyPattern: null },
   reset: { strategy: "restart", command: null },
   browser: { enabled: true, viewport: null, locale: null, timezoneId: null },
@@ -140,7 +141,7 @@ const bundleOn = (io: MemoryIo): RunBundle =>
 /**
  * Read a file out of the in-memory filesystem by its logical path.
  *
- * The memory filesystem stores absolute keys under its root, so the lookup matches on suffix — which
+ * The memory filesystem stores absolute keys under its root, so the lookup matches on suffix �?which
  * also makes the assertion independent of how the writer chose to join its paths. A test that
  * reimplements the path join would fail whenever the writer fixed a bug in it.
  */

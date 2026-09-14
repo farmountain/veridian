@@ -45,6 +45,29 @@ function check(condition, message) {
   }
 }
 
+/**
+ * Wait for a condition to hold, and report whether it did.
+ *
+ * `activate` deliberately does not await its own refresh, so the dashboard lands some turns later -
+ * and *how many* is a property of the machine, not of the extension. This used to be a single
+ * `setTimeout(..., 0)`, which asserts a turn count: the refresh awaits a real `fs` read, so under
+ * load the read had not resolved when the status bar was inspected and a healthy extension failed a
+ * check. It was observed once, as `1 of the compiled extension's checks failed` on a gate that then
+ * passed twice unchanged - which is what a schedule assertion looks like when it breaks.
+ *
+ * Waiting for the *condition* is the property worth asserting, and the bound is what keeps a genuine
+ * regression - a dashboard that never lands - a failure rather than a hang. A wait that cannot fail
+ * would be worse than the sleep: it would turn the check below into a formality.
+ */
+async function settled(predicate, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (predicate()) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+}
+
 /** Every compiled file under a directory, so the specifier scan cannot miss a subdirectory. */
 async function compiledFiles(directory) {
   const found = [];
@@ -97,19 +120,21 @@ check(typeof extension.deactivate === "function", "the compiled entry point expo
 
 const declared = (manifest.contributes?.commands ?? []).map((command) => command.command).sort();
 
-/** Activate once against a given window shape. */
-async function activateWith(root) {
+/** Activate once against a given window shape, and wait for its dashboard to land. */
+async function activateWith(root, dashboardLanded, dashboardSays) {
   stub.reset();
   stub.environment.root = root;
   const subscriptions = [];
   extension.activate({ subscriptions });
-  // `activate` deliberately does not await `refresh`; one turn of the loop is enough for a synchronous
-  // dashboard read to have landed.
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  check(await settled(dashboardLanded), dashboardSays);
   return subscriptions;
 }
 
-const withFolder = await activateWith(PACKAGE_ROOT);
+const withFolder = await activateWith(
+  PACKAGE_ROOT,
+  () => stub.state.statusBarItems[0]?.text === "Veridian: no run yet",
+  "with a folder open and no run on disk the dashboard reports that there is no run yet",
+);
 
 check(
   JSON.stringify([...stub.state.commands.keys()].sort()) === JSON.stringify(declared),
@@ -121,13 +146,13 @@ check(
 );
 check(stub.state.outputChannels.length === 1, "one output channel is created");
 check(stub.state.statusBarItems.length === 1, "one status bar item is created");
-check(
-  stub.state.statusBarItems[0]?.text === "Veridian: no run yet",
-  "with a folder open and no run on disk the dashboard reports that there is no run yet",
-);
 check(stub.state.errors.length === 0, "activation reports no error");
 
-const withoutFolder = await activateWith(null);
+const withoutFolder = await activateWith(
+  null,
+  () => stub.state.statusBarItems[0]?.hidden === true,
+  "with no folder open the dashboard hides rather than describing a run it cannot find",
+);
 
 check(withoutFolder.length === declared.length + 2, "activation also completes in a window with no folder");
 check(

@@ -40,6 +40,7 @@
     "demo": "node examples/shopping-cart/demo.ts",
     "demo:db": "node examples/inventory-db/demo.ts",
     "demo:k8s": "node examples/sim-k8s/demo.ts",
+    "demo:posix": "node examples/sim-posix/demo.ts",
     "demo:no-browser": "node examples/shopping-cart/demo.ts --browser none",
     "e2e:install": "node scripts/e2e-install.mjs",
     "e2e": "node examples/shopping-cart/demo.ts --browser playwright"

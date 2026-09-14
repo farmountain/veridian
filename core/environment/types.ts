@@ -332,6 +332,17 @@ export interface EnvironmentPlan {
    * verdict came from, which is precisely the claim a simulated world must never make loosely.
    */
   readonly cluster: ClusterPlan | null;
+  /**
+   * The POSIX-like system this world stands in for, or `null` when the world is not one.
+   *
+   * The fourth of the same field, one per kind of world, and read for the same reason as the other
+   * three: the first question asked of a result is *which world produced it*. A simulated Linux has
+   * three answers that have to travel with the verdict - which distribution the readings name,
+   * which account the criteria act as, and which directory is the sandbox root - because each one
+   * changes what a `posix.*` expectation means and none of them can be recovered from the reading
+   * afterwards.
+   */
+  readonly posix: PosixPlan | null;
   readonly health: HealthPolicy;
   readonly reset: { readonly strategy: ResetStrategy; readonly command: string | null };
   readonly browser: BrowserPolicy;
@@ -360,4 +371,25 @@ export interface ClusterPlan {
   readonly namespace: string;
   /** Absolute, resolved against `appPath` on the same rule `databasePath` follows. */
   readonly imagesPath: string;
+}
+
+/**
+ * A POSIX-like world's resolved declaration.
+ *
+ * `root` is a *sandbox* directory, not the application directory, and the distinction is the whole
+ * reason the field exists. The world's filesystem is rebuilt on every reset, so pointing it at the
+ * application would delete the code under test on the first iteration; pointing it at a directory of
+ * the world's own keeps the application outside the world that is being destroyed and rebuilt.
+ *
+ * It is resolved rather than passed through for the reason every other path in the plan is: the
+ * reading a validator sees must name the same directory the adapter really wrote to, and `""` must
+ * stay the one spelling of "this world is not a system".
+ */
+export interface PosixPlan {
+  /** The distribution the readings name, e.g. `veridian-simulated-linux`. */
+  readonly distribution: string;
+  /** The account the criteria act as. Readings are decided *as* this account, never as root. */
+  readonly user: string;
+  /** Absolute, resolved against `appPath` on the same rule `databasePath` follows. */
+  readonly root: string;
 }

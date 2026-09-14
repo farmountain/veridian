@@ -9,6 +9,7 @@ import {
   type ClusterPlan,
   type EnvironmentPlan,
   type HealthPolicy,
+  type PosixPlan,
   type ResetStrategy,
 } from "./types.ts";
 
@@ -181,6 +182,50 @@ function readCluster(raw: unknown, appPath: string): ClusterPlan | null {
   return { name, namespace, imagesPath: resolveSibling({ dir: appPath, path: "", text: "" }, images) };
 }
 
+/**
+ * The POSIX-like system this world stands in for, or `null` when the world is not one.
+ *
+ * The same rule as {@link readCluster}, one kind of world further out: absent means not this world,
+ * and present-but-incomplete is **refused** rather than defaulted. The refusal is not symmetry for
+ * its own sake. `distribution` and `user` are the two facts that decide what a reading *means* - a
+ * file's permissions are judged against an account, and a distribution is what a criterion about
+ * "this is the image we hardened" is a claim about - so defaulting either one would produce a
+ * verdict about a system nobody described. `root` is resolved against `appPath` because the schema
+ * says a path in this document is relative to `app`, and because a sandbox root that drifted from the
+ * directory the adapter wrote to would make every reading about a different tree than the one the
+ * criteria acted on.
+ */
+function readPosix(raw: unknown, appPath: string): PosixPlan | null {
+  if (raw === undefined || raw === null) return null;
+  if (!isPlainObject(raw)) {
+    throw defect("$.posix", "posix must be an object naming a distribution, a user and a sandbox root");
+  }
+  const distribution = asString(raw["distribution"]).trim();
+  const user = asString(raw["user"]).trim();
+  const root = asString(raw["root"]).trim();
+  const missing = [
+    distribution === "" ? "distribution" : null,
+    user === "" ? "user" : null,
+    root === "" ? "root" : null,
+  ].filter((entry): entry is string => entry !== null);
+  if (missing.length > 0) {
+    throw defect(
+      `$.posix.${missing[0] ?? "distribution"}`,
+      `the posix declaration is missing ${missing.join(", ")}. A POSIX-like world judges file ` +
+        "permissions against a named account and reports which system it stood in for; defaulting " +
+        "either one would produce a verdict about a system nobody described.",
+    );
+  }
+  if (user === "root") {
+    throw defect(
+      "$.posix.user",
+      "the criteria would act as root, and root reads every file - so a hardening contract judged " +
+        "as root would report a pass for a system no ordinary user can log into",
+    );
+  }
+  return { distribution, user, root: resolveSibling({ dir: appPath, path: "", text: "" }, root) };
+}
+
 function readBoundary(limits: GoalLimits): BoundaryPolicy {
   return {
     network: limits.networkPolicy,
@@ -188,7 +233,6 @@ function readBoundary(limits: GoalLimits): BoundaryPolicy {
     filesystemWrite: limits.filesystemWrite,
   };
 }
-
 /**
  * Turn a resolved environment document into a plan.
  *
@@ -260,6 +304,7 @@ export function finalizeEnvironment(
     url: url === "" ? null : url,
     databasePath: database === "" ? null : resolveSibling(source, database),
     cluster: readCluster(raw["cluster"], appPath),
+    posix: readPosix(raw["posix"], appPath),
     health: readHealth(raw["health"], url !== "", readyPattern),
     reset: { strategy: strategy as ResetStrategy, command: resetCommand },
     browser: readBrowser(raw["browser"], url !== ""),

@@ -1,0 +1,65 @@
+# The world this run is judged in. Read next to `acceptance.yaml`: the criteria never restate a fact
+# this file already states, which is what keeps a changed world from leaving a stale contract behind.
+#
+# `adapter: sim-posix` is a *simulated* system rather than a container or a machine. There is no
+# container runtime, no VM, no image and no boot anywhere in this run: the world is a directory on this
+# machine, a table of accounts, packages, units and inodes the adapter maintains, and a small register
+# of programs it answers in process. What is real is the application's own program, the files it
+# writes, the socket a criterion connects to, and the readings taken afterwards - see the `context`
+# block in goal.yaml, which is where a reader is sent for the three obligations a simulated world has.
+
+adapter: sim-posix
+
+# The application, relative to this file. The adapter runs `start.command` with this as its working
+# directory and hands it `posix.root` resolved against it, so a provisioning program can only ever
+# write into the sandbox that belongs to its own example.
+app: app
+
+# There is no address to probe over HTTP. The world's readiness signal is the provisioning program's
+# own exit code together with the line `start.readyPattern` names, so there is no `url` here and no
+# browser is enabled for it.
+url: null
+
+# Null means "this application has no dependencies to install". The provisioning program imports
+# `node:fs` and `node:path` and nothing else, which matters for more than tidiness: a world whose
+# application needs a package manager to fetch its own code could not be described by this file.
+dependencyInstall: null
+
+posix:
+  # The system this world stands in for. Written into the sandbox as `/etc/os-release` by the world's
+  # own seed and required to be there before the run is considered started, so the answer to "which
+  # system is this" is a file in the world rather than a string in this document.
+  distribution: debian
+  # The account the criteria act as. Never `root`, and the loader refuses that value by name rather
+  # than by convention: root reads every file, so a hardening contract judged as root would report a
+  # pass for a system that no ordinary account can log into - which is the one verdict this world
+  # exists to be unable to produce.
+  user: cart-audit
+  # Where the sandbox tree lives, resolved against the application directory, so it lands at
+  # `app/sandbox` and is created by the world rather than committed. `.gitignore` excludes it for the
+  # same reason the inventory demo's database file and the cluster demo's image directory are excluded:
+  # it is something this machine produced, not source.
+  root: sandbox
+
+start:
+  command: node
+  args:
+    - provision.mjs
+  # Matched against the provisioning program's own output, on stdout and stderr together. The count is
+  # a `\d+` rather than a literal because the program prints the number of files it actually wrote,
+  # and a pattern pinning a digit would pass for a run that installed a different set.
+  readyPattern: 'cart-web provisioned: \d+ files installed'
+
+health:
+  # No `path` and no `expectStatus`: both are HTTP concepts and this world has no HTTP surface to
+  # probe. What remains is how long the world waits for the provisioning program to finish and how
+  # often it looks.
+  timeoutMs: 30000
+  intervalMs: 100
+
+reset:
+  # `restart` rather than `snapshot-restore`: the world rebuilds its tree and reseeds it, and the
+  # comparison the demo needs is code against code rather than code against a stored image. The reset
+  # is the event that makes the demo's progression meaningful - iteration two must start from a system
+  # in which the previous iteration's writes are gone.
+  strategy: restart
