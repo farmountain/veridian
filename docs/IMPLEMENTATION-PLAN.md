@@ -227,8 +227,11 @@ protocol cohesive rather than bolted on: the stages have no other way to proceed
   `ScriptedPromptPort` (tests, and the deterministic answer key for repeat runs), `NullPromptPort`
   (headless/CI → forces DEFER rather than a hang). *A headless run returns `INCONCLUSIVE`, it does
   not block forever.* That is the anti-hang guarantee at the human boundary.
-- **Memory port** — `MemoryPort` for rung 2. `NullMemory` (no-op) and `HttpHipCortexMemory`
-  (the real substrate). Rung 2 degrades to a skip when memory is unreachable; it never fails a run.
+- **Memory port** — `MemoryPort` for rung 2. `NullMemory` (no-op) and `HttpMemory`
+  (the real substrate). Rung 2 degrades to a skip when memory is unavailable; it never fails a run.
+  A *refusal* (a non-2xx whose body names a precondition, e.g. a content gate) is not an
+  unreachability, and the log says so — the client carries the status **and** the substrate's own
+  stated reason into the warning instead of asserting a cause it did not observe.
 - **Recording** — `<run>/clarifications.json` in the evidence bundle, and a
   `ClarificationReport` for the run summary.
 

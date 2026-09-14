@@ -37,11 +37,17 @@ export interface HttpMemoryOptions {
  * Two rules shape this class, and both of them are about not becoming a liability:
  *
  *  1. **A failure anywhere makes it unavailable, not broken.** A refused connection, a 500, a
- *     malformed body, a hang past the timeout — each is the same outcome: `available` flips to
+ *     malformed body, a hang past the timeout - each is the same *outcome*: `available` flips to
  *     `false` and every subsequent call returns empty. Rung 2 of the resolution ladder degrades to a
  *     skip, which the protocol already knows how to record.
  *  2. **It never throws.** An exception escaping a *memory* call would turn an optional convenience
  *     into a run failure, which inverts the whole point of the port.
+ *  3. **The log names what was observed, not what was assumed.** Those outcomes are not the same
+ *     *event*, and conflating them cost a real diagnosis: a healthy substrate that refuses a write
+ *     with a 403 whose body says `precondition blocked: PII risk=0.90 ...` is not unreachable, and a
+ *     reader told it is will go and inspect a network, a host and a credential that were never at
+ *     fault. The status *and* the substrate's own stated reason both travel into the error, and the
+ *     warning claims only that the substrate stopped being usable.
  */
 export class HttpMemory implements MemoryPort {
   readonly kind = "hipcortex";
@@ -101,7 +107,7 @@ export class HttpMemory implements MemoryPort {
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) throw new Error(await describeFailure(response));
       return await response.json();
     } finally {
       clearTimeout(timer);
@@ -112,10 +118,43 @@ export class HttpMemory implements MemoryPort {
     if (!this.#available) return;
     this.#available = false;
     this.#options.logger?.warn(
-      "memory substrate unreachable; inference degrades to a skip for the rest of the run",
+      "memory substrate is unusable for the rest of this run; inference degrades to a skip",
       { operation, baseUrl: this.#options.baseUrl, error: error instanceof Error ? error.message : String(error) },
     );
   }
+}
+
+/**
+ * Turn a non-2xx into an error that carries the reason, not only the status.
+ *
+ * Prefer the substrate's own `error` field over the raw body, because that is its statement of why,
+ * and bound both: a diagnostic must never be able to grow without limit. When the body says nothing,
+ * the status alone is the whole observation and the whole message.
+ */
+async function describeFailure(response: { readonly status: number; text(): Promise<string> }): Promise<string> {
+  const status = `HTTP ${response.status}`;
+  let body: string;
+  try {
+    body = await response.text();
+  } catch {
+    return status;
+  }
+  const detail = (readReason(body) ?? body).trim().replace(/\s+/g, " ").slice(0, 300);
+  return detail.length === 0 ? status : `${status}: ${detail}`;
+}
+
+/** The substrate's own statement of why, when it offered one in JSON. */
+function readReason(body: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (parsed !== null && typeof parsed === "object") {
+      const error = (parsed as { error?: unknown }).error;
+      if (typeof error === "string" && error.length > 0) return error;
+    }
+  } catch {
+    // Not JSON. The raw body is then the best available statement of the failure.
+  }
+  return null;
 }
 
 /** Accept the several shapes a substrate may return, and reject anything that is not a note. */

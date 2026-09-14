@@ -486,6 +486,21 @@ for every file in this repository, and false under `node_modules` -
 not wrong about the codebase; it was wrong about the world the codebase would be shipped into, and a
 distribution claim is only ever about that world. Distribution is a clone by decision
 (`## Distribution`) and `private: true` holds the line.
+- **A client that discards a response body is blind by its own hand, and one that then names a cause
+it never observed is worse than blind.** `HttpMemory#post()` read only `response.status`, so the
+substrate's `403 {"error":"precondition blocked: PII risk=0.90 patterns=[\"PII:...\"]"}` reached the
+log as the bare word `HTTP 403`, under a warning that went on to assert the substrate was
+**unreachable**. It was reachable and healthy; a content precondition had refused the write. The
+false diagnosis was not cosmetic: it sent this agent through four scratch probes and four terminal
+runs hunting a host, a payload size, a record type and a header - all four eliminated, none ever at
+fault - while the answer had been returned and thrown away two lines earlier. `#post()` now carries
+the status *and* the substrate's own stated `error` (preferred over the raw body, flattened and
+bounded to 300 characters, and guarded so a non-JSON refusal cannot become a parse error), and the
+warning claims only that memory became unusable. `tests/memory-port.test.ts` holds both halves: a
+refused write reports `precondition blocked` and does **not** contain "unreachable", while a genuine
+`ECONNREFUSED` still does. *An error message may only name a cause the reporter observed - and the
+reporter is the only one holding the evidence.* This is also why `core/memory/` has tests now: the
+port had none, which is why the defect reached a demo run.
 
 ## Documentation
 

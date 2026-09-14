@@ -2,9 +2,10 @@
  * The memory substrate.
  *
  * Veridian is useful across runs only if a run can consult what earlier runs learned. That is a
- * *substrate*, not a dependency: the port's contract is that an unreachable substrate degrades to a
+ * *substrate*, not a dependency: the port's contract is that an unavailable substrate degrades to a
  * skip and never fails a run. A validation system whose verdict depends on whether a side-car
- * process happens to be listening is not a validation system.
+ * process happens to be listening is not a validation system. "Unavailable" covers a refusal as well
+ * as a silence: a substrate that answers `403 precondition blocked` has still answered.
  */
 
 /** A remembered note, with the context that produced it. */
