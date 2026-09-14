@@ -8,6 +8,7 @@
 
 export { BUNDLE_FILES } from "./types.ts";
 export type {
+  BoundaryRecord,
   EnvironmentRecord,
   IterationSummary,
   ReproducibilityRecord,

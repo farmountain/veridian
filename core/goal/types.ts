@@ -18,6 +18,14 @@ export interface GoalLimits {
   /** Hard cap on a single criterion, so one hang cannot consume the run's whole budget. */
   readonly maxCriterionMs: number;
   readonly networkPolicy: NetworkPolicy;
+  /**
+   * The origins `networkPolicy: "allow-list"` permits.
+   *
+   * A policy without its parameter is not a policy. Until this existed, a goal could declare
+   * `allow-list` and nothing in the document could say what the list was, which made the value
+   * indistinguishable from `deny` at every point that could have acted on it.
+   */
+  readonly networkAllowList: readonly string[];
   readonly filesystemWrite: FilesystemWritePolicy;
 }
 

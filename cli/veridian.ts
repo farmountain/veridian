@@ -340,6 +340,27 @@ async function runValidate(parsed: CliArguments, logger: Logger): Promise<number
     memory: session.memoryLabel,
   });
 
+  // A declared boundary is not an enforced one, and here the operator is who chose the world that
+  // cannot hold it: `--browser none` removes the only component able to refuse a request, so a goal
+  // that says `deny` is measured in a world where `deny` is a word in a file. Said out loud because
+  // the alternative is a fact found only by whoever reads `environment.json` afterwards, which is not
+  // the person who made the choice.
+  //
+  // Deliberately narrow. Only the network half is disclosed here, and only for the browserless case,
+  // because it is the one the CLI observed: it built this world, so it knows no guard exists in it.
+  // The adapter's standing capabilities - `filesystemWrite` among them - are the adapter's claim about
+  // itself, and the full policy-by-enforcement pairing is written to the bundle by the layer that owns
+  // both halves. Repeating a capability here would be a second opinion that goes stale the moment an
+  // adapter grows one, and warning about `filesystemWrite` on every run would make the signal deafening
+  // on the default goal.
+  if (!wantsBrowser && runtimeEnvironment.boundary.network !== "allow") {
+    logger.warn("boundary", {
+      declared: `networkPolicy: ${runtimeEnvironment.boundary.network}`,
+      enforcement: "unsupported",
+      reason: "the run was planned without a browser, so nothing can refuse a request on its behalf",
+    });
+  }
+
   // ---- the loop ----------------------------------------------------------------------------
   // Everything above is preparation. From here on the run is governed by `core/execution/loop.ts`,
   // which owns the state machine, the bounded exits and the verdict. The detector context is rebuilt

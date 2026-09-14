@@ -294,7 +294,7 @@ core/run/             types · id · state-machine        (transitions, terminal
 core/validation/      types(ValidationResult, FAILURE_TAXONOMY) · registry · rollup
 core/acceptance/      types · load · plan                (contract → executable step sequence)
 core/goal/            types · load · index               (parse + ARP pass + persist)
-core/environment/     adapter(interface) · types · load · manager(lifecycle, health, reset) · web-observation
+core/environment/     adapter(interface) · types(incl. boundary vocabulary) · load · manager(lifecycle, health, reset) · web-observation
 core/evidence/        types · writer                     (the run bundle)
 core/execution/       types(ports, repair gate) · repair · loop   (the ReAct loop)
 core/memory/          types · memory · index             (optional; never required to run)
@@ -411,3 +411,35 @@ request centred on.
   test touches is precisely the unverified claim this project refuses to make. See AGENTS.md
   `## Distribution` and assumption A11. **The registry path is declined rather than pending**: the
   user ruled it out at ship time, so `private: true` is a settled guard and not a placeholder.
+
+---
+
+## 9. Built after this plan: boundary enforcement
+
+One thing the MVP shipped without, found by auditing the tree rather than by running a demo: the
+`PASS` rule's third clause — *"there was no safety violation"* — could not be false. `networkPolicy`
+and `filesystemWrite` were declared, defaulted, parsed and recorded, and read by nothing that could
+act on them; `rollup`'s `noSafetyViolation` guard was implemented and tested against a value the CLI
+never set; and `core/evidence/writer.ts` wrote `safetyViolation: null` as a literal, so even a
+detected violation could not have reached a bundle.
+
+The structural cause is the `--browser none` lesson one layer down: `EnvironmentPlan` carried no
+boundary, so an adapter — which sees only the plan — could not enforce one even in principle. So the
+fix starts where the plan is built and runs forward through the adapter, the loop and the bundle, and
+it changes no verdict rule: `SECURITY_VIOLATION → FAIL` already existed and was merely starved.
+
+```
+core/goal/types.ts          GoalLimits.networkAllowList          (F5: allow-list had no parameter)
+core/environment/types.ts   BoundaryPolicy/BoundaryReport        (shared vocabulary)
+core/environment/load.ts    plan.boundary                        (the fact reaches the plan)
+adapters/local-web/         a route guard it can hold, and an honest report for the rest
+core/execution/loop.ts      the verdict reads the world's crossings, live
+core/evidence/writer.ts     the violation is written, and the policy is paired with its enforcement
+```
+
+The audit, the six self-prompted questions that scoped it, the four-move design and what the
+implementation changed about the design are in
+[`BOUNDARY-ENFORCEMENT.md`](./BOUNDARY-ENFORCEMENT.md). Two rules were paid for and are recorded in
+AGENTS.md: *a guard no code path can trip is not a guard*, and *a reset restores the world, not the
+record*.
+

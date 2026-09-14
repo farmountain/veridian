@@ -36,6 +36,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => ({
   },
   reset: { strategy: "restart", command: null },
   browser: { enabled: true, viewport: null, locale: null, timezoneId: null },
+  boundary: { network: "deny", allow: [], filesystemWrite: "deny" },
   ...overrides,
 });
 
@@ -122,6 +123,9 @@ function fakeAdapter(options: FakeOptions = {}): FakeAdapter {
     },
     async destroy() {
       calls.push("destroy");
+    },
+    boundaries() {
+      return { network: "enforced" as const, filesystemWrite: "unsupported" as const, crossings: [] };
     },
   } satisfies EnvironmentAdapter & { calls: string[]; sleeps: number[] };
 }

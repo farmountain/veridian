@@ -19,7 +19,7 @@
  */
 
 import { EnvironmentError } from "../../core/failure.ts";
-import { PLAYWRIGHT_MISSING, type BrowserLaunchOptions, type BrowserPort, type BrowserPage, type BrowserSession, type RawTarget } from "./browser-port.ts";
+import { PLAYWRIGHT_MISSING, type BrowserLaunchOptions, type BrowserPort, type BrowserPage, type BrowserRefusal, type BrowserSession, type RawTarget } from "./browser-port.ts";
 
 // --- the slice of the Playwright API this adapter uses -------------------------------------------
 
@@ -42,6 +42,17 @@ interface PwResponse {
   request(): { method(): string };
 }
 
+interface PwRequest {
+  url(): string;
+  method(): string;
+}
+
+interface PwRoute {
+  request(): PwRequest;
+  continue(): Promise<void>;
+  abort(errorCode?: string): Promise<void>;
+}
+
 interface PwPage {
   goto(url: string, options: { waitUntil: string; timeout: number }): Promise<unknown>;
   reload(options: { timeout: number }): Promise<unknown>;
@@ -50,6 +61,7 @@ interface PwPage {
   selectOption(selector: string, value: string, options: { timeout: number }): Promise<unknown>;
   press(selector: string, key: string, options: { timeout: number }): Promise<unknown>;
   waitForSelector(selector: string, options: { state: string; timeout: number }): Promise<unknown>;
+  route(url: string, handler: (route: PwRoute) => Promise<void>): Promise<void>;
   locator(selector: string): PwLocator;
   url(): string;
   title(): Promise<string>;
@@ -108,15 +120,50 @@ async function loadPlaywright(): Promise<PwChromium> {
 
 const trimmed = (value: string | null): string | null => (value === null ? null : value.trim());
 
+/**
+ * Schemes that cannot leave the machine, and therefore cannot cross a network boundary.
+ *
+ * `about:` is what a freshly opened page sits on, so refusing it would stop the browser before the
+ * first navigation; `data:` and `blob:` are inline by construction. They are named explicitly rather
+ * than exempted by a scheme allowlist, so that a future scheme has to be added here deliberately.
+ */
+const LOCAL_SCHEMES = new Set(["about:", "data:", "blob:"]);
+
+/**
+ * Whether one request may proceed under the plan's boundary.
+ *
+ * Returns the refusal subject, or `null` to allow. A URL that cannot be parsed is **refused** rather
+ * than waved through: this is a boundary, and the safe reading of an unclassifiable request is the
+ * one that keeps it inside. A URL that parses to a local scheme is allowed for the opposite reason -
+ * it cannot reach anything, so refusing it would only break the page.
+ *
+ * Exported for its test, and that is the whole reason. It is the one half of the guard that is a pure
+ * decision: the other half - attaching a route and aborting the request - needs a real browser, which
+ * is the 150 MB dependency `tests/local-web-environment.test.ts` exists to keep out of the suite. So
+ * the decision is proven offline and the wiring is proven by `npm run e2e`. A decision nobody tested
+ * and a decision tested only when someone remembers to install Chromium are different claims.
+ */
+export function refusalSubject(rawUrl: string, method: string, allowed: ReadonlySet<string>): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return `${method} ${rawUrl}`;
+  }
+  if (LOCAL_SCHEMES.has(parsed.protocol)) return null;
+  return allowed.has(parsed.origin) ? null : `${method} ${rawUrl}`;
+}
+
 class PlaywrightPage implements BrowserPage {
   readonly #page: PwPage;
   readonly #context: PwContext;
   readonly #consoleEntries: { level: string; text: string; at: string }[] = [];
   readonly #networkEntries: { method: string; url: string; status: number | null; at: string }[] = [];
+  readonly #refusals: BrowserRefusal[] = [];
   readonly #tracePath: string | null;
   #closed = false;
 
-  constructor(page: PwPage, context: PwContext, tracePath: string | null) {
+  constructor(page: PwPage, context: PwContext, tracePath: string | null, boundary: ReadonlySet<string> | null) {
     this.#page = page;
     this.#context = context;
     this.#tracePath = tracePath;
@@ -135,6 +182,37 @@ class PlaywrightPage implements BrowserPage {
         status,
         at: new Date().toISOString(),
       });
+    });
+
+    if (boundary !== null) {
+      this.#allow = boundary;
+    }
+  }
+
+  #allow: ReadonlySet<string> | null = null;
+
+  /**
+   * Install the network guard, if the plan declared one.
+   *
+   * Called by the session and **awaited**, then the page is navigated. Both halves matter. Attached
+   * after `goto` the guard would watch a page that had already fetched whatever it liked; swallowed
+   * on failure it would leave `refusals()` empty and the adapter reporting `enforced` for a boundary
+   * it never held. A failure here therefore propagates, so the criterion it belonged to is reported
+   * as `ENVIRONMENT_FAILURE` - "the world could not be built as written" - rather than as a clean
+   * page whose cleanliness was never established.
+   */
+  async holdBoundary(): Promise<void> {
+    const allow = this.#allow;
+    if (allow === null) return;
+    await this.#page.route("**/*", async (route) => {
+      const request = route.request();
+      const subject = refusalSubject(request.url(), request.method(), allow);
+      if (subject === null) {
+        await route.continue();
+        return;
+      }
+      this.#refusals.push({ subject, at: new Date().toISOString() });
+      await route.abort("blockedbyclient");
     });
   }
 
@@ -252,6 +330,10 @@ class PlaywrightPage implements BrowserPage {
     return [...this.#networkEntries];
   }
 
+  refusals(): readonly BrowserRefusal[] {
+    return [...this.#refusals];
+  }
+
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
@@ -299,7 +381,17 @@ class PlaywrightSession implements BrowserSession {
       await context.tracing.start({ screenshots: true, snapshots: true });
     }
     const page = await context.newPage();
-    return new PlaywrightPage(page, context, tracePath);
+    const boundary = this.#options.boundary;
+    // `null` means "no guard", which is what `allow` asks for. Every other policy gets the
+    // application's own origin plus the goal's allow list - and under `deny` the list is empty by
+    // resolution, so the set is exactly the one origin the boundary is meant to permit.
+    const allowed =
+      boundary.network === "allow"
+        ? null
+        : new Set<string>([this.#options.appOrigin, ...boundary.allow]);
+    const wrapped = new PlaywrightPage(page, context, tracePath, allowed);
+    await wrapped.holdBoundary();
+    return wrapped;
   }
 
   async close(): Promise<void> {

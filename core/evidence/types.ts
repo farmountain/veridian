@@ -1,5 +1,5 @@
 import type { ClarificationReport } from "../clarification/types.ts";
-import type { EnvironmentPlan, HealthReport, EvidenceArtifact } from "../environment/types.ts";
+import type { BoundaryCrossing, BoundaryEnforcement, EnvironmentPlan, HealthReport, EvidenceArtifact } from "../environment/types.ts";
 import type { Failure } from "../failure.ts";
 import type { RunState } from "../run/types.ts";
 import type { CriterionResult, CriterionStatus } from "../validation/types.ts";
@@ -40,6 +40,35 @@ export interface RunBundleLayout {
   readonly latestFailure: string;
 }
 
+/**
+ * One declared boundary, paired with what the world measurably did about it.
+ *
+ * The two halves are one object on purpose. A record listing only `networkPolicy: deny` invites a
+ * reader to take a declaration for an enforcement, which is the defect this shape exists to remove;
+ * a record listing only the enforcement leaves the reader unable to know what was asked for. Neither
+ * half means anything on its own, so they cannot be read apart.
+ */
+export interface BoundaryRecord {
+  readonly network: {
+    readonly policy: EnvironmentPlan["boundary"]["network"];
+    /** Copied from the plan, which copied it from the goal only when the policy was `allow-list`. */
+    readonly allow: readonly string[];
+    readonly enforcement: BoundaryEnforcement;
+  };
+  readonly filesystemWrite: {
+    readonly policy: EnvironmentPlan["boundary"]["filesystemWrite"];
+    readonly enforcement: BoundaryEnforcement;
+  };
+  /**
+   * Every request the boundary refused, in the order it refused them.
+   *
+   * Empty means nothing was refused - which is *not* the same as a boundary that held. The reader
+   * has to consult the two `enforcement` fields above to tell those apart, and that is why both live
+   * here rather than the crossings being reported somewhere else.
+   */
+  readonly crossings: readonly BoundaryCrossing[];
+}
+
 /** `environment.json`: what world this run measured, so a reader can rebuild it. */
 export interface EnvironmentRecord {
   readonly adapter: string;
@@ -54,6 +83,7 @@ export interface EnvironmentRecord {
   readonly env: Readonly<Record<string, string>>;
   readonly valid: boolean;
   readonly healthReport: HealthReport | null;
+  readonly boundary: BoundaryRecord;
   readonly transitions: readonly { readonly from: string; readonly to: string; readonly at: string; readonly reason: string }[];
 }
 
@@ -98,6 +128,16 @@ export interface RunOutcome {
   readonly failure: Failure | null;
   readonly reasons: readonly string[];
   readonly guards: Readonly<Record<RollupGuard, boolean>>;
+  /**
+   * The violation the run acted on, or `null` for "none observed".
+   *
+   * `null` is not "there was none": it is "nothing this world monitors refused anything", which is
+   * the strongest reading the guard can support. No world can prove the absence of *all* violations,
+   * so the clause has always meant "none was observed" - which is why the fix for a declared but
+   * unenforced boundary was to widen what can be observed, not to cap the verdict.
+   * See `docs/BOUNDARY-ENFORCEMENT.md` section 3, Q1.
+   */
+  readonly safetyViolation: string | null;
   readonly environment: EnvironmentRecord | null;
   readonly iterations: readonly IterationSummary[];
   /** One report per document resolved by the protocol: goal, acceptance, environment. */

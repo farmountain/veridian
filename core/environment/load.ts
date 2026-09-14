@@ -1,9 +1,10 @@
 import { DefinitionError, loadDocument, resolveSibling } from "../goal/load.ts";
-import type { GoalDocument, SourceRef } from "../goal/types.ts";
+import type { GoalDocument, GoalLimits, SourceRef } from "../goal/types.ts";
 import type { ReadonlyIoPort } from "../io.ts";
 import { SCHEMA_URIS, type SchemaSet } from "../schema/index.ts";
 import {
   RESET_STRATEGIES,
+  type BoundaryPolicy,
   type BrowserPolicy,
   type EnvironmentPlan,
   type HealthPolicy,
@@ -98,6 +99,23 @@ function readBrowser(raw: unknown): BrowserPolicy {
 }
 
 /**
+ * The boundary the goal declared, resolved into the shape the adapter enforces.
+ *
+ * The allow list is copied **only** under `allow-list`, so the plan states the boundary that was
+ * actually applied rather than the one that was written down. A goal that lists origins while the
+ * policy is `deny` still has that list ignored here, and that is deliberate: a boundary read two
+ * ways is a boundary that will eventually be read the wrong way, and the goal document is itself
+ * copied into every run bundle, so nothing is lost by not echoing it in the plan.
+ */
+function readBoundary(limits: GoalLimits): BoundaryPolicy {
+  return {
+    network: limits.networkPolicy,
+    allow: limits.networkPolicy === "allow-list" ? limits.networkAllowList : [],
+    filesystemWrite: limits.filesystemWrite,
+  };
+}
+
+/**
  * Turn a resolved environment document into a plan.
  *
  * Called after the ambiguity protocol, so a throw here means a blocking gap survived resolution or a
@@ -108,6 +126,7 @@ export function finalizeEnvironment(
   raw: Readonly<Record<string, unknown>>,
   schemas: SchemaSet,
   source: SourceRef,
+  limits: GoalLimits,
 ): EnvironmentPlan {
   schemas.get(SCHEMA_URIS.environment).assert(raw);
 
@@ -160,5 +179,6 @@ export function finalizeEnvironment(
     health: readHealth(raw["health"]),
     reset: { strategy: strategy as ResetStrategy, command: resetCommand },
     browser: readBrowser(raw["browser"]),
+    boundary: readBoundary(limits),
   };
 }

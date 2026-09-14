@@ -35,7 +35,7 @@ TypeScript and Node runs it directly. Requires **Node 22.18.0 or newer**.
 git clone <this-repository-url> veridian
 cd veridian
 npm ci                    # runtime dependency: yaml. dev: typescript, @types/node.
-npm run gate              # tsc --noEmit, then the whole test suite. 346 tests, under a second.
+npm run gate              # tsc --noEmit, then the whole test suite. 373 tests, under a second.
 
 npm run e2e:install       # one-time, ~150 MB: fetch the Playwright browser
 npm run demo              # the canonical demo: 3 defects, FAIL -> repair -> PASS
@@ -59,7 +59,14 @@ Playwright is not installed it says so and tells you the one command that fixes 
 
 `npm run demo:no-browser` runs the same demo with `--browser none`. Every criterion in the contract is
 a browser observation, so that run **must** end `INCONCLUSIVE` with exit 2. It is a deliberate
-demonstration of the refusal - not the demo, and not a pass.
+demonstration of the refusal - not the demo, and not a pass. It also prints the warning that a run
+planned without a browser has nothing that can refuse a request on the application's behalf, so the
+`networkPolicy: deny` the goal declares was recorded as `unsupported` for that world:
+
+```
+veridian warning: boundary (declared=networkPolicy: deny enforcement=unsupported reason=the run was
+planned without a browser, so nothing can refuse a request on its behalf)
+```
 
 ### Why there is no npm package
 
@@ -153,6 +160,11 @@ loop has a bounded exit: `maxIterations` (10 in the MVP), `maxRuntimeMs`, `maxCr
 - **`INCONCLUSIVE` is not `PASS`.** Nothing collapses a non-decisive status into success. A run is
   `PASS` only if every mandatory criterion passed **and** the environment was valid **and** there was
   no safety violation **and** all required evidence exists.
+- **A declared boundary is an enforced one, or it is reported.** The third of those four clauses is
+  evaluated, not assumed: the adapter refuses what it can and reports what it refused, a crossing
+  fails the run with `SECURITY_VIOLATION`, and a boundary the adapter cannot hold is recorded as
+  `unsupported` in `environment.json` instead of being left to read as `enforced`. A guard nobody can
+  trip is not a guard.
 - **Failures are classified, never flattened into "test failed":** `TEST_FAILURE`,
   `ENVIRONMENT_FAILURE`, `VALIDATOR_ERROR`, `APPLICATION_ERROR`, `TIMEOUT`, `SECURITY_VIOLATION`,
   `INFRASTRUCTURE_FAILURE`, `RESET_FAILURE`, `UNKNOWN`.
@@ -280,8 +292,24 @@ limits:
   maxIterations: 10
   maxRuntimeMs: 300000
   maxCriterionMs: 30000
-  networkPolicy: deny
+  networkPolicy: deny          # deny | allow-list | allow
+  networkAllowList: []         # origins permitted under allow-list; ignored by the other two
   filesystemWrite: sandbox
+```
+
+`networkPolicy` and `filesystemWrite` are **applied, not just recorded**. Under `deny` the local-web
+adapter refuses every request that is not to the application's own origin, and each refusal is
+recorded as a crossing that fails the run with `SECURITY_VIOLATION` — even if every criterion passed.
+`filesystemWrite` cannot be held by an adapter that runs the application as an ordinary child process,
+so it is reported `unsupported` rather than `enforced`. `environment.json` always pairs the policy with
+the enforcement actually achieved, so a declaration is never mistaken for a guarantee:
+
+```json
+"boundary": {
+  "network":          { "policy": "deny",    "allow": [], "enforcement": "enforced" },
+  "filesystem_write": { "policy": "sandbox",              "enforcement": "unsupported" },
+  "crossings": []
+}
 ```
 
 ```yaml
@@ -346,7 +374,7 @@ adapters/local-web/     starts, health-checks, resets a local app; drives Playwr
 validators/playwright/  web.element/text/value/count/url/console/network
 schemas/                goal / acceptance / environment / run / result / ambiguity
 examples/shopping-cart/ the canonical demo: correct app, defect overlay, goal, contract, world
-tests/                  346 tests, `node --test`
+tests/                  373 tests, `node --test`
 ```
 
 The interfaces are small on purpose:

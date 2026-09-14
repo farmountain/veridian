@@ -8,6 +8,7 @@ import {
 } from "../failure.ts";
 import { probeUrl } from "./load.ts";
 import type {
+  BoundaryReport,
   EnvironmentAdapter,
   EnvironmentPlan,
   HealthProbe,
@@ -132,6 +133,25 @@ export class EnvironmentManager {
 
   get transitions(): readonly EnvironmentTransition[] {
     return [...this.#transitions];
+  }
+
+  /**
+   * Forwarded verbatim from the adapter, and deliberately not remembered here.
+   *
+   * The manager could cache this, and caching would be wrong: the crossings accumulate while the run
+   * works, so a value read at `prepare()` and re-served later would describe the world the run
+   * started in rather than the world it used - the same defect `envRecord()` was fixed for. The call
+   * is cheap and the answer is only correct at the moment it is asked for.
+   *
+   * Before a plan has been prepared there is no adapter state to report, so the answer is the empty
+   * one: nothing was declared, so nothing was refused. It is not `enforced` - a world that has not
+   * been built cannot be said to hold anything.
+   */
+  boundaries(): BoundaryReport {
+    if (this.#plan === null) {
+      return { network: "not-requested", filesystemWrite: "unsupported", crossings: [] };
+    }
+    return this.#adapter.boundaries();
   }
 
   /**

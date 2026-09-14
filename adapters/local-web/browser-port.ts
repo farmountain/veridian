@@ -19,10 +19,41 @@
  *   produces an observation of a world that never existed.
  */
 
+import type { BoundaryPolicy } from "../../core/environment/types.ts";
+
 export interface BrowserLaunchOptions {
   readonly viewport: { readonly width: number; readonly height: number } | null;
   readonly locale: string | null;
   readonly timezoneId: string | null;
+  /**
+   * The resolved boundary the browser is expected to hold.
+   *
+   * The whole policy rather than its network half, because the adapter's plan is the one thing that
+   * describes the world it runs in, and narrowing it here would mean re-deriving the policy at the
+   * seam - a second reader, which is how two readings of one fact start to differ. The browser reads
+   * `network` and `allow` and ignores the rest.
+   */
+  readonly boundary: BoundaryPolicy;
+  /**
+   * The origin of the application under test, which every policy permits.
+   *
+   * A boundary exists to keep the application away from the outside world, not away from itself, so
+   * the application's own origin is the one host `deny` cannot block without blocking the run. The
+   * adapter supplies it because the adapter is what read the plan; the browser compares against it.
+   */
+  readonly appOrigin: string;
+}
+
+/**
+ * One request the boundary refused.
+ *
+ * A fact, not a verdict. Whether a refusal is a violation depends on the policy that produced it,
+ * which is the core's business - the page knows only what it did.
+ */
+export interface BrowserRefusal {
+  /** `GET https://example.test/v1/ping` — the method and URL the guard acted on. */
+  readonly subject: string;
+  readonly at: string;
 }
 
 /** What the adapter asked for and what the page reported. */
@@ -65,6 +96,15 @@ export interface BrowserPage {
   screenshot(): Promise<Uint8Array>;
   consoleEntries(): readonly BrowserConsoleEntry[];
   networkEntries(): readonly BrowserNetworkEntry[];
+  /**
+   * Everything the boundary refused while this page lived, in order.
+   *
+   * Empty is ambiguous on its own - it means either "nothing was refused" or "no guard was
+   * installed" - which is why the adapter pairs it with the enforcement status it reports from
+   * `boundaries()`. Reading an empty list as a clean page without that pairing is exactly the
+   * mistake the boundary report exists to prevent.
+   */
+  refusals(): readonly BrowserRefusal[];
   /**
    * Flush the trace to its path (when one was requested) and dispose the page's context.
    *

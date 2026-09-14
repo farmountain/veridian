@@ -4,7 +4,7 @@ import type { DetectorContext } from "../clarification/detect.ts";
 import { detectIterationAmbiguities, runtimeDetectors } from "../clarification/detect.ts";
 import type { Ambiguity, ClarificationReport } from "../clarification/types.ts";
 import type { ClarificationEngine } from "../clarification/engine.ts";
-import type { EvidenceArtifact, Observation, ObservationRequest } from "../environment/types.ts";
+import type { BoundaryCrossing, EvidenceArtifact, Observation, ObservationRequest } from "../environment/types.ts";
 import type { EnvironmentRecord } from "../evidence/index.ts";
 import { environmentRecord } from "../evidence/index.ts";
 import type { Failure } from "../failure.ts";
@@ -54,8 +54,6 @@ export async function runValidationLoop(options: LoopOptions): Promise<LoopResul
   const allCriteria: CriterionResult[] = [];
   const allExecutions: CriterionExecution[] = [];
 
-  const safetyViolation = options.safetyViolation ?? null;
-
   // The caller's claim is about the *definition*, and a definition with a blocking gap never reaches a
   // run at all — `resolveDefinition` refuses it. Recomputing the flag from the log every time it is
   // used closes the other half: whatever the ladder could not answer, in whichever phase, is a fact
@@ -90,9 +88,10 @@ export async function runValidationLoop(options: LoopOptions): Promise<LoopResul
   // `environment.json`, and every `result.json` after it, at the prepare step. The canonical
   // four-iteration demo resets the world three times and its bundle recorded a world whose last
   // event was `ready` before the first observation: the record said the run never reset, and M4
-  // reported the reset it could not see. Re-read at each write instead.
+  // reported the reset it could not see. Re-read at each write instead. The boundary report is read
+  // the same way and for the same reason: it fills up as requests are refused.
   const envRecord = (): EnvironmentRecord =>
-    environmentRecord(environment, prepared.health, world.transitions, prepared.ok);
+    environmentRecord(environment, prepared.health, world.transitions, prepared.ok, world.boundaries());
   await bundle.writeEnvironment(envRecord());
 
   if (!prepared.ok) {
@@ -107,7 +106,7 @@ export async function runValidationLoop(options: LoopOptions): Promise<LoopResul
       criteria: [],
       environmentValid: false,
       environmentMessage: message,
-      safetyViolation,
+      safetyViolation: safetyState(options),
       ...informationState(),
     });
     return finish({
@@ -200,7 +199,7 @@ export async function runValidationLoop(options: LoopOptions): Promise<LoopResul
     const outcome = rollup({
       criteria,
       environmentValid: true,
-      safetyViolation,
+      safetyViolation: safetyState(options),
       ...informationState(),
     });
     verdict = outcome.verdict;
@@ -328,7 +327,7 @@ export async function runValidationLoop(options: LoopOptions): Promise<LoopResul
         criteria: allCriteria,
         environmentValid: false,
         environmentMessage: message,
-        safetyViolation,
+        safetyViolation: safetyState(options),
         ...informationState(),
       });
       return finish({
@@ -346,7 +345,7 @@ export async function runValidationLoop(options: LoopOptions): Promise<LoopResul
             "world that cannot return to a known state cannot be said to have measured anything twice.",
         ],
         guards: resetOutcome.guards,
-        environment: environmentRecord(environment, reset.health, world.transitions, false),
+        environment: environmentRecord(environment, reset.health, world.transitions, false, world.boundaries()),
         startedAt,
       });
     }
@@ -517,6 +516,10 @@ export async function runValidationLoop(options: LoopOptions): Promise<LoopResul
       failure: failureOut,
       reasons,
       guards,
+      // The mid-run write is the one an agent reads while the loop is still going, so it carries the
+      // same live reading `finish` does - a violation observed in iteration one has to be visible in
+      // the report written at the end of iteration one, not only in the final bundle.
+      safetyViolation: safetyState(options),
       environment: envRecord(),
       iterations,
       clarifications: logs,
@@ -670,6 +673,33 @@ function gateRepair(
   return gate.repair(request);
 }
 
+/**
+ * The run's safety reading: a violation the caller injected, or the first thing the world's boundary
+ * refused.
+ *
+ * `null` means "none observed", never "there was none" - no world can prove a universal negative, and
+ * a guard reporting one would claim more than any observation supports. So the reading is built from
+ * what was actually *watched*. The injection point stays because a caller - a test, or a supervising
+ * harness - may know of a violation Veridian's own adapters cannot see; the crossings are new because
+ * the adapters can now see their own. Neither suppresses the other, which is what makes this a union
+ * rather than a precedence.
+ */
+function safetyState(options: LoopOptions): string | null {
+  const injected = options.safetyViolation ?? null;
+  if (injected !== null) return injected;
+
+  const crossings = options.world.boundaries().crossings;
+  const first: BoundaryCrossing | undefined = crossings[0];
+  if (first === undefined) return null;
+
+  // Composed here rather than in the adapter. A `BoundaryCrossing` is a fact - what was refused, when,
+  // during which criterion - and the sentence a reader sees is the core's to write, in the same place
+  // every other reason string in the bundle is written.
+  const during = first.criterionId === null ? "" : ` while observing ${first.criterionId}`;
+  const further = crossings.length > 1 ? ` (and ${String(crossings.length - 1)} more)` : "";
+  return `the ${first.boundary} boundary was crossed at ${first.at}: ${first.subject}${during}${further}`;
+}
+
 interface FinishInput {
   readonly options: LoopOptions;
   readonly logs: readonly ClarificationReport[];
@@ -713,6 +743,10 @@ async function finish(input: FinishInput): Promise<LoopResult> {
       failure: input.failure,
       reasons: input.reasons,
       guards: input.guards,
+      // Read here, at the moment of writing, rather than threaded in from each call site. Seven
+      // `finish` calls would be seven places to forget it, and a `finish` that took it as an argument
+      // could be handed a stale one - this is the same rule `envRecord()` follows.
+      safetyViolation: safetyState(options),
       environment: input.environment,
       iterations: input.iterations,
       clarifications: input.logs,

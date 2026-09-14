@@ -218,7 +218,15 @@ export async function resolveDefinition(
     };
   }
 
-  const environment = finalizeEnvironment(environmentOutcome.artifact, schemas, environmentDocument.source);
+  // The goal's limits are handed to the environment because a boundary the world cannot see is a
+  // boundary the world cannot hold. `plan.boundary` is derived from `goal.limits` here and nowhere
+  // else, so the declaration has exactly one reader between the document and the adapter.
+  const environment = finalizeEnvironment(
+    environmentOutcome.artifact,
+    schemas,
+    environmentDocument.source,
+    goal.limits,
+  );
 
   return {
     kind: "resolved",

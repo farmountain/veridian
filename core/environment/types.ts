@@ -1,4 +1,5 @@
 import type { FailureKind } from "../failure.ts";
+import type { FilesystemWritePolicy, NetworkPolicy } from "../goal/types.ts";
 
 /**
  * Shared environment contracts.
@@ -6,6 +7,10 @@ import type { FailureKind } from "../failure.ts";
  * `Observation` lives here rather than in `core/validation` because it is the adapter's output: an
  * environment produces observations, and validation merely reads them. The dependency therefore
  * runs validation → environment, never the reverse.
+ *
+ * The boundary vocabulary below lives here for the same reason `web-observation.ts` does: an
+ * adapter both obeys a boundary and reports on it, and a validator may read the report without
+ * either layer importing the other.
  */
 
 export type ArtifactKind = "screenshot" | "trace" | "dom" | "console" | "network" | "log" | "json";
@@ -36,10 +41,68 @@ export interface Observation {
   readonly error: { readonly message: string; readonly kind: FailureKind } | null;
 }
 
+/**
+ * What became of one declared boundary.
+ *
+ * The three values are kept apart because two of them would otherwise be reported as the same
+ * string. `unsupported` and `not-requested` both mean "nothing was refused", but only one of them
+ * means the boundary was ever asked for - and a reader cannot tell them apart from a bare `ok`.
+ */
+export const BOUNDARY_ENFORCEMENTS = ["enforced", "unsupported", "not-requested"] as const;
+export type BoundaryEnforcement = (typeof BOUNDARY_ENFORCEMENTS)[number];
+
+/** Which boundary a crossing belongs to. The adapter emits only what its world can hold. */
+export type BoundaryKind = "network" | "filesystemWrite";
+
+/**
+ * One action that a declared boundary refused.
+ *
+ * Facts only. The prose a reader sees is composed in `core/execution/loop.ts`, because an adapter
+ * knows what it refused and the core knows which criterion was being observed - and a sentence
+ * assembled by the layer that holds half the evidence is how a message ends up naming one thing.
+ */
+export interface BoundaryCrossing {
+  readonly boundary: BoundaryKind;
+  /** In the adapter's own vocabulary: `GET https://example.test/v1/ping`. */
+  readonly subject: string;
+  /** The criterion being observed when it happened, or null if it happened outside one. */
+  readonly criterionId: string | null;
+  readonly at: string;
+}
+
+/**
+ * What the world did about the plan's boundaries, and what crossed one.
+ *
+ * This is the pair that a `PASS` needs. `policy` alone is a declaration; `enforcement` alone does
+ * not say what was declared. Recorded together, a reader can tell an enforced-clean run from a
+ * boundary that was never applied - which is the distinction the guard `noSafetyViolation`
+ * silently assumed and the artifact did not state.
+ */
+export interface BoundaryReport {
+  readonly network: BoundaryEnforcement;
+  readonly filesystemWrite: BoundaryEnforcement;
+  readonly crossings: readonly BoundaryCrossing[];
+}
+
+/** The resolved boundary. `EnvironmentPlan.boundary`, so the adapter can see the budget it holds to. */
+export interface BoundaryPolicy {
+  readonly network: NetworkPolicy;
+  readonly allow: readonly string[];
+  readonly filesystemWrite: FilesystemWritePolicy;
+}
+
 /** The lifecycle every environment exposes, no matter how exotic (PLAN.md §5). */
 export interface EnvironmentAdapter {
   readonly kind: string;
   create(): Promise<{ readonly id: string }>;
+  /**
+   * What this world did about the plan's boundaries, and everything that crossed one.
+   *
+   * Deliberately required rather than optional. An optional method is one an adapter may omit
+   * without anything noticing, and "the boundary was declared and never applied" is exactly the
+   * defect this reports - silence must not be the way an adapter expresses it.
+   */
+  boundaries(): BoundaryReport;
   start(id: string): Promise<void>;
   deploy(id: string): Promise<void>;
   /** Run the deterministic action sequence for one criterion, then observe. */
@@ -178,4 +241,13 @@ export interface EnvironmentPlan {
   readonly health: HealthPolicy;
   readonly reset: { readonly strategy: ResetStrategy; readonly command: string | null };
   readonly browser: BrowserPolicy;
+  /**
+   * The goal's declared safety boundary, resolved into the plan.
+   *
+   * It has to live here, not only on `GoalLimits`, because the *adapter* is what holds a boundary
+   * and the plan is the adapter's whole world. A boundary that stopped at the loop would be
+   * documentable and unenforceable at once - the same shape as `--browser none` reaching a plan
+   * that still promised a browser.
+   */
+  readonly boundary: BoundaryPolicy;
 }

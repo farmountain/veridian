@@ -56,6 +56,7 @@ function environmentPlan(browserEnabled: boolean): EnvironmentPlan {
     health: { path: "/", expectStatus: 200, timeoutMs: 15000, intervalMs: 250, readyPattern: null },
     reset: { strategy: "snapshot-restore", command: null },
     browser: { enabled: browserEnabled, viewport: null, locale: null, timezoneId: null },
+    boundary: { network: "deny", allow: [], filesystemWrite: "deny" },
   };
 }
 

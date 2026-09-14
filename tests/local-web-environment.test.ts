@@ -24,7 +24,14 @@ import { memoryIo } from "../core/io.ts";
 import type { MemoryIo } from "../core/io.ts";
 import { BUNDLE_FILES, bundleLayout } from "../core/evidence/index.ts";
 import { PLAYWRIGHT_MISSING } from "../adapters/local-web/browser-port.ts";
-import type { BrowserPage, BrowserPort, BrowserSession, RawTarget } from "../adapters/local-web/browser-port.ts";
+import type {
+  BrowserLaunchOptions,
+  BrowserPage,
+  BrowserPort,
+  BrowserRefusal,
+  BrowserSession,
+  RawTarget,
+} from "../adapters/local-web/browser-port.ts";
 import { LocalWebEnvironment } from "../adapters/local-web/local-web-environment.ts";
 import type { FetchLike } from "../adapters/local-web/local-web-environment.ts";
 import { fixedClock, recordingLogger } from "./helpers/clock.ts";
@@ -141,12 +148,36 @@ class FakePage implements BrowserPage {
   closed = false;
   #url = "about:blank";
   #readings: Readonly<Record<string, RawTarget>>;
+  readonly #refusals: BrowserRefusal[] = [];
+  #broken: string | null = null;
 
   constructor(readings: Readonly<Record<string, RawTarget>> = {}) {
     this.#readings = readings;
   }
 
+  /** Stand in for the request guard: what the real page would have refused, this page is told. */
+  refuse(subject: string): void {
+    this.#refusals.push({ subject, at: "2026-01-01T00:00:00.000Z" });
+  }
+
+  /**
+   * Make the next action throw.
+   *
+   * A refused subresource is very often the reason the step after it fails - the button never wired
+   * itself up because the script that would have wired it was blocked - so the two have to be
+   * expressible together. Without this the fake could only produce a refusal on a run that went on to
+   * succeed, which is the one case where collecting it does not matter.
+   */
+  break(next: string): void {
+    this.#broken = next;
+  }
+
   async goto(url: string): Promise<void> {
+    if (this.#broken !== null) {
+      const message = this.#broken;
+      this.#broken = null;
+      throw new Error(message);
+    }
     this.actions.push(`goto ${url}`);
     this.#url = url;
   }
@@ -199,6 +230,9 @@ class FakePage implements BrowserPage {
       { method: "GET", url: "", status: null, at: "2026-01-01T00:00:00.000Z" },
     ];
   }
+  refusals(): readonly BrowserRefusal[] {
+    return [...this.#refusals];
+  }
   async close(): Promise<void> {
     this.closed = true;
   }
@@ -208,14 +242,21 @@ interface FakeBrowser {
   readonly port: BrowserPort;
   readonly pages: FakePage[];
   readonly tracePaths: (string | null)[];
+  readonly launches: BrowserLaunchOptions[];
   sessionsClosed: number;
 }
 
 function fakeBrowser(
-  options: { readonly readings?: Readonly<Record<string, RawTarget>>; readonly failLaunch?: string } = {},
+  options: {
+    readonly readings?: Readonly<Record<string, RawTarget>>;
+    readonly failLaunch?: string;
+    /** Runs on each page before it is handed to the adapter, so a test can prepare it. */
+    readonly onPage?: (page: FakePage) => void;
+  } = {},
 ): FakeBrowser {
   const pages: FakePage[] = [];
   const tracePaths: (string | null)[] = [];
+  const launches: BrowserLaunchOptions[] = [];
   const state = { sessionsClosed: 0 };
 
   const session: BrowserSession = {
@@ -224,6 +265,7 @@ function fakeBrowser(
       tracePaths.push(tracePath);
       const page = new FakePage(options.readings ?? {});
       pages.push(page);
+      options.onPage?.(page);
       return page;
     },
     async close(): Promise<void> {
@@ -234,12 +276,14 @@ function fakeBrowser(
   return {
     pages,
     tracePaths,
+    launches,
     get sessionsClosed() {
       return state.sessionsClosed;
     },
     port: {
       kind: "fake",
-      async launch() {
+      async launch(launch: BrowserLaunchOptions) {
+        launches.push(launch);
         if (options.failLaunch !== undefined) throw new Error(options.failLaunch);
         return session;
       },
@@ -260,6 +304,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => ({
   health: { path: "/health", expectStatus: 200, timeoutMs: 5_000, intervalMs: 100, readyPattern: null },
   reset: { strategy: "restart", command: null },
   browser: { enabled: true, viewport: { width: 1280, height: 720 }, locale: null, timezoneId: null },
+  boundary: { network: "deny", allow: [], filesystemWrite: "deny" },
   ...overrides,
 });
 
@@ -728,6 +773,140 @@ describe("the local-web environment observes a page", () => {
 });
 
 // ---- teardown -----------------------------------------------------------------------------------
+
+describe("the local-web environment reports the boundary it actually held", () => {
+  const total = (value: string): RawTarget => ({
+    found: true,
+    count: 1,
+    text: value,
+    value: null,
+    visible: true,
+    error: null,
+  });
+
+  const up = async (h: Harness): Promise<string> => {
+    const { id } = await h.subject.create();
+    await h.subject.start(id);
+    return id;
+  };
+
+  it("hands the browser the plan's boundary and the application's own origin", async () => {
+    const environment = plan({
+      url: "http://127.0.0.1:4317",
+      boundary: { network: "allow-list", allow: ["https://api.example.com"], filesystemWrite: "sandbox" },
+    });
+    const browser = fakeBrowser();
+    const h = harness(environment, { processes: fakeProcesses({ node: running() }).runner, browser: browser.port });
+    const id = await up(h);
+    await h.subject.execute(id, request());
+
+    const launch = browser.launches[0];
+    assert.ok(launch !== undefined);
+    assert.deepEqual(launch.boundary, environment.boundary);
+    // Derived from the plan's URL, not from the request's first step: a boundary is a property of the
+    // world, and the world's front door is what the plan declared.
+    assert.equal(launch.appOrigin, "http://127.0.0.1:4317");
+  });
+
+  it("says a boundary was not requested rather than calling it enforced", async () => {
+    const environment = plan({ boundary: { network: "allow", allow: [], filesystemWrite: "deny" } });
+    const browser = fakeBrowser();
+    const h = harness(environment, { processes: fakeProcesses({ node: running() }).runner, browser: browser.port });
+    const id = await up(h);
+    await h.subject.execute(id, request());
+
+    // `allow` means no guard, so "enforced" would be a claim about a component that does not exist.
+    assert.equal(h.subject.boundaries().network, "not-requested");
+    assert.deepEqual(h.subject.boundaries().crossings, []);
+  });
+
+  it("reports the network boundary as enforced once a page has been built under it", async () => {
+    const browser = fakeBrowser();
+    const h = harness(plan(), { processes: fakeProcesses({ node: running() }).runner, browser: browser.port });
+    const id = await up(h);
+
+    // Before any page: nothing has been held yet, and the adapter says so rather than guessing from
+    // the plan. The plan is an intention; this is the measurement.
+    assert.equal(h.subject.boundaries().network, "unsupported");
+
+    await h.subject.execute(id, request());
+    assert.equal(h.subject.boundaries().network, "enforced");
+  });
+
+  it("does not claim a boundary its page never came up under", async () => {
+    const browser = fakeBrowser({ failLaunch: PLAYWRIGHT_MISSING });
+    const h = harness(plan(), { processes: fakeProcesses({ node: running() }).runner, browser: browser.port });
+    const id = await up(h);
+    await h.subject.execute(id, request());
+
+    // The page never existed, so no guard was ever attached. `enforced` here would be the F1 defect
+    // wearing a new field: a policy read out of a document and reported as if it had been applied.
+    assert.equal(h.subject.boundaries().network, "unsupported");
+  });
+
+  it("reports the filesystem boundary as unsupported, because this adapter cannot hold one", async () => {
+    const environment = plan({ boundary: { network: "deny", allow: [], filesystemWrite: "sandbox" } });
+    const browser = fakeBrowser();
+    const h = harness(environment, { processes: fakeProcesses({ node: running() }).runner, browser: browser.port });
+    const id = await up(h);
+    await h.subject.execute(id, request());
+
+    // The application runs as an ordinary child process with the operator's privileges, so `sandbox`
+    // is a word in a file for as long as that is true. Saying `enforced` would be the exact
+    // false-confidence this field exists to remove.
+    assert.equal(h.subject.boundaries().filesystemWrite, "unsupported");
+  });
+
+  it("records a refused request against the criterion that made it", async () => {
+    const browser = fakeBrowser({
+      onPage: (created) => { created.refuse("GET https://tracker.example.net/p.gif"); },
+    });
+    const h = harness(plan(), { processes: fakeProcesses({ node: running() }).runner, browser: browser.port });
+    const id = await up(h);
+    await h.subject.execute(id, request({ criterionId: "AC-007" }));
+
+    const crossings = h.subject.boundaries().crossings;
+    assert.equal(crossings.length, 1);
+    assert.equal(crossings[0]?.boundary, "network");
+    assert.equal(crossings[0]?.subject, "GET https://tracker.example.net/p.gif");
+    assert.equal(crossings[0]?.criterionId, "AC-007");
+  });
+
+  it("records a refusal even when the observation then failed, because the refusal is usually why", async () => {
+    const browser = fakeBrowser({
+      onPage: (created) => {
+        created.refuse("GET https://cdn.example.com/app.js");
+        created.break("the page never finished loading");
+      },
+    });
+    const h = harness(plan(), { processes: fakeProcesses({ node: running() }).runner, browser: browser.port });
+    const id = await up(h);
+    const observation = await h.subject.execute(id, request({ criterionId: "AC-009" }));
+
+    assert.equal(observation.data, null);
+    // The reading is taken in the `finally`. A blocked script is exactly the reason the step after it
+    // throws, so collecting refusals only on the success path would drop them in the only case where
+    // they explain anything.
+    const crossings = h.subject.boundaries().crossings;
+    assert.equal(crossings.length, 1);
+    assert.equal(crossings[0]?.criterionId, "AC-009");
+  });
+
+  it("accumulates crossings across criteria instead of overwriting them", async () => {
+    const browser = fakeBrowser({
+      onPage: (created) => { created.refuse("GET https://cdn.example.com/app.js"); },
+    });
+    const h = harness(plan(), { processes: fakeProcesses({ node: running() }).runner, browser: browser.port });
+    const id = await up(h);
+    await h.subject.execute(id, request({ criterionId: "AC-001" }));
+    await h.subject.execute(id, request({ criterionId: "AC-002" }));
+
+    assert.deepEqual(
+      h.subject.boundaries().crossings.map((entry) => entry.criterionId),
+      ["AC-001", "AC-002"],
+    );
+  });
+});
 
 describe("the local-web environment gives the world back", () => {
   it("stops the application and closes the browser without touching the application directory", async () => {

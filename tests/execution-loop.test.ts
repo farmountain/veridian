@@ -60,6 +60,7 @@ const environmentPlan: EnvironmentPlan = {
   health: { path: "/health", expectStatus: 200, timeoutMs: 20_000, intervalMs: 100, readyPattern: null },
   reset: { strategy: "restart", command: null },
   browser: { enabled: true, viewport: null, locale: null, timezoneId: null },
+  boundary: { network: "deny", allow: [], filesystemWrite: "sandbox" },
 };
 
 const limits: GoalLimits = {
@@ -67,6 +68,7 @@ const limits: GoalLimits = {
   maxRuntimeMs: 300_000,
   maxCriterionMs: 30_000,
   networkPolicy: "deny",
+  networkAllowList: [],
   filesystemWrite: "sandbox",
 };
 
@@ -83,6 +85,14 @@ interface WorldScript {
   readonly failReset?: string;
   /** Evidence kinds the world genuinely produces. Anything else the criterion requires is missing. */
   readonly produces?: readonly string[];
+  /**
+   * Requests the world's boundary refused, in order.
+   *
+   * A script rather than a live guard because the loop's side of this is what is under test: whether
+   * a crossing the *world reports* becomes a `SECURITY_VIOLATION` and a written violation. Whether
+   * Playwright's guard refuses the right requests is `tests/local-web-environment.test.ts`'s question.
+   */
+  readonly crossings?: readonly { readonly subject: string; readonly criterionId: string | null; readonly at: string }[];
 }
 
 function scriptedWorld(script: WorldScript): ScriptedWorld {
@@ -113,6 +123,11 @@ function scriptedWorld(script: WorldScript): ScriptedWorld {
       return observations;
     },
     tornDown: () => down,
+    boundaries: () => ({
+      network: "enforced" as const,
+      filesystemWrite: "unsupported" as const,
+      crossings: (script.crossings ?? []).map((entry) => ({ boundary: "network" as const, ...entry })),
+    }),
     prepare: async (): Promise<EnvironmentReady | EnvironmentFailure> => {
       if (script.failPrepare) {
         step("defined", "error", script.failPrepare);
@@ -274,7 +289,11 @@ async function runIntoBundle(input: {
   readonly world: WorldPort;
   readonly gate: RepairGate;
   readonly clarifier: ClarificationEngine;
-  readonly overrides?: { readonly maxRuntimeMs?: number };
+  readonly overrides?: {
+    readonly maxRuntimeMs?: number;
+    /** A violation the caller states itself, as a supervising harness may: the loop's injection point. */
+    readonly injectedViolation?: string;
+  };
 }): Promise<LoopResult> {
   const bundle = new RunBundle({
     io: input.io,
@@ -289,7 +308,10 @@ async function runIntoBundle(input: {
     registry: registry(),
     plan: buildValidationPlan(contract(), { registry: registry(), maxCriterionMs: limits.maxCriterionMs }),
     environment: environmentPlan,
-    limits: { ...limits, ...input.overrides },
+    // Explicit rather than a spread: `overrides` now carries a non-limit key, and a spread would
+    // silently add it to the limits object the loop reads its budgets from.
+    limits: { ...limits, maxRuntimeMs: input.overrides?.maxRuntimeMs ?? limits.maxRuntimeMs },
+    safetyViolation: input.overrides?.injectedViolation ?? null,
     clarifier: input.clarifier,
     detectorContext,
     repairGate: input.gate,
@@ -589,5 +611,77 @@ describe("the runtime protocol resolves without interrupting anyone", () => {
     assert.equal(count("PASS"), summary.passed);
     assert.equal(count("FAIL"), summary.failed);
     assert.equal(summary.criteria.length - count("PASS") - count("FAIL"), summary.undecided);
+  });
+});
+
+describe("the loop judges the run's own boundary history", () => {
+  /**
+   * The crossing the demo's world never produces, spelled out so it is a fixture and not an anecdote.
+   *
+   * `criterionId` is set because that is what the adapter observes: it collects a refusal while
+   * observing a named criterion, and the sentence the operator reads says so.
+   */
+  const crossed = (): NonNullable<WorldScript["crossings"]> => [
+    { subject: "GET https://cdn.example.com/analytics.js", criterionId: "AC-001", at: "2026-01-01T00:00:01.000Z" },
+  ];
+
+  it("fails a run whose world reports a crossing, even though every criterion passed", async () => {
+    // The criteria all pass. That is the case worth testing: before this, `safetyViolation` was a loop
+    // *input* that the CLI never set, so the third clause of the PASS rule - "there was no safety
+    // violation" - was satisfied by construction. A guard nobody can trip is not a guard.
+    const world = scriptedWorld({ totals: ["$30.00"], crossings: crossed() });
+    const result = await harness().run(world, new NoRepairGate());
+
+    assert.equal(result.guards.noSafetyViolation, false);
+    assert.equal(result.verdict, "FAIL");
+    assert.equal(result.failure?.kind, "SECURITY_VIOLATION");
+  });
+
+  it("names the request that crossed, in the words the bundle uses", async () => {
+    const world = scriptedWorld({ totals: ["$30.00"], crossings: crossed() });
+    const result = await harness().run(world, new NoRepairGate());
+
+    const reason = result.reasons.join(" ");
+    assert.match(reason, /GET https:\/\/cdn\.example\.com\/analytics\.js/);
+    assert.match(reason, /AC-001/, "a violation is only actionable if it says which criterion it happened in");
+  });
+
+  it("still fails when the caller injected a violation and the world reports none", async () => {
+    // The injection point is kept, not replaced. A supervising harness may know of a violation
+    // Veridian's own adapters cannot see, and the two readings union rather than one winning.
+    const world = scriptedWorld({ totals: ["$30.00"] });
+    const result = await runIntoBundle({
+      io: memoryIo(),
+      runId: "run-injected",
+      world,
+      gate: new NoRepairGate(),
+      clarifier: new ClarificationEngine({ user: NullPromptPort, clock: fixedClock(), logger: silentLogger }),
+      overrides: { injectedViolation: "a policy refused the write" },
+    });
+
+    assert.equal(result.guards.noSafetyViolation, false);
+    assert.match(result.reasons.join(" "), /a policy refused the write/);
+  });
+
+  it("keeps reporting the crossing after a reset, because a reset restores the world and not the record", async () => {
+    // Iteration 1 crosses; iteration 2 does not, because the repair removed the outbound request. The
+    // crossing is still the run's: an observed violation that a later edit erased from the report
+    // would make the report depend on when it was read, which is the one thing evidence cannot do.
+    const world = scriptedWorld({ totals: ["$25.00", "$30.00"], crossings: crossed() });
+    const result = await harness().run(world, new ScriptedRepairGate([repaired()]));
+
+    assert.equal(world.resets, 1, "the run really did reset and re-observe");
+    assert.equal(result.iterations[1]?.verdict, "FAIL");
+    assert.equal(result.guards.noSafetyViolation, false);
+  });
+
+  it("does not import a violation from a world that reports none", async () => {
+    // The negative control. Without it, a `safetyState` that returned a truthy constant would satisfy
+    // every test above and fail this one.
+    const world = scriptedWorld({ totals: ["$30.00"] });
+    const result = await harness().run(world, new NoRepairGate());
+
+    assert.equal(result.guards.noSafetyViolation, true);
+    assert.equal(result.verdict, "PASS");
   });
 });

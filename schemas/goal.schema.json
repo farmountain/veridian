@@ -41,6 +41,12 @@
         "maxRuntimeMs": { "type": "integer", "minimum": 1000, "default": 300000 },
         "maxCriterionMs": { "type": "integer", "minimum": 100, "default": 30000 },
         "networkPolicy": { "enum": ["deny", "allow-list", "allow"], "default": "deny" },
+        "networkAllowList": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "The origins `networkPolicy: allow-list` permits. A policy without its parameter is not a policy, so the list is a limit in its own right: without it, `allow-list` is indistinguishable from `deny`. Optional rather than required because `deny` and `allow` have no list to give, and requiring `[]` from them every time would be ceremony that teaches operators to paste an empty array without reading it."
+        },
         "filesystemWrite": { "enum": ["deny", "sandbox"], "default": "sandbox" }
       },
       "additionalProperties": false

@@ -106,6 +106,12 @@ const SCHEMA_DEFAULTS: readonly SchemaDefault[] = [
   },
   {
     origin: "goal",
+    suffix: "/limits/networkAllowList",
+    value: [],
+    cite: "schemas/goal.schema.json#/$defs/Limits/properties/networkAllowList/default",
+  },
+  {
+    origin: "goal",
     suffix: "/limits/filesystemWrite",
     value: "sandbox",
     cite: "schemas/goal.schema.json#/$defs/Limits/properties/filesystemWrite/default",

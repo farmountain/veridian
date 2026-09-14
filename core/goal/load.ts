@@ -133,6 +133,15 @@ export async function loadGoalDocument(
 
 const asString = (value: unknown, fallback = ""): string => (typeof value === "string" ? value : fallback);
 const asNumber = (value: unknown, fallback = 0): number => (typeof value === "number" ? value : fallback);
+/**
+ * Read a list of strings, dropping anything that is not one.
+ *
+ * A non-string entry is dropped rather than stringified: `allow-list: [443]` is a goal that has not
+ * decided what an origin looks like, and coercing it to `"443"` would invent a host that could then
+ * be permitted. An unrecognised entry must never be able to widen a boundary.
+ */
+const asStringList = (value: unknown): readonly string[] =>
+  Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
 
 function readLimits(raw: Readonly<Record<string, unknown>>): GoalLimits {
   const limits = isPlainObject(raw["limits"]) ? raw["limits"] : {};
@@ -141,6 +150,7 @@ function readLimits(raw: Readonly<Record<string, unknown>>): GoalLimits {
     maxRuntimeMs: asNumber(limits["maxRuntimeMs"]),
     maxCriterionMs: asNumber(limits["maxCriterionMs"]),
     networkPolicy: asString(limits["networkPolicy"], "deny") as GoalLimits["networkPolicy"],
+    networkAllowList: asStringList(limits["networkAllowList"]),
     filesystemWrite: asString(limits["filesystemWrite"], "sandbox") as GoalLimits["filesystemWrite"],
   };
 }

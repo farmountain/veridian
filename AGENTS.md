@@ -6,7 +6,7 @@ instructions file for this workspace — do not add a second one
 
 > **Status: the MVP is implemented and green.** Core, the `local-web` adapter, the Playwright
 > validators, the CLI, the schemas and the canonical demo all exist. `npx tsc --noEmit` is silent and
-> `node --test` reports 346 passing tests. There is **no build step**: Node 22 strips types and runs
+> `node --test` reports 373 passing tests. There is **no build step**: Node 22 strips types and runs
 > `.ts` straight from the source tree. Read [`docs/IMPLEMENTATION-PLAN.md`](./docs/IMPLEMENTATION-PLAN.md)
 > for what was built and [`docs/PLAN.md`](./docs/PLAN.md) for why.
 
@@ -228,7 +228,9 @@ core/execution/         Run controller implementing the state machine above + th
 core/validation/        ValidationResult, validator registry, status semantics, verdict rollup.
 core/environment/       EnvironmentAdapter interface + Environment Manager (lifecycle,
                         health checks, reset, snapshot/restore) + web-observation.ts, the shared
-                        vocabulary that keeps validators from depending on adapters.
+                        vocabulary that keeps validators from depending on adapters, and the
+                        boundary vocabulary (BoundaryPolicy/BoundaryReport) that keeps a declared
+                        safety limit from being mistaken for an enforced one.
 core/evidence/          Evidence Engine. Writes the run bundle.
 core/run/               Run identity, history, iteration state.
 core/memory/            Optional durable memory client (HipCortex). Never required to run.
@@ -312,7 +314,7 @@ what runs. Every command below was executed on this machine and is quoted from i
 ```powershell
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 346 tests, ~1s. No directory argument.
+node --test                # the whole suite. 373 tests, ~1s. No directory argument.
 npm run gate               # typecheck then test. Run this before claiming anything is done.
 ```
 
@@ -554,6 +556,32 @@ port had none, which is why the defect reached a demo run.
   developer on one platform can hold a two-platform claim. *An inventory that only checks the output
   you happen to look at is a claim, not a record; so is a check that has never run.*
 
+- **A guard that no code path can trip is not a guard, and a bundle field that is a literal is a claim
+  pretending to be a record.** The `PASS` rule has three clauses and the third - "there was no safety
+  violation" - could not be false. `networkPolicy` and `filesystemWrite` were declared in
+  `schemas/goal.schema.json`, defaulted by the clarification ladder, parsed into `GoalLimits`, and then
+  read by nothing that could act on them: no occurrence in `core/execution/**`, `core/environment/**`,
+  `adapters/**` or `validators/**`. `rollup`'s `noSafetyViolation` was implemented and tested, and
+  `loop.ts` read an `options.safetyViolation` the CLI never set, so the value it tested was always
+  `null`; `core/evidence/writer.ts` then wrote `safetyViolation: null` as a **literal**, so even a
+  violation nobody detected could not have been recorded. The structural cause is the `--browser none`
+  defect recurring one layer down: `EnvironmentPlan` had no boundary field, so the adapter - which sees
+  only the plan - could not have enforced one even in principle. *A run-time fact has to reach the
+  plan, not just the object built from it.* The plan now carries `boundary`, the adapter installs a
+  route guard it can actually hold and reports the rest `unsupported`, the loop reads the world's
+  crossings when it builds its verdict, and `environment.json` pairs each declared policy with the
+  enforcement measured for it. Full audit and design in
+  [`docs/BOUNDARY-ENFORCEMENT.md`](./docs/BOUNDARY-ENFORCEMENT.md).
+
+- **A reset restores the world; it does not restore the record.** The adapter accrues boundary
+  crossings for the run and never clears them on `reset()`, which looks wrong the first time it is
+  read - the world it is describing is a fresh one. Clearing them is the defect: an iteration that
+  reached outside the boundary would be followed by a clean one, and the run would report `PASS` with
+  an empty `crossings` list, the evidence of the violation destroyed by the very act of repairing it.
+  That is the shape of false pass M3 exists to refuse. `tests/execution-loop.test.ts` holds it - a
+  crossing seen in an early iteration still fails the run after the reset - and the reason is written
+  at the field rather than only in the test.
+
 ## Documentation
 
 | Document | Contents |
@@ -561,6 +589,7 @@ port had none, which is why the defect reached a demo run.
 | [`README.md`](./README.md) | The front door: what Veridian is, the two governing rules, the quickstart, the canonical demo's real output, the CLI and its exit codes, M1..M5, the contract formats, the layout, and what is deliberately out of scope. **Keep it true; correct it in the same pass as the change that falsifies it.** |
 | [`docs/PLAN.md`](./docs/PLAN.md) | The authoritative product and architecture specification: product definition, scope boundary, execution lifecycle, acceptance/validation model, MVP scope, repo structure, 4-week build plan, Definition of Done, roadmap. **Read before any non-trivial design decision.** |
 | [`docs/IMPLEMENTATION-PLAN.md`](./docs/IMPLEMENTATION-PLAN.md) | What was actually built against that plan: module inventory, the decisions taken and the ones reversed, the open items. **Read before assuming something is missing.** |
+| [`docs/BOUNDARY-ENFORCEMENT.md`](./docs/BOUNDARY-ENFORCEMENT.md) | Why the goal's safety limits are applied rather than only recorded: the audit that found the third clause of the `PASS` rule unfalsifiable, the self-prompted questions that resolved it, the four-move design, and what the implementation changed about the plan. |
 
 Add a one-line index entry here for each new doc instead of duplicating its content in this file.
 

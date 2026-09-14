@@ -137,6 +137,60 @@ describe("DEFINE resolves a contract through the ambiguity protocol", () => {
     assert.equal(outcome.goal.acceptance, "acceptance.yaml");
   });
 
+  it("carries the goal's boundary into the environment plan, so the adapter is told what to enforce", async () => {
+    // The adapter sees only the plan. A policy that stops at the goal is a policy no adapter can
+    // apply, which is how `networkPolicy` came to be parsed, defaulted and recorded by five modules
+    // and enforced by none of them.
+    const io = workspace({});
+    const outcome = await define(io, clarifier(io));
+
+    assert.equal(outcome.kind, "resolved");
+    if (outcome.kind !== "resolved") return;
+
+    assert.deepEqual(outcome.environment.boundary, {
+      network: "deny",
+      allow: [],
+      filesystemWrite: "sandbox",
+    });
+  });
+
+  it("carries the allow list under allow-list, and drops it under a policy that has no list", async () => {
+    // A list under `allow` or `deny` is a misunderstanding, not a permission, and the two can only be
+    // told apart by the policy. So the policy decides whether there is a list at all: the plan never
+    // offers an allow list to a guard that was not asked to consult one.
+    const withList = (policy: string): string =>
+      `statement: "A shopper can add an item and see the cart total update."\nlimits:\n  networkPolicy: ${policy}\n  networkAllowList: ["https://cdn.example.com"]\n`;
+
+    const allowed = await define(workspace({ "shopping-cart/goal.yaml": withList("allow-list") }), clarifier(memoryIo()));
+    assert.equal(allowed.kind, "resolved");
+    if (allowed.kind !== "resolved") return;
+    assert.equal(allowed.environment.boundary.network, "allow-list");
+    assert.deepEqual(allowed.environment.boundary.allow, ["https://cdn.example.com"]);
+
+    const denied = await define(workspace({ "shopping-cart/goal.yaml": withList("deny") }), clarifier(memoryIo()));
+    assert.equal(denied.kind, "resolved");
+    if (denied.kind !== "resolved") return;
+    assert.equal(denied.environment.boundary.network, "deny");
+    assert.deepEqual(denied.environment.boundary.allow, []);
+  });
+
+  it("rejects an allow list holding something that is not an origin, rather than narrowing it silently", async () => {
+    // `[443]` is a goal that has not decided what an origin looks like. It never reaches the reader
+    // in `core/goal/load.ts` that drops non-strings, because the schema refuses the document first -
+    // and this test is here to hold that: the entry is a validation error naming its index, not a
+    // list that quietly lost a member while the run went ahead on a boundary nobody agreed to.
+    const io = workspace({
+      "shopping-cart/goal.yaml":
+        'statement: "A shopper can add an item."\nlimits:\n  networkPolicy: allow-list\n  networkAllowList: ["https://a.example.com", 443]\n',
+    });
+
+    await assert.rejects(
+      () => define(io, clarifier(io)),
+      (error: Error) => /networkAllowList\[1\]/.test(error.message),
+      "a non-origin in an allow list must be reported at its own index",
+    );
+  });
+
   it("resolves the acceptance contract's own version and gating rather than rejecting the file", async () => {
     const io = workspace({});
     const outcome = await define(io, clarifier(io));

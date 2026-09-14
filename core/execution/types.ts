@@ -3,6 +3,7 @@ import type { ClarificationEngine } from "../clarification/engine.ts";
 import type { DetectorContext } from "../clarification/detect.ts";
 import type { ValidationPlan, CriterionPlan } from "../acceptance/plan.ts";
 import type {
+  BoundaryReport,
   EnvironmentPlan,
   Observation,
   ObservationRequest,
@@ -42,6 +43,15 @@ export interface WorldPort {
   prepare(plan: EnvironmentPlan): Promise<EnvironmentReady | EnvironmentFailure>;
   reset(): Promise<EnvironmentReady | EnvironmentFailure>;
   execute(request: ObservationRequest): Promise<Observation>;
+  /**
+   * What the world did about the plan's boundaries, read live.
+   *
+   * A method rather than a property, and required rather than optional. A property read once would
+   * describe the world before it was exercised - the defect `envRecord()` was rewritten to remove -
+   * and an optional method is one a world may omit without anything noticing, which is precisely how
+   * a declared boundary came to be mistaken for an enforced one.
+   */
+  boundaries(): BoundaryReport;
   /** Best effort, never throws. The loop must be able to give up on a world without exploding. */
   teardown(): Promise<void>;
 }

@@ -30,6 +30,8 @@ import { decodeStep } from "../../core/acceptance/plan.ts";
 import type { Clock, Logger } from "../../core/clarification/types.ts";
 import type {
   ArtifactKind,
+  BoundaryCrossing,
+  BoundaryReport,
   EnvironmentAdapter,
   EnvironmentPlan,
   EvidenceArtifact,
@@ -98,6 +100,21 @@ const tail = (text: string, limit = 600): string => {
 
 const describe = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
+/**
+ * An origin, from a URL the adapter already trusts.
+ *
+ * Falls back to the raw string rather than throwing: the plan's URL has been probed by this point,
+ * so an unparseable one is already a failed run, and failing here would replace that diagnosis with a
+ * crash. The fallback matches nothing, which is the fail-safe direction for a boundary.
+ */
+const originOf = (url: string): string => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url;
+  }
+};
+
 export class LocalWebEnvironment implements EnvironmentAdapter {
   readonly kind = "local-web";
 
@@ -118,6 +135,29 @@ export class LocalWebEnvironment implements EnvironmentAdapter {
   #session: BrowserSession | null = null;
   /** The child's exit result once it settles. Used only to say *why* readiness never arrived. */
   #exit: Awaited<ProcessHandle["exited"]> | null = null;
+  /**
+   * Everything the network guard refused, across every criterion.
+   *
+   * Run-scoped rather than criterion-scoped because the loop asks the world what crossed a boundary
+   * once, at the point it builds a verdict, and a per-criterion answer would force it to reassemble
+   * the run's safety history from observations - which is how a crossing on an early iteration gets
+   * forgotten by a later one.
+   *
+   * `reset()` deliberately does not clear it, and that is the whole point of it being here rather
+   * than in a page. A reset restores the world; it does not restore the record. Emptying this on reset
+   * would let an iteration that reached outside the boundary be followed by a clean one, and the run
+   * would report `PASS` with an empty `crossings` list - the evidence of the violation destroyed by
+   * the very act of repairing it, which is the shape of false pass M3 exists to refuse.
+   */
+  readonly #crossings: BoundaryCrossing[] = [];
+  /**
+   * Whether a request guard was installed on at least one page, and never failed to be installed.
+   *
+   * Starts `false`, and a failed installation sets it back to `false`, so the fail-safe direction is
+   * the one the report takes: an adapter that has not demonstrably held the boundary must not say
+   * `enforced`. `false` here is what turns a declared policy into an honest `unsupported`.
+   */
+  #boundaryHeld = false;
 
   constructor(plan: EnvironmentPlan, options: LocalWebEnvironmentOptions) {
     this.#plan = plan;
@@ -346,13 +386,29 @@ export class LocalWebEnvironment implements EnvironmentAdapter {
         // Playwright writes the archive itself and does not create its parent.
         await this.#io.mkdirp(`${relativeRunDir}/${BUNDLE_FILES.trace}`);
       }
-      const page = await session.newPage(tracePath);
+      let page: BrowserPage;
+      try {
+        page = await session.newPage(tracePath);
+      } catch (error) {
+        // `newPage` installs the request guard before it resolves, so a throw here means the page
+        // exists without one. Recorded as a boundary that is not held rather than thrown past: the
+        // caller turns the error into this criterion's ENVIRONMENT_FAILURE, and the run's boundary
+        // report has to agree with that.
+        this.#boundaryHeld = false;
+        throw error;
+      }
+      if (this.#plan.boundary.network !== "allow") this.#boundaryHeld = true;
       try {
         if (act) await this.#replay(page, request);
         const data = await this.#read(page, request);
         const artifacts = await this.#captureEvidence(page, request, data, relativeRunDir);
         return { ...base, data, artifacts, error: null };
       } finally {
+        // Refusals are read here, not on the success path, because a guard that blocked a request
+        // is often exactly why the steps that followed threw. Reading them only after a clean
+        // observation would discard the evidence for the failures most likely to involve a
+        // crossing.
+        this.#collect(page.refusals(), request.criterionId);
         try {
           await page.close();
         } catch (error) {
@@ -364,6 +420,31 @@ export class LocalWebEnvironment implements EnvironmentAdapter {
     }
   }
 
+  #collect(refusals: readonly { readonly subject: string; readonly at: string }[], criterionId: string): void {
+    for (const refusal of refusals) {
+      this.#crossings.push({ boundary: "network", subject: refusal.subject, criterionId, at: refusal.at });
+    }
+  }
+
+  /**
+   * What this world did about the plan's boundaries.
+   *
+   * `filesystemWrite` is reported `unsupported` and not silently, because it is the truth: the
+   * application runs as an ordinary child process with the operator's own privileges, so nothing
+   * here holds a filesystem boundary. Writing `enforced` for a boundary this adapter cannot express
+   * would be the exact defect this whole path exists to remove, one level down.
+   */
+  boundaries(): BoundaryReport {
+    const { network } = this.#plan.boundary;
+    return {
+      network:
+        network === "allow" ? "not-requested" : this.#boundaryHeld ? "enforced" : "unsupported",
+      // Unconditional, because there is no policy for which it would be true: see the note above.
+      filesystemWrite: "unsupported",
+      crossings: [...this.#crossings],
+    };
+  }
+
   /** Launch once and reuse; a fresh *page* per criterion is what provides isolation, not a new browser. */
   async #sessionFor(browser: BrowserPort): Promise<BrowserSession> {
     if (this.#session !== null) return this.#session;
@@ -371,6 +452,10 @@ export class LocalWebEnvironment implements EnvironmentAdapter {
       viewport: this.#plan.browser.viewport,
       locale: this.#plan.browser.locale,
       timezoneId: this.#plan.browser.timezoneId,
+      // Handed to the browser rather than re-derived there, so the guard holds the boundary that
+      // was resolved in the plan instead of a second reading of the goal document.
+      boundary: this.#plan.boundary,
+      appOrigin: originOf(this.#plan.url),
     });
     this.#session = session;
     return session;

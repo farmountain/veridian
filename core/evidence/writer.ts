@@ -1,5 +1,5 @@
 import type { ClarificationReport, ClarificationRecord } from "../clarification/types.ts";
-import type { EnvironmentPlan, HealthReport, EvidenceArtifact } from "../environment/types.ts";
+import type { BoundaryReport, EnvironmentPlan, HealthReport, EvidenceArtifact } from "../environment/types.ts";
 import type { IoPort } from "../io.ts";
 import { SCHEMA_URIS, type SchemaSet } from "../schema/registry.ts";
 import type { CriterionResult } from "../validation/types.ts";
@@ -148,6 +148,23 @@ export function serializeEnvironment(record: EnvironmentRecord): Record<string, 
     browser: record.browser,
     valid: record.valid,
     health_report: record.healthReport,
+    boundary: {
+      network: {
+        policy: record.boundary.network.policy,
+        allow: [...record.boundary.network.allow],
+        enforcement: record.boundary.network.enforcement,
+      },
+      filesystem_write: {
+        policy: record.boundary.filesystemWrite.policy,
+        enforcement: record.boundary.filesystemWrite.enforcement,
+      },
+      crossings: record.boundary.crossings.map((entry) => ({
+        boundary: entry.boundary,
+        subject: entry.subject,
+        criterion_id: entry.criterionId,
+        at: entry.at,
+      })),
+    },
     transitions: record.transitions.map((entry) => ({ ...entry })),
   };
 }
@@ -182,7 +199,7 @@ export function serializeResult(
     verdict: outcome.verdict,
     insufficientInformation: !outcome.guards.informationSufficient,
     environmentValid: outcome.guards.environmentValid,
-    safetyViolation: null,
+    safetyViolation: outcome.safetyViolation,
     reasons: [...outcome.reasons],
     guards: { ...outcome.guards },
     limits: { ...outcome.limits },
@@ -489,12 +506,19 @@ export function renderFailureReport(
   return lines.join("\n");
 }
 
-/** The world this run measured, for the bundle and for a human reading the log. */
+/**
+ * The world this run measured, for the bundle and for a human reading the log.
+ *
+ * The boundary is taken as a *report* rather than a pre-built record because the plan and the report
+ * are the two halves of one fact - what was declared, and what was done - and pairing them here is
+ * what makes it impossible to write one without the other.
+ */
 export function environmentRecord(
   plan: EnvironmentPlan,
   health: HealthReport | null,
   transitions: readonly EnvironmentRecord["transitions"][number][],
   valid: boolean,
+  boundary: BoundaryReport,
 ): EnvironmentRecord {
   return {
     adapter: plan.adapter,
@@ -509,6 +533,18 @@ export function environmentRecord(
     env: plan.env,
     valid,
     healthReport: health,
+    boundary: {
+      network: {
+        policy: plan.boundary.network,
+        allow: [...plan.boundary.allow],
+        enforcement: boundary.network,
+      },
+      filesystemWrite: {
+        policy: plan.boundary.filesystemWrite,
+        enforcement: boundary.filesystemWrite,
+      },
+      crossings: boundary.crossings.map((entry) => ({ ...entry })),
+    },
     transitions: transitions.map((entry) => ({
       from: entry.from,
       to: entry.to,

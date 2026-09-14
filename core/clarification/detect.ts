@@ -223,7 +223,14 @@ export function detectGoalAmbiguities(goal: GoalLike, ctx: DetectorContext): Amb
     );
   }
 
-  for (const limit of ["maxIterations", "maxRuntimeMs", "maxCriterionMs", "networkPolicy", "filesystemWrite"] as const) {
+  for (const limit of [
+    "maxIterations",
+    "maxRuntimeMs",
+    "maxCriterionMs",
+    "networkPolicy",
+    "networkAllowList",
+    "filesystemWrite",
+  ] as const) {
     if (isMissing(goal.limits?.[limit])) {
       found.push(
         ambiguity({
@@ -231,8 +238,10 @@ export function detectGoalAmbiguities(goal: GoalLike, ctx: DetectorContext): Amb
           path: joinPointer("limits", limit),
           kind: "missing_value",
           question: `What should the ${limit} safety limit be?`,
-          // A safety limit constrains how long Veridian runs; it cannot change whether a criterion
-          // passed. Non-blocking by construction, so it is never asked.
+          // A safety limit bounds what the run is permitted to do. None of them can change whether
+          // a criterion passed, so none is blocking, and none is ever asked. Two of them
+          // (`networkPolicy`, `filesystemWrite`) bound what the application may touch rather than
+          // how long Veridian runs; the conclusion is the same for both kinds.
           blocking: isBlocking({}),
         }),
       );
