@@ -44,6 +44,18 @@ export const WAIT_STATES = ["attached", "detached", "visible", "hidden"] as cons
 export type WaitState = (typeof WAIT_STATES)[number];
 
 /**
+ * The methods a `call` step may use, upper case because that is the world's one spelling of them.
+ *
+ * Decoding upper-cases whatever the document said, so a criterion may write `put` and a reader of the
+ * adapter's record still sees one spelling. Four of the five are named by their effect rather than by
+ * a verb on purpose: `HEAD` is here because "does this object exist" is a question an object store
+ * answers without a body, and a criterion that had to `GET` a large object to learn that would be
+ * paying for an answer it never reads.
+ */
+export const CALL_METHODS = ["GET", "PUT", "POST", "DELETE", "HEAD"] as const;
+export type CallMethod = (typeof CALL_METHODS)[number];
+
+/**
  * A step decoded from its wire shape. The contract has one action key; this has one discriminant.
  *
  * Each member is one world's kind of action, and the comments say which world and why - because the
@@ -90,7 +102,28 @@ export type ValidationStep =
    * the secret" is not a property of a file, it is the result of an attempt, and the attempt is the
    * evidence.
    */
-  | { readonly kind: "run"; readonly argv: readonly string[] };
+  | { readonly kind: "run"; readonly argv: readonly string[] }
+  /**
+   * One HTTP request put to the world's own control plane, before the criterion is observed.
+   *
+   * The cloud counterpart of `sql`, `apply` and `run`, and the only one of the four whose subject is
+   * a **request** rather than a file, a manifest or a program. That is what makes it a different kind
+   * of action rather than a fourth spelling of the same one: an account is not provisioned by
+   * declaring a desired state, it is provisioned by calls, and which calls were made - and which were
+   * refused - is the thing a hardening contract is written about.
+   *
+   * `path` is the world's own path, resolved by the substitute against the account it stands in for,
+   * so a criterion can name `/cart/config.json` without knowing which host answered. `body` is a
+   * string rather than a nested document: an object store's `PUT` body *is* the object's contents,
+   * and requiring a contract to nest bytes inside a JSON object to make them expressible would make
+   * the common case the awkward one.
+   */
+  | {
+      readonly kind: "call";
+      readonly method: CallMethod;
+      readonly path: string;
+      readonly body: string | null;
+    };
 
 /** Every action, as the union above declares them. Derived, so it cannot omit a member. */
 export type StepKind = ValidationStep["kind"];
@@ -249,6 +282,37 @@ const REGISTER: readonly StepCodec[] = [
     },
     encode: (step: { readonly kind: "run"; readonly argv: readonly string[] }) => [...step.argv],
   },
+  {
+    kind: "call",
+    summary: "put one request to the world's control plane",
+    decode: (body, path) => {
+      if (!isPlainObject(body)) throw defect(path, "call must be an object with method and path");
+      const method = requireString(body["method"], `${path}.method`, "call.method").toUpperCase();
+      // Checked against the tuple rather than a hand-written `switch`, so a method the register's
+      // type does not name cannot be reached by a document - and the two cannot disagree.
+      if (!(CALL_METHODS as readonly string[]).includes(method)) {
+        throw defect(`${path}.method`, `call.method must be one of ${CALL_METHODS.join(", ")}`);
+      }
+      const raw = body["body"];
+      if (raw !== undefined && raw !== null && typeof raw !== "string") {
+        throw defect(`${path}.body`, "call.body must be a string when it is given");
+      }
+      return {
+        kind: "call" as const,
+        method: method as CallMethod,
+        path: requireString(body["path"], `${path}.path`, "call.path"),
+        body: typeof raw === "string" ? raw : null,
+      };
+    },
+    // `body` is written out even when it is `null`, for the same reason `waitFor.state` is: what the
+    // adapter receives must be what was actually decided, and "no body" is a decision a reader of the
+    // record has to be able to tell from "the encoder dropped a field".
+    encode: (step: { readonly kind: "call"; readonly method: CallMethod; readonly path: string; readonly body: string | null }) => ({
+      method: step.method,
+      path: step.path,
+      body: step.body,
+    }),
+  },
 ];
 
 /**
@@ -352,4 +416,5 @@ export const STEP_CODEC_COVERAGE: Record<StepKind, true> = {
   sql: true,
   apply: true,
   run: true,
+  call: true,
 };

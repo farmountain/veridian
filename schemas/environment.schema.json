@@ -76,6 +76,18 @@
       "required": ["family", "system", "user", "root"],
       "additionalProperties": false
     },
+    "cloud": {
+      "type": ["object", "null"],
+      "description": "The cloud account this world stands in for, when the world is one. Present for a simulated account such as `sim-cloud`; absent for every other world. Same reasoning as `os`: stated here rather than as an adapter-private option, so the plan every reader sees names the same provider, region, account and principal the run measured, and so that 'this world is not an account' stays distinguishable from 'nobody filled the field in'. A world declaring `cloud` has no url, no cluster, no posix and no os, exactly as a database world has no url. There is deliberately no path here: a provider holds objects rather than directories, and every other simulated world carries a directory only because every other one has a filesystem.",
+      "properties": {
+        "provider": { "type": "string", "minLength": 1, "description": "The provider identity the readings name, so a result says which account family produced it. A free string rather than an enumeration: a provider name decides nothing a criterion can observe, and enumerating it would let a label act as a rule." },
+        "region": { "type": "string", "minLength": 1, "description": "The region the readings were taken in. A record, not a placement - the world has no data centre, and naming the region it stood in for is how a verdict stays traceable to a named substitute." },
+        "account": { "type": "string", "minLength": 1, "description": "The account that holds every resource a reading reports. Distinct from `principal` on purpose: a decision is scoped to the account while being asked about the principal, and keeping both is what lets a workload's permissions be attached to the wrong identity." },
+        "principal": { "type": "string", "minLength": 1, "description": "The identity the criteria act as. Access is decided as this principal, never as an account root - every policy in an account yields to its root, so a hardening contract judged as one is vacuously green. The loader refuses the privileged names by name, from the vocabulary that also decides what the substitute reports." }
+      },
+      "required": ["provider", "region", "account", "principal"],
+      "additionalProperties": false
+    },
     "health": {
       "type": "object",
       "properties": {

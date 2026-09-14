@@ -50,6 +50,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => ({
   cluster: null,
   posix: { distribution: "veridian-simulated-linux", user: "app", root: "app/.sandbox" },
   os: null,
+  cloud: null,
   health: { path: null, expectStatus: null, timeoutMs: 5_000, intervalMs: 10, readyPattern: null },
   reset: { strategy: "restart", command: null },
   browser: { enabled: false, viewport: { width: 1280, height: 720 }, locale: null, timezoneId: null },

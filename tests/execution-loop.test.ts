@@ -61,6 +61,7 @@ const environmentPlan: EnvironmentPlan = {
   cluster: null,
   posix: null,
   os: null,
+  cloud: null,
   health: { path: "/health", expectStatus: 200, timeoutMs: 20_000, intervalMs: 100, readyPattern: null },
   reset: { strategy: "restart", command: null },
   browser: { enabled: true, viewport: null, locale: null, timezoneId: null },

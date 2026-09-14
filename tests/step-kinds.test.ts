@@ -82,6 +82,7 @@ const WIRE: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   sql: { sql: "SELECT COUNT(*) FROM cart_items" },
   apply: { apply: "manifests/deployment.yaml" },
   run: { run: ["cat", "/etc/veridian/secret.conf"] },
+  call: { call: { method: "PUT", path: "/cart/config.json", body: '{"region":"eu-west-1"}' } },
 };
 
 describe("the step register describes every world's actions", () => {
@@ -202,5 +203,35 @@ describe("the decode of a kind is total, not partial", () => {
     assert.throws(() => decodeStep({ run: "cat /etc/shadow" }, "AC-001", 0), /run must be a non-empty array/);
     const parsed = decodeStep({ run: ["cat", "/etc/shadow"] }, "AC-001", 0);
     assert.deepEqual(parsed, { kind: "run", argv: ["cat", "/etc/shadow"] });
+  });
+
+  it("gives the world one spelling of a method, and refuses one it does not have", () => {
+    // `call` is the only branch whose value is an object with a closed vocabulary in it. The
+    // normalisation is the assertion that matters in one direction: an adapter records the method it
+    // received, and two criteria that wrote `put` and `PUT` must not read as two different requests
+    // in the world's own call log - which is a log `cloud.call` judges.
+    assert.deepEqual(decodeStep({ call: { method: "put", path: "/a" } }, "AC-001", 0), {
+      kind: "call",
+      method: "PUT",
+      path: "/a",
+      body: null,
+    });
+    // `PATCH` is the interesting refusal rather than a typo: it is a real HTTP method that a real
+    // object store serves and this substitute does not, so a contract naming it gets told the
+    // vocabulary instead of a silent `405` the world never issued.
+    assert.throws(
+      () => decodeStep({ call: { method: "PATCH", path: "/a" } }, "AC-001", 0),
+      /call\.method must be one of GET, PUT, POST, DELETE, HEAD/,
+    );
+    assert.throws(() => decodeStep({ call: { path: "/a" } }, "AC-001", 0), /call\.method must be a non-empty string/);
+    assert.throws(() => decodeStep({ call: { method: "GET" } }, "AC-001", 0), /call\.path must be a non-empty string/);
+    // A nested body is refused rather than stringified, because stringifying would hide the one case
+    // that matters: an operator who wrote an object meaning *this object's contents* would get
+    // `[object Object]` written into their bucket, and the criterion would pass on bytes nobody chose.
+    assert.throws(
+      () => decodeStep({ call: { method: "PUT", path: "/a", body: { a: 1 } } }, "AC-001", 0),
+      /call\.body must be a string when it is given/,
+    );
+    assert.throws(() => decodeStep({ call: "PUT /a" }, "AC-001", 0), /call must be an object with method and path/);
   });
 });

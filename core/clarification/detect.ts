@@ -140,6 +140,15 @@ export interface EnvironmentLike {
    * Windows document for a `distribution`.
    */
   readonly os?: unknown;
+  /**
+   * Present when the world stands in for a cloud account.
+   *
+   * It has no address at all, and - unlike the four declarations before it - it carries no path
+   * either. A provider holds objects rather than directories, so this is the one world shape whose
+   * declaration cannot be mistaken for a filesystem, and the one where "the world has no url" and
+   * "the world has no local directory" are both true at once.
+   */
+  readonly cloud?: unknown;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -156,8 +165,8 @@ const isMissing = (value: unknown): boolean =>
  * layer and may not import an adapter to ask it. Five shapes have no HTTP: a world reached by
  * opening a file (`databasePath`), one whose address is a substitute control plane (`cluster`), one
  * that is a system rather than a service (`posix`), one that is a machine (`os`), and one whose
- * surface is an operating system's rather than a socket's. Anything else is a socket world, and is
- * still asked for its URL.
+ * subject is an account rather than a host or a system (`cloud`). Anything else is a socket world,
+ * and is still asked for its URL.
  *
  * Getting this wrong is not cosmetic, and each new shape is how the cost was measured. Every question
  * gated below is an HTTP question - the address, the health path, the health status, whether to drive
@@ -168,13 +177,20 @@ const isMissing = (value: unknown): boolean =>
  * and demanded a URL for a world whose adapter never reads one. *Two implementations of one rule
  * disagree the first time a world arrives that only one of them was written for* - and the answer is
  * not a third implementation. There is one predicate, and every new kind of world is added here.
+ *
+ * The `||` chain is the shape this predicate has to have, and it is also the shape that hides a
+ * member: adding `cloud` leaves the `posix` and `os` clauses untouched, so a world could be covered
+ * by somebody else's clause and nothing would fail. `tests/environment-gaps.test.ts` therefore runs
+ * the HTTP questions against *every* no-HTTP world the register names rather than against the one
+ * the test was written for, so a new member is covered by construction instead of by memory.
  */
 const hasNoHttp = (environment: EnvironmentLike): boolean =>
   isMissing(environment.url) &&
   (!isMissing(environment.databasePath) ||
     !isMissing(environment.cluster) ||
     !isMissing(environment.posix) ||
-    !isMissing(environment.os));
+    !isMissing(environment.os) ||
+    !isMissing(environment.cloud));
 
 const asArray = <T>(value: readonly T[] | undefined): readonly T[] => value ?? [];
 

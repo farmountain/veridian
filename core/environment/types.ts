@@ -253,6 +253,23 @@ export interface EnvironmentDefinitionShape {
     readonly user?: unknown;
     readonly root?: unknown;
   };
+  /**
+   * The cloud account this world stands in for, when the world is one.
+   *
+   * Four facts, and not one of them is a path - which is what makes this block different in kind
+   * from the three before it. A provider, a region, an account and a principal: the first three say
+   * *where* a reading was taken and the fourth says *as whom*, and a contract whose criteria act as
+   * one identity while the application wrote as another would be judging permissions nobody asked
+   * about. `principal` is the field that has to be declared rather than inferred, because a reading
+   * could report the identity it saw and could never promise the one a criterion is entitled to act
+   * as.
+   */
+  readonly cloud?: {
+    readonly provider?: unknown;
+    readonly region?: unknown;
+    readonly account?: unknown;
+    readonly principal?: unknown;
+  };
   readonly health?: {
     readonly path?: unknown;
     readonly expectStatus?: unknown;
@@ -383,6 +400,18 @@ export interface EnvironmentPlan {
    * recovered from the reading afterwards.
    */
   readonly os: OsPlan | null;
+  /**
+   * The cloud account this world stands in for, or `null` when the world is not one.
+   *
+   * The sixth of the same field, one per kind of world, and read for the same reason as the other
+   * five: the first question asked of a result is *which world produced it*. A simulated account has
+   * four answers that have to travel with the verdict - which provider the readings name, which
+   * region they were taken in, which account paid for them, and which identity the criteria act as -
+   * because each one changes what a `cloud.*` expectation means and none of them can be recovered
+   * from the reading afterwards. It is also the field a bundle is read against when a verdict reached
+   * against a substitute has to be traceable to the thing it substituted for.
+   */
+  readonly cloud: CloudPlan | null;
   readonly health: HealthPolicy;
   readonly reset: { readonly strategy: ResetStrategy; readonly command: string | null };
   readonly browser: BrowserPolicy;
@@ -456,4 +485,36 @@ export interface OsPlan {
   readonly user: string;
   /** Absolute, resolved against `appPath` on the same rule `databasePath` follows. */
   readonly root: string;
+}
+
+/**
+ * A cloud account's resolved declaration.
+ *
+ * There is no path here, and that is the honest shape rather than an omission: a provider holds
+ * objects, queues, secrets and policies, and the application that provisions it never touches a file
+ * in the world it is provisioning. Every other simulated plan carries a directory because every other
+ * one has a filesystem; this world has none, so a `root` field would be a field that exists to make
+ * the sixth block look like the first five.
+ *
+ * `provider` is a free string rather than a closed vocabulary, unlike `OsPlan.family`. A family earns
+ * its enumeration by deciding how a path is spelled - a difference a criterion can observe - while a
+ * provider name decides nothing except what the reading calls itself. Enumerating it would make this
+ * field look like a rule and let it act as a label, and the two would then disagree the first time
+ * somebody wanted a second substitute.
+ *
+ * `principal` is the account the criteria act *as*, and it is deliberately not the same question as
+ * "which account is this" - which is `account`. One account may hold many principals, and an access
+ * decision is scoped to the account while being asked about the principal. Keeping both is what lets
+ * a judgment be duplicated across a workload by attaching the wrong identity, which is the failure
+ * this world exists to catch.
+ */
+export interface CloudPlan {
+  /** The provider identity the readings name, e.g. `veridian-cloud`. Declared, never inferred. */
+  readonly provider: string;
+  /** The region the readings were taken in, e.g. `veridian-1`. A record, not a placement. */
+  readonly region: string;
+  /** The account that holds every resource a reading reports. */
+  readonly account: string;
+  /** The identity the criteria act as. Access is decided *as* this principal, never as an account root. */
+  readonly principal: string;
 }

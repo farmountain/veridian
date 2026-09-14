@@ -125,6 +125,23 @@
           "required": ["run"],
           "properties": { "run": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "description": "One command executed inside the system the world stands in for, as an argument vector rather than a command line, producing the files, permissions, users, services and ports the criterion's `posix.*` expectations read. This is how a system world is acted on: it has no page to click and no form to fill, so the equivalent of an interaction is a command with an observable result. An argument vector rather than a shell string because a shell string would need a shell, and the shell would be a second substitution with its own quoting rules to get wrong - while the interesting question (can this user read that file?) is asked perfectly well by naming the program and its arguments. The world resolves the program name against its own bin directory, so the same record drives a substituted system and a real one." } },
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["call"],
+          "properties": {
+            "call": {
+              "type": "object",
+              "required": ["method", "path"],
+              "properties": {
+                "method": { "enum": ["GET", "PUT", "POST", "DELETE", "HEAD"], "description": "The HTTP method. Upper case; a document may write any case and the loader normalises it, so the world has one spelling of each method." },
+                "path": { "type": "string", "minLength": 1, "description": "The path of the request, resolved by the substitute against the account it stands in for, so a criterion can name a path without knowing which host answered." },
+                "body": { "type": ["string", "null"], "description": "The request body, when there is one. A string rather than a nested document, because an object store's PUT body IS the object's contents - requiring a contract to nest bytes inside a JSON object to make them expressible would make the common case the awkward one. `null` means no body, and is written out rather than omitted so a reader of the adapter's record can tell a decision from a dropped field." }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
         }
       ]
     },

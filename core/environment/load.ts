@@ -2,11 +2,13 @@ import { DefinitionError, loadDocument, resolveSibling } from "../goal/load.ts";
 import type { GoalDocument, GoalLimits, SourceRef } from "../goal/types.ts";
 import type { ReadonlyIoPort } from "../io.ts";
 import { SCHEMA_URIS, type SchemaSet } from "../schema/index.ts";
+import { principalProblem } from "./cloud-observation.ts";
 import { OS_FAMILIES, PRIVILEGED_OS_ACCOUNTS } from "./os-observation.ts";
 import {
   RESET_STRATEGIES,
   type BoundaryPolicy,
   type BrowserPolicy,
+  type CloudPlan,
   type ClusterPlan,
   type EnvironmentPlan,
   type HealthPolicy,
@@ -296,6 +298,53 @@ function readOs(raw: unknown, appPath: string): OsPlan | null {
   };
 }
 
+/**
+ * The cloud account declaration, resolved.
+ *
+ * The fourth time the rule of {@link readCluster}, {@link readPosix} and {@link readOs} is written
+ * out, and the difference from all three is worth naming: there is no path here. Nothing in this
+ * block resolves against `appPath`, because a provider holds objects rather than directories and an
+ * application that provisions one never writes into the world it is provisioning. A `root` field
+ * would have been the sixth block imitating the first five rather than describing the sixth world.
+ *
+ * `principal` is refused by {@link principalProblem} *here*, at load, rather than by the adapter at
+ * `create()`. Both would stop the run, and only this one stops it before a world exists: a contract
+ * judged as an account root is vacuously green - every policy in an account yields to a root - so the
+ * sentence explaining why belongs where the operator's document is read, with the rest of the
+ * refusals about that document.
+ */
+function readCloud(raw: unknown): CloudPlan | null {
+  if (raw === undefined || raw === null) return null;
+  if (!isPlainObject(raw)) {
+    throw defect(
+      "$.cloud",
+      "cloud must be an object naming a provider, a region, an account and a principal",
+    );
+  }
+  const provider = asString(raw["provider"]).trim();
+  const region = asString(raw["region"]).trim();
+  const account = asString(raw["account"]).trim();
+  const principal = asString(raw["principal"]).trim();
+  const missing = [
+    provider === "" ? "provider" : null,
+    region === "" ? "region" : null,
+    account === "" ? "account" : null,
+    principal === "" ? "principal" : null,
+  ].filter((entry): entry is string => entry !== null);
+  if (missing.length > 0) {
+    throw defect(
+      `$.cloud.${missing[0] ?? "provider"}`,
+      `the cloud declaration is missing ${missing.join(", ")}. The provider and region are what every ` +
+        "reading names, the account is what holds every resource the readings report, and the " +
+        "principal is the identity every access question is decided as - defaulting any of them " +
+        "would produce a verdict about an account nobody described.",
+    );
+  }
+  const problem = principalProblem(principal);
+  if (problem !== null) throw defect("$.cloud.principal", problem);
+  return { provider, region, account, principal };
+}
+
 function readBoundary(limits: GoalLimits): BoundaryPolicy {
   return {
     network: limits.networkPolicy,
@@ -376,6 +425,7 @@ export function finalizeEnvironment(
     cluster: readCluster(raw["cluster"], appPath),
     posix: readPosix(raw["posix"], appPath),
     os: readOs(raw["os"], appPath),
+    cloud: readCloud(raw["cloud"]),
     health: readHealth(raw["health"], url !== "", readyPattern),
     reset: { strategy: strategy as ResetStrategy, command: resetCommand },
     browser: readBrowser(raw["browser"], url !== ""),
