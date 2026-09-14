@@ -251,7 +251,7 @@ scripts/                Bootstrap scripts that must run before anything is type-
 docs/                   Design documents. Indexed below.
 ```
 
-Also at repo root: `README.md`, `AGENTS.md` (this file), `LICENSE` (MIT), `package.json`,
+Also at repo root: `README.md`, `AGENTS.md` (this file), `LICENSE` (BSD 2-Clause), `package.json`,
 `tsconfig.json`, `.nvmrc`, `.gitignore`. **`README.md` is the front door** - the first thing a reader opens - and this file is
 the hand-off to the next agent. They answer different questions: the README says what Veridian is and
 how to see it work, this file says how to change it without breaking a rule it paid for. When a change
@@ -382,9 +382,10 @@ Making Veridian installable therefore needs a real build: `tsc` to `dist/*.js` w
 a location-independent asset resolver, and a smoke test that drives the *built* CLI - because
 otherwise the shipped `.js` is untested while every test covers `.ts`, which is exactly the
 unverified claim this project refuses to make. That is a project in itself, and it is not the MVP:
-`docs/PLAN.md` §56 defines MVP done as *"a developer can **clone the repository**"*. `package.json`
-therefore keeps `private: true`, so the registry path cannot be taken by accident, and keeps `bin`
-because that is what makes the CLI reachable as `veridian` from a clone.
+`docs/PLAN.md` §56 defines MVP done as *"a developer can **clone the repository**"*. The user declined
+the registry path at ship time, so `package.json` keeps `private: true` as a settled guard rather
+than a placeholder awaiting a decision, and keeps `bin` because that is what makes the CLI reachable
+as `veridian` from a clone.
 
 Consequence for anyone touching the CLI: **the interface ships as source.** Keep `cli/veridian.ts`
 runnable by `node`, and never introduce a step between the source tree and the running program.

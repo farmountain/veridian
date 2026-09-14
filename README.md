@@ -80,10 +80,10 @@ would be a tool that cannot observe anything until its user adds one.
 Shipping to a registry therefore needs a build step, a packaging design and a peer-dependency story -
 and the MVP Definition of Done asks for something else: *"a developer can clone the repository"*. So
 the shipped model is a clone, `bin` is what `npm link` and `node_modules/.bin` use from that clone,
-and the registry path is an open decision with its cost recorded in
-[`docs/IMPLEMENTATION-PLAN.md`](./docs/IMPLEMENTATION-PLAN.md). `package.json` stays `private: true`
-until that decision is taken, which is the guard that keeps a package that cannot work from being
-published by accident.
+and **the registry path is declined**, with its cost recorded in
+[`docs/IMPLEMENTATION-PLAN.md`](./docs/IMPLEMENTATION-PLAN.md), rather than left open. `package.json`
+stays `private: true`, which is the guard that keeps a package that cannot work from being published
+by accident.
 
 ---
 
@@ -391,6 +391,11 @@ engine later. *"MCP is the door. Veridian is the building."*
 | [`AGENTS.md`](./AGENTS.md) | How to work in this repository: the rules, the layout, the commands, and the defects each of those rules was paid for with. |
 | [`docs/PLAN.md`](./docs/PLAN.md) | The authoritative product and architecture specification: scope boundary, lifecycle, acceptance model, MVP scope, roadmap. |
 | [`docs/IMPLEMENTATION-PLAN.md`](./docs/IMPLEMENTATION-PLAN.md) | What was actually built against that plan: module inventory, decisions taken and reversed, open items. |
+
+## License
+
+**BSD 2-Clause** - see [`LICENSE`](./LICENSE). It is recorded as a reversal of the build-time MIT
+default in [`docs/IMPLEMENTATION-PLAN.md`](./docs/IMPLEMENTATION-PLAN.md), assumption A12.
 
 *Veridian was formerly named AVF ("Agent Validation Fabric"); `docs/PLAN.md` predates the rename, so
 read "AVF" as Veridian and the plan's `.avf/` as `.veridian/`.*

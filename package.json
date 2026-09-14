@@ -4,7 +4,7 @@
   "private": true,
   "description": "Veridian - the sandbox testing and validation layer for AI coding agents. The agents remain external.",
   "type": "module",
-  "license": "MIT",
+  "license": "BSD-2-Clause",
   "engines": {
     "node": ">=22.18.0"
   },
