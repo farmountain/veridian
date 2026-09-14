@@ -4,9 +4,11 @@ Agent instructions for the **Veridian** repository. This is the single always-on
 instructions file for this workspace — do not add a second one
 (`.github/copilot-instructions.md`) alongside it.
 
-> **Status: the MVP is implemented and green.** Core, the `local-web` adapter, the Playwright
-> validators, the CLI, the schemas and the canonical demo all exist. `npx tsc --noEmit` is silent and
-> `node --test` reports 378 passing tests. Two distribution routes ship - a clone and an npm package -
+> **Status: the MVP is implemented and green, and a second sandbox world has landed.** Core, the
+> `local-web` adapter, the Playwright validators, the CLI, the schemas and the canonical demo all exist.
+> `local-db` - a second adapter and a second validator family, against a SQLite file with no browser -
+> exists beside them, and is the proof that `EnvironmentAdapter` is a seam. `npx tsc --noEmit` is silent
+> and `node --test` reports 417 passing tests. Two distribution routes ship - a clone and an npm package -
 > and there is still **no build step between the source tree and the running program**: Node 22 strips
 > types and runs `.ts` straight from the source. `npm run build` exists only to produce the *compiled*
 > copy an installed package needs, because Node refuses type-stripping under `node_modules`. Read
@@ -231,9 +233,10 @@ core/execution/         Run controller implementing the state machine above + th
 core/validation/        ValidationResult, validator registry, status semantics, verdict rollup.
 core/environment/       EnvironmentAdapter interface + Environment Manager (lifecycle,
                         health checks, reset, snapshot/restore) + web-observation.ts, the shared
-                        vocabulary that keeps validators from depending on adapters, and the
-                        boundary vocabulary (BoundaryPolicy/BoundaryReport) that keeps a declared
-                        safety limit from being mistaken for an enforced one.
+                        vocabulary that keeps validators from depending on adapters + db-observation.ts,
+                        the same idea for the database family + the boundary vocabulary
+                        (BoundaryPolicy/BoundaryReport) that keeps a declared safety limit from being
+                        mistaken for an enforced one.
 core/evidence/          Evidence Engine. Writes the run bundle.
 core/run/               Run identity, history, iteration state.
 core/memory/            Optional durable memory client (HipCortex). Never required to run.
@@ -248,13 +251,29 @@ core/assets.ts          Where Veridian's OWN files live, derived from import.met
                         conflating the two is the defect this file exists to remove.
 adapters/local-web/     LocalWebEnvironment — start/health-check/stop/reset a local app, and the
                         lazy Playwright browser port. Playwright is NOT a dependency.
+adapters/local-db/      LocalDbEnvironment - build a SQLite file, read it, reset by rebuilding.
+                        The second adapter, and the proof that EnvironmentAdapter is a seam rather
+                        than a browser harness with an interface bolted on. `database-port.ts`
+                        carries the measured facts about `node:sqlite`; the engine is reached by a
+                        dynamic `import`, so there is no dependency to install either.
 validators/playwright/  Playwright web validators (element, value, text, count, url, console,
                         network).
-cli/                    The interface that exists today: arguments, support, veridian.ts.
-schemas/                goal/acceptance/environment/run/result/ambiguity .schema.json — the
+validators/database/    Database validators (query, value, count, table, column). Judge a reading in
+                        core/environment/db-observation.ts, which is what keeps them from importing
+                        an adapter. Each declares its own `targetNoun`, so the clarification ladder
+                        asks "which table" rather than "which element".
+cli/                    The interface that exists today: arguments, support, worlds.ts (the adapter
+                        register and the requirements each adapter declares), veridian.ts.
+schemas/                goal/acceptance/environment/run/result/ambiguity .schema.json - the
                         machine-readable contracts.
 examples/shopping-cart/ The canonical demo: correct app + a run-time defect overlay + the goal,
                         contract and environment it is judged by.
+examples/inventory-db/  The second demo, and the one that carries the argument: the same lifecycle,
+                        verdict rules, evidence bundle and repair protocol against a world with no
+                        process, no socket, no page and no console.
+examples/defect-text.ts One implementation of the CRLF rule for a textual overlay on a source file.
+                        Two demos injecting defects is two chances to teach the rule differently;
+                        a third copy is where the rule gets broken.
 Dockerfile              A DISTRIBUTION route, not a sandbox environment. Built and run in CI,
                         because this machine has no container runtime and an unbuilt
                         Dockerfile is a claim.
@@ -333,7 +352,7 @@ on this machine and is quoted from its real output.
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 378 tests, ~1s. No directory argument.
+node --test                # the whole suite. 417 tests, ~1s. No directory argument.
 npm run gate               # typecheck then test. Run this before claiming anything is done.
 
 npm run build              # tsc -p tsconfig.build.json, then node scripts/copy-assets.mjs
@@ -360,6 +379,8 @@ node cli/veridian.ts metrics --defects AC-001,AC-002,AC-003
 npm run demo                                # the canonical demo. Asks the environment document for
                                             # its browser, so the three-defect FAIL -> repair -> PASS
                                             # progression actually runs. Exit 0 when it passes.
+npm run demo:db                             # the second demo: the same loop against a SQLite file,
+                                            # with no browser at all. Exit 0 when it passes.
 npm run demo:no-browser                     # the same demo with `--browser none`. Every criterion is
                                             # a browser observation, so this must end INCONCLUSIVE
                                             # (exit 2). It shows the refusal, not the aha.

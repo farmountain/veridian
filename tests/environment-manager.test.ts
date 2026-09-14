@@ -26,8 +26,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => ({
   env: {},
   dependencyInstall: null,
   start: { command: "node", args: ["serve.mjs"], readyPattern: null },
-  url: "http://127.0.0.1:4173",
-  health: {
+  url: "http://127.0.0.1:4173",  databasePath: null,  health: {
     path: "/health",
     expectStatus: 200,
     timeoutMs: 300,
@@ -51,7 +50,8 @@ interface FakeOptions {
   readonly snapshotId?: string;
 }
 
-const HEALTHY: HealthProbe = { statusCode: 200, message: null, patternSeen: null };
+// `ok: null` is the HTTP world saying "compare my status code" - the adapter has no separate verdict.
+const HEALTHY: HealthProbe = { ok: null, statusCode: 200, message: null, patternSeen: null };
 
 /** Probes are consumed in order; the last one repeats. */
 function fakeAdapter(options: FakeOptions = {}): FakeAdapter {
@@ -161,8 +161,8 @@ describe("PREPARE drives the lifecycle in order and records it", () => {
   it("retries the health check until it passes, and reports how many attempts it took", async () => {
     const adapter = fakeAdapter({
       probes: [
-        { statusCode: null, message: "ECONNREFUSED", patternSeen: null },
-        { statusCode: 503, message: null, patternSeen: null },
+        { ok: null, statusCode: null, message: "ECONNREFUSED", patternSeen: null },
+        { ok: null, statusCode: 503, message: null, patternSeen: null },
         HEALTHY,
       ],
     });
@@ -225,7 +225,7 @@ describe("PREPARE drives the lifecycle in order and records it", () => {
   });
 
   it("requires both the status and a declared readiness pattern when the adapter can see stdout", async () => {
-    const adapter = fakeAdapter({ probes: [{ statusCode: 200, message: null, patternSeen: false }] });
+    const adapter = fakeAdapter({ probes: [{ ok: null, statusCode: 200, message: null, patternSeen: false }] });
     const subject = manager(adapter);
 
     const result = await subject.prepare(

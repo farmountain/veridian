@@ -1,0 +1,44 @@
+# The goal: an observable end state, not an activity.
+#
+# "Make the inventory work" is not a goal. "A widget has 300 on hand, the placed orders are worth
+# $125.00, and exactly one product is below its reorder level" is a goal, because a third party can
+# open the database and decide whether it is true. Veridian never chooses this; it validates against
+# it.
+
+version: 1
+id: inventory-db
+
+statement: >-
+  The inventory database built from the catalog is internally consistent: every product carries the
+  quantity on hand the catalog states, the placed order lines are priced from that catalog and sum
+  to the correct total in whole cents, and the reorder report lists exactly those products whose
+  quantity on hand is below their reorder level.
+
+acceptance: acceptance.yaml
+environment: environment.yaml
+
+context: |-
+  The application under test is a build step, not a server. It reads a catalog written in dollars,
+  stores money in whole cents, derives a reorder report, and writes one SQLite file. Nothing about it
+  is observable through a browser, which is exactly why it is here: a criterion for this goal is a
+  question put to the data, and the answer has to come from the data rather than from a page.
+
+tags:
+  - database-world
+  - second-adapter
+
+# Safety boundaries. Every field is required and has a hard ceiling as well as a default, because
+# Veridian executes potentially untrusted AI-generated code (PLAN.md §52).
+limits:
+  # 10 is the MVP ceiling. The demo needs 4: one to observe the defects, and three repairs.
+  maxIterations: 10
+  maxRuntimeMs: 300000
+  maxCriterionMs: 30000
+  # The world is a local file and needs no network at all. Recorded in the run's reproducibility
+  # block, and reported by the adapter as `unsupported` rather than `enforced` - a boundary this
+  # adapter cannot hold is stated as unheld rather than implied to be safe.
+  networkPolicy: deny
+  # `sandbox` rather than `deny`: the build step must be able to create the database file it is
+  # asked to create, which is a write inside the world. An `ATTACH` that would open a *second*
+  # database outside it is refused by the adapter and recorded as a crossing.
+  filesystemWrite: sandbox

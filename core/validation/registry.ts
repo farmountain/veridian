@@ -69,6 +69,10 @@ export class ValidatorRegistry {
         needsTarget: validator.needsTarget,
         comparisons: validator.comparisons,
         observationKind: validator.observationKind,
+        // Spread rather than assigned, so a validator that declares nothing carries no key at all.
+        // An explicit `targetNoun: undefined` would make every descriptor a different object shape
+        // than the ones tests and fixtures already compare with `deepEqual`.
+        ...(validator.targetNoun === undefined ? {} : { targetNoun: validator.targetNoun }),
       };
     });
   }

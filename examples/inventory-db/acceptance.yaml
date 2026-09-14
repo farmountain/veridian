@@ -1,0 +1,93 @@
+# The acceptance contract: what "done" means, in terms a machine can decide.
+#
+# A criterion is a deterministic action sequence plus declarative expectations over the resulting
+# observation. In a web world the action is a click and the observation is a page. In this world the
+# action is a query and the observation is the database - which is the whole point of the second
+# adapter. `sql` is not a special case bolted onto a browser vocabulary; it is *this* world's
+# equivalent of an interaction, and `db.*` is its equivalent of a reading.
+#
+# The design rule that makes these criteria worth having: each one phrases the question so that there
+# is exactly one plausible wrong answer, and it is the answer a defect actually produces. A criterion
+# that any population of rows satisfies proves nothing about the application.
+
+version: 1
+goal_id: inventory-db
+
+criteria:
+  # AC-001: the quantity, read one row at a time.
+  - id: AC-001
+    description: >-
+      The catalog's stated quantity on hand survives the build. A widget is seeded with 30 on hand;
+      the database must say 30.
+    steps:
+      # One statement, because an interaction with a database is a query with an observable result.
+      - sql: "SELECT quantity_on_hand FROM products WHERE sku = 'WIDGET'"
+    expect:
+      # `db.value` reads a named column out of the statement's result set. The comparison depends on
+      # the data: 30 is a number, so it is ordered and compared as one. A string here would be
+      # searched instead, and "300 contains 30" would be true - which is why the validator branches
+      # on the actual value rather than on the expectation.
+      - validator: db.value
+        target: quantity_on_hand
+        equals: 30
+        message: the widget's quantity on hand was not the catalog's 30
+    # The observation the adapter wrote. For a database world this is not decoration: there is no
+    # page to screenshot, so the recorded reading *is* the evidence a reader can inspect afterwards.
+    evidence:
+      - json
+
+  # AC-002: money is whole cents, and it is priced from the catalog rather than restated.
+  - id: AC-002
+    description: >-
+      The placed order lines sum to the correct total in cents. Two widgets at $10, three gadgets at
+      $25 and six doodads at $5 is 12500 cents.
+    steps:
+      - sql: "SELECT SUM(quantity * unit_price_cents) AS total_cents FROM order_lines"
+    expect:
+      - validator: db.value
+        target: total_cents
+        equals: 12500
+        message: the order total was not 12500 cents, so a price or a quantity is wrong
+    evidence:
+      - json
+
+  # AC-003: the report, not the query that produced it.
+  - id: AC-003
+    description: >-
+      The reorder report lists exactly those products below their reorder level. The doodad is seeded
+      *at* its level, not below it, so the boundary between `<` and `<=` is observable: one row, not
+      two.
+    steps:
+      - sql: "SELECT sku, shortfall FROM reorder_items ORDER BY sku"
+    expect:
+      # A row count rather than a value, because "which rows" is the question. `db.count` is the
+      # same word the web family uses for the same quantity, and the numbers here are counts, not
+      # money, so they are compared as ordered numbers.
+      - validator: db.count
+        target: reorder_items
+        equals: 1
+        message: the reorder report did not contain exactly the one short product
+    evidence:
+      - json
+
+  # AC-004: the shape of the world, which must hold before anything about its contents can mean
+  # much. It passes from the first iteration, and it is here deliberately: a run where every
+  # criterion fails tells you less than a run where one says "the world I was given is the world I
+  # expected". It also exercises the two validators that read the schema rather than a result set.
+  - id: AC-004
+    description: >-
+      Both tables exist and the reorder report carries the columns the report is supposed to carry.
+    # No steps: a criterion with no steps judges the landing state, which for this world is the built
+    # database. Nothing has to be queried to ask whether a table exists.
+    expect:
+      - validator: db.table
+        target: order_lines
+        equals: true
+        message: the order_lines table was not in the database
+      - validator: db.column
+        # Table and column, separated by the first dot - so a column name may itself contain one.
+        target: reorder_items.shortfall
+        equals: true
+        message: the reorder report had no shortfall column
+    evidence:
+      - json

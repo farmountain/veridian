@@ -348,6 +348,10 @@ export class EnvironmentManager {
     const plan = this.#plan as EnvironmentPlan;
     const id = this.#id as string;
     const url = probeUrl(plan);
+    // What a reader is told to look at. A world with no address is named by its adapter rather than
+    // by whatever an empty string would render as, so no failure message reads "no response from ".
+    const where = url ?? `the ${plan.adapter} world`;
+    const expectStatus = plan.health.expectStatus;
     const timeoutMs = plan.health.timeoutMs;
     const intervalMs = Math.max(1, plan.health.intervalMs);
     const maxAttempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
@@ -368,14 +372,21 @@ export class EnvironmentManager {
         // A probe that throws is an unhealthy environment, not a Veridian defect: an adapter that
         // cannot complete a request has, from the run's point of view, the same information as one
         // whose request was refused.
-        probe = { statusCode: null, message: messageOf(error), patternSeen: null };
+        probe = { ok: null, statusCode: null, message: messageOf(error), patternSeen: null };
       }
 
       statusCode = probe.statusCode;
       if (probe.message !== null) message = probe.message;
       if (probe.patternSeen !== null) patternSeen = probe.patternSeen;
 
-      const statusOk = statusCode === plan.health.expectStatus;
+      // Readiness has two honest shapes and which applies is the world's business, not the
+      // manager's. A world with a status code is judged by it. A world without one - a database file
+      // that either opens or does not - is judged by the adapter's own verdict, because there is no
+      // number to compare and inventing one (200 for "the file opened") would record a fact the
+      // world never produced. A world that answers neither way is never ready: the fallthrough is
+      // `false`, so an adapter that says nothing cannot become healthy by being silent.
+      const statusOk =
+        probe.ok !== null ? probe.ok : expectStatus !== null && statusCode === expectStatus;
       // A declared ready pattern is a *required* signal when the adapter can observe stdout, and an
       // unobservable one when it cannot. Recording `null` rather than `true` keeps the report honest
       // about which of those two happened.
@@ -386,7 +397,10 @@ export class EnvironmentManager {
           ok: true,
           report: {
             ok: true,
-            message: `healthy: ${url} returned ${statusCode}`,
+            message:
+              url === null
+                ? `healthy: ${where} reported ready`
+                : `healthy: ${url} returned ${statusCode}`,
             attempts,
             elapsedMs: this.#clock.now() - startedAt,
             url,
@@ -399,10 +413,15 @@ export class EnvironmentManager {
 
       const elapsedMs = this.#clock.now() - startedAt;
       if (elapsedMs >= timeoutMs || attempts >= maxAttempts) {
+        // Every branch names a cause the manager actually observed, and "expected 200" is printed
+        // only when a 200 was in fact expected - so a database world is never told it failed an HTTP
+        // check it never had.
         const detail =
-          statusCode === null
-            ? `no response from ${url}`
-            : `expected ${plan.health.expectStatus} from ${url}, received ${statusCode}`;
+          url === null
+            ? `${where} never became ready`
+            : statusCode === null
+              ? `no response from ${url}`
+              : `expected ${String(expectStatus)} from ${url}, received ${statusCode}`;
         const patternDetail =
           plan.health.readyPattern !== null && patternSeen === false
             ? `; stdout never matched /${plan.health.readyPattern}/`

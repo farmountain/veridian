@@ -55,13 +55,33 @@ export function nodeIo(options: NodeIoOptions = {}): IoPort {
    */
   const at = (path: string): string => (isAbsolute(path) ? path : join(root, path));
 
+  /**
+   * The same rule for a path assembled from *several* parts: the last absolute part is the base, and
+   * every part before it is discarded.
+   *
+   * Checking only the first part was a real defect, and the `local-db` adapter found it - which is
+   * what a second adapter is for. `resolve("D:/repo/app", "D:/repo/app/data.db")` returned
+   * `"D:/repo/app/D:/repo/app/data.db"`, because an absolute path was honoured where it should have
+   * been joined against a base and silently *rewritten* where it *is* the base. A world then reported
+   * that the build command "exited successfully and left no database" at a path that could not exist,
+   * while the database sat at the correct path the whole time - the fourth time this repository has
+   * paid for "an absolute path must stay absolute", and the first time the culprit was a join of two
+   * paths that were both already absolute.
+   *
+   * This is what `node:path`'s own `resolve` does, and the reason to match it rather than invent a
+   * rule is that every caller already reasons about paths with that expectation.
+   */
+  const fromLastAbsolute = (parts: readonly string[]): string => {
+    const index = parts.findLastIndex((part) => isAbsolute(part));
+    return index === -1 ? join(root, ...parts) : join(...parts.slice(index));
+  };
+
+
   return {
     cwd: root,
     resolve(...parts) {
       if (parts.length === 0) return root.split("\\").join("/");
-      const [first, ...rest] = parts;
-      const base = first !== undefined && isAbsolute(first) ? join(first, ...rest) : join(root, ...parts);
-      return base.split("\\").join("/");
+      return fromLastAbsolute(parts).split("\\").join("/");
     },
     async readTextFile(path) {
       try {
@@ -142,6 +162,20 @@ export function memoryIo(seed: Record<string, string> = {}, root = "/virtual"): 
     return parts.join("/");
   };
 
+  /**
+   * `normalise`, with the root put back.
+   *
+   * The key `normalise` produces is a *lookup key*, and it is deliberately root-free; every method
+   * here builds that same key from whatever path it is handed. So a path this port *emits* has to be
+   * one those methods accept, or the port does not round-trip - which is the defect the `local-db`
+   * adapter's test found: `resolve("/virtual/app", "data.db")` returned `virtual/app/data.db`, and
+   * `exists("virtual/app/data.db")` then looked for `virtual/virtual/app/data.db` and said the file
+   * was missing while it sat in the seed. The *real* port never had this asymmetry (`nodeIo`'s
+   * `resolve` returns an absolute path and `at()` accepts one), and a double that disagrees with the
+   * port it stands in for is a suite that lies in one direction or the other.
+   */
+  const emit = (path: string): string => `/${normalise(path)}`;
+
   for (const [key, value] of Object.entries(seed)) files.set(normalise(key), value);
 
   return {
@@ -149,7 +183,14 @@ export function memoryIo(seed: Record<string, string> = {}, root = "/virtual"): 
     binaries,
     copies,
     cwd: root,
-    resolve: (...parts) => normalise(parts.join("/")),
+    // Mirrors `nodeIo`'s rule, because a test written against this port has to fail for the same
+    // reasons the real filesystem fails. A virtual path is absolute when it starts with `/`, so the
+    // last such part is the base and everything before it is dropped.
+    resolve: (...parts) => {
+      if (parts.length === 0) return emit(root);
+      const index = parts.findLastIndex((part) => part.startsWith("/"));
+      return emit(index === -1 ? [root, ...parts].join("/") : parts.slice(index).join("/"));
+    },
     async readTextFile(path) {
       return files.get(normalise(path)) ?? null;
     },

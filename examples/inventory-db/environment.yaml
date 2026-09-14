@@ -1,0 +1,55 @@
+# How to create, start, observe and reset one environment instance.
+#
+# This is the second world Veridian ships, and it exists to answer a question the first one cannot:
+# is the environment layer separate from the browser, or is the browser the environment? A database
+# world has no process to keep alive, no socket, no page and no console. If Veridian can validate one,
+# then `EnvironmentAdapter` is a real seam rather than a web harness with an interface bolted on.
+#
+# Read this next to `schemas/environment.schema.json`: there is no `version` key, and the document is
+# closed to unknown keys, because an environment definition describes a running world rather than
+# being a versioned contract of its own.
+
+# `local-db` builds a database file with a command and reads it directly. There is nothing to serve.
+adapter: local-db
+
+# Relative to this file. The adapter runs `start` with the working directory set here.
+app: app
+
+# There is no address, and saying so is the point rather than an omission: a world reached by opening
+# a file has no status to expect, so `health.expectStatus` is not defaulted to 200 here, and a browser
+# is not enabled for it. Spelling this as an empty string would make "this world has no address"
+# indistinguishable from "nobody filled the field in".
+url: null
+
+# The file this world *is*. The application's state is this database and nothing else, so the file is
+# named in the plan where the adapter, the bundle and a failure report can all see the same path.
+# Resolved against this file, exactly as `app` is.
+databasePath: app/data.db
+
+# Null means "this app has no dependencies to install". `node:sqlite` ships with Node 22, so the demo
+# runs from a clean checkout with nothing to fetch.
+dependencyInstall: null
+
+start:
+  # Executed verbatim - never a shell string built by pasting configuration into it.
+  command: node
+  args:
+    - build.mjs
+    - data.db
+  # Wait for the build to say it finished. This is a fact about the world; a sleep is a race, and a
+  # race is how run-to-run consistency is lost. The adapter requires this pattern before it will
+  # accept the world as started, and the manager requires it before the first criterion runs.
+  readyPattern: 'inventory-db ready: \d+ products, \d+ to reorder'
+
+health:
+  # No `path` and no `expectStatus`: both are HTTP concepts and this world has no HTTP. Left absent
+  # deliberately so the plan records `null` rather than a 200 the world could never return.
+  timeoutMs: 30000
+  intervalMs: 100
+
+# Reset is first-class, not test cleanup: a later criterion must never inherit the rows a mutation
+# left behind. For a file-backed world `restart` means the build command runs again, and the build
+# deletes the file first - so the reset is genuinely a fresh world rather than a second draft of the
+# previous one.
+reset:
+  strategy: restart

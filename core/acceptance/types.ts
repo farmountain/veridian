@@ -6,8 +6,19 @@
  * expectations without steps can only describe a landing page.
  */
 
-/** Artifact kinds a criterion may require (`acceptance.schema.json` → `Criterion.evidence`). */
-export const EVIDENCE_KINDS = ["screenshot", "trace", "dom", "console", "network"] as const;
+/**
+ * Artifact kinds a criterion may require (`acceptance.schema.json` → `Criterion.evidence`).
+ *
+ * Deliberately *not* the whole of `ArtifactKind`: `log` is something a world may produce and write
+ * into a bundle, but it is not something a criterion can demand, so the two lists answer different
+ * questions and are allowed to differ. Every entry here must nevertheless be an `ArtifactKind`, or a
+ * criterion could require an artifact no adapter is able to declare - a requirement that can only
+ * end in missing evidence. `tests/schema-vocabulary.test.ts` holds that direction.
+ *
+ * `json` is here because a database world's evidence *is* JSON: it has no page to screenshot and no
+ * console to drain, so the observation it wrote is the only thing a reader can inspect afterwards.
+ */
+export const EVIDENCE_KINDS = ["screenshot", "trace", "dom", "console", "network", "json"] as const;
 export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 
 /**

@@ -35,6 +35,7 @@ import type {
   EnvironmentAdapter,
   EnvironmentPlan,
   EvidenceArtifact,
+  HealthProbe,
   Observation,
   ObservationRequest,
 } from "../../core/environment/types.ts";
@@ -115,6 +116,18 @@ const originOf = (url: string): string => {
   }
 };
 
+/**
+ * What this adapter says when the document never said where the application answers.
+ *
+ * `EnvironmentPlan.url` is `string | null` because a world reached by opening a file has no address,
+ * and the requirement that a *web* world has one lives here rather than in
+ * `core/environment/load.ts`. `core/` cannot know which worlds need an address; a rule written there
+ * would apply this adapter's requirement to every adapter, including the ones it is wrong for.
+ */
+const MISSING_URL =
+  "this world has no `url`, and the local-web adapter drives the application over HTTP - " +
+  "add `url` to the environment document, or use an adapter whose world is reached another way";
+
 export class LocalWebEnvironment implements EnvironmentAdapter {
   readonly kind = "local-web";
 
@@ -175,9 +188,19 @@ export class LocalWebEnvironment implements EnvironmentAdapter {
     this.#stateDir = options.stateDir.replace(/[\\/]+$/, "");
   }
 
+  /** The plan's address, or a refusal. The one place this adapter reads `url` as a non-null string. */
+  #url(): string {
+    const url = this.#plan.url;
+    if (url === null) throw new EnvironmentError(MISSING_URL);
+    return url;
+  }
+
   // ---- lifecycle ------------------------------------------------------------------------------
 
   async create(): Promise<{ readonly id: string }> {
+    // Checked before anything is started, so a document with no address fails as a definition
+    // problem naming the missing field rather than as a timeout halfway through a run.
+    this.#url();
     if (this.#id === null) {
       // Derived from the plan rather than counted, so the same contract yields the same environment id
       // on every run. M1 measures repeat consistency; an id that changed per run would make two runs of
@@ -221,9 +244,15 @@ export class LocalWebEnvironment implements EnvironmentAdapter {
     return this.#capture(id, request, false);
   }
 
-  async probe(id: string): Promise<{ readonly statusCode: number | null; readonly message: string | null; readonly patternSeen: boolean | null }> {
+  async probe(id: string): Promise<HealthProbe> {
     this.#requireId(id);
     const url = probeUrl(this.#plan);
+    if (url === null) {
+      // Unreachable after `create()`, and still answered rather than thrown: a probe is how the
+      // manager asks "is the world ready?", and the honest answer for a plan with no address is
+      // "no, and the missing field is why".
+      return { ok: null, statusCode: null, message: MISSING_URL, patternSeen: this.#patternSeen() };
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.#probeTimeoutMs());
     timer.unref?.();
@@ -232,9 +261,11 @@ export class LocalWebEnvironment implements EnvironmentAdapter {
       const response = await this.#fetch(url, { signal: controller.signal });
       const statusCode = response.status;
       response.dispose();
-      return { statusCode, message: null, patternSeen: this.#patternSeen() };
+      // `ok: null` is the HTTP world saying "I report a status code; compare it" - the manager's
+      // other readiness shape belongs to a world that has no code to report.
+      return { ok: null, statusCode, message: null, patternSeen: this.#patternSeen() };
     } catch (error) {
-      return { statusCode: null, message: describe(error), patternSeen: this.#patternSeen() };
+      return { ok: null, statusCode: null, message: describe(error), patternSeen: this.#patternSeen() };
     } finally {
       clearTimeout(timer);
     }
@@ -455,7 +486,7 @@ export class LocalWebEnvironment implements EnvironmentAdapter {
       // Handed to the browser rather than re-derived there, so the guard holds the boundary that
       // was resolved in the plan instead of a second reading of the goal document.
       boundary: this.#plan.boundary,
-      appOrigin: originOf(this.#plan.url),
+      appOrigin: originOf(this.#url()),
     });
     this.#session = session;
     return session;

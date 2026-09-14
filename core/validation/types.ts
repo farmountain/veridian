@@ -58,6 +58,12 @@ export interface ValidatorDescriptor {
   readonly needsTarget: boolean;
   readonly comparisons: readonly string[];
   readonly observationKind: string;
+  /**
+   * What this validator's `target` names, when it needs one. Optional: absent means "element",
+   * which is what every browser validator means and what the ladder said unconditionally before
+   * this field existed.
+   */
+  readonly targetNoun?: string;
 }
 
 export interface Validator {
@@ -66,6 +72,19 @@ export interface Validator {
   readonly comparisons: readonly string[];
   /** The only observation kind this validator can read. A mismatch is a `VALIDATOR_ERROR`. */
   readonly observationKind: string;
+  /**
+   * What `target` names, when `needsTarget` is true. "element" for a page, "table" or "column" for
+   * a database.
+   *
+   * Optional, and declared by the validator rather than inferred from its name, because the
+   * clarification ladder has to *ask a question* about a missing target and the question cannot be
+   * written without knowing what the field holds. A ladder that guessed from the name's namespace
+   * would be the core learning a family's private vocabulary, which is the leak this whole seam
+   * exists to close. It said "element" unconditionally, and so asked the author of a SQL contract
+   * which *element* to inspect - a question with no correct answer, pointing at the wrong kind of
+   * value.
+   */
+  readonly targetNoun?: string;
   /**
    * Pure: no I/O, no clock, no globals. Throwing is permitted but is *always* reported as a
    * `VALIDATOR_ERROR` — a validator defect can never be laundered into an application failure.

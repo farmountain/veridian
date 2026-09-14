@@ -135,12 +135,29 @@ const SCHEMA_DEFAULTS: readonly SchemaDefault[] = [
     cite: "schemas/environment.schema.json#/properties/reset/properties/strategy/default",
   },
   {
+    // Reachable only for an HTTP world, and the coupling is the point.
+    //
+    // The gap this row closes is raised by exactly one detector site, and that site is guarded:
+    // `detectEnvironmentAmbiguities` asks for `/browser/enabled` and `/health/expectStatus` only
+    // when the document is *not* file-backed (`detect.ts`, both guards). For a world that names a
+    // `databasePath` and no `url`, neither gap is ever raised, so neither row can fire - which is
+    // correct and deliberate: deriving `expectStatus: 200` for a database invents a number nothing
+    // will ever return, and the run would then wait out its whole health timeout for it.
+    //
+    // Recorded here rather than left implicit because a default row and the gap that reaches it are
+    // one fact written in two files. The two halves are held by tests:
+    // `tests/definition-resolution.test.ts` proves a *sparse web* document reaches this row through
+    // the real ladder (it asserts `via: "derived"` and cites this schema), and
+    // `tests/inventory-db-demo.test.ts` proves a file-backed one raises no such gap at all
+    // (`questionsAsked === 0`, every document). A row whose gap became unreachable would leave a
+    // derivation that can never be exercised, and this note is what makes that visible.
     origin: "environment",
     suffix: "/browser/enabled",
     value: true,
     cite: "schemas/environment.schema.json#/properties/browser/properties/enabled/default",
   },
   {
+    // Same coupling as `/browser/enabled` above: raised only for a world with an address.
     origin: "environment",
     suffix: "/health/expectStatus",
     value: 200,

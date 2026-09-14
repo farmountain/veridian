@@ -13,7 +13,26 @@ import type { FilesystemWritePolicy, NetworkPolicy } from "../goal/types.ts";
  * either layer importing the other.
  */
 
-export type ArtifactKind = "screenshot" | "trace" | "dom" | "console" | "network" | "log" | "json";
+/**
+ * Everything a world is able to put in a bundle as evidence.
+ *
+ * A list rather than a bare union so it can be *checked* against the other list that names artifact
+ * kinds - the acceptance contract's `evidence`, which is deliberately narrower - and so that a
+ * spelling mistake in one member is impossible rather than merely unlikely. A union has no runtime
+ * value, and a second hand-kept copy of these seven words in a test would be exactly the drift this
+ * repository already pays for somewhere else.
+ */
+export const ARTIFACT_KINDS = [
+  "screenshot",
+  "trace",
+  "dom",
+  "console",
+  "network",
+  "log",
+  "json",
+] as const;
+
+export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
 
 export interface EvidenceArtifact {
   /** Path relative to the run directory, so a bundle can be moved without breaking its links. */
@@ -145,7 +164,16 @@ export interface ObservationRequest {
  * and "how long may an environment take to become valid" would stop being a property of the run.
  */
 export interface HealthProbe {
-  /** The HTTP status, or null when nothing accepted the connection. */
+  /**
+   * The adapter's own verdict on whether its world is ready.
+   *
+   * `null` means *this adapter does not answer that way* - it reports a status code and the manager
+   * compares it. The distinction exists because a world with no status code has no honest number to
+   * report: a database is ready when the file opens and `SELECT 1` answers, and calling that `200`
+   * would record a fact the world never produced, in a field whose name says it is an HTTP status.
+   */
+  readonly ok: boolean | null;
+  /** The HTTP status, or null when nothing accepted the connection or the world has no status. */
   readonly statusCode: number | null;
   readonly message: string | null;
   /**
@@ -175,6 +203,13 @@ export interface EnvironmentDefinitionShape {
   readonly dependencyInstall?: unknown;
   readonly start?: { readonly command?: unknown; readonly args?: unknown; readonly readyPattern?: unknown };
   readonly url?: unknown;
+  /**
+   * The database file this world is, when the world is a database, as written.
+   *
+   * A path string rather than a flag, so the same field can name a fixture a criterion is judged
+   * against - which is what makes "the seed did not run" a thing a criterion can say.
+   */
+  readonly databasePath?: unknown;
   readonly health?: {
     readonly path?: unknown;
     readonly expectStatus?: unknown;
@@ -195,8 +230,22 @@ export const RESET_STRATEGIES = ["restart", "snapshot-restore", "custom"] as con
 export type ResetStrategy = (typeof RESET_STRATEGIES)[number];
 
 export interface HealthPolicy {
-  readonly path: string;
-  readonly expectStatus: number;
+  /**
+   * Path appended to the plan's URL to form the probe address.
+   *
+   * `null` when the world has no address to append to. A database file is the case this exists for:
+   * it has state worth checking and no route to request.
+   */
+  readonly path: string | null;
+  /**
+   * The status a healthy probe returns, or `null` when the world has no status to return.
+   *
+   * `null` is what makes a non-HTTP world expressible, and it is neither a default nor "any
+   * status": it hands the verdict to the adapter's `HealthProbe.ok`. A null read strictly would
+   * make every such world permanently unhealthy, and read loosely permanently healthy - and
+   * "permanently healthy" is a false PASS arriving through the readiness check.
+   */
+  readonly expectStatus: number | null;
   readonly timeoutMs: number;
   readonly intervalMs: number;
   /** Set when the definition asked for a stdout readiness signal. `null` means "not requested". */
@@ -237,7 +286,28 @@ export interface EnvironmentPlan {
   readonly env: Readonly<Record<string, string>>;
   readonly dependencyInstall: string | null;
   readonly start: ApplicationStart;
-  readonly url: string;
+  /**
+   * The address of the running application, or `null` when the world has no address.
+   *
+   * Required for a world reached over a socket; `null` for one reached by opening a file. An
+   * adapter that needs a URL says so itself, because `core/` cannot know which worlds need one and
+   * a rule written here would apply one adapter's requirement to every adapter.
+   */
+  readonly url: string | null;
+  /**
+   * The database file the world is, or `null` when the world is not a database.
+   *
+   * Relative paths resolve against `appPath`, on the same rule `core/io.ts` already enforces for a
+   * caller's paths: a caller's file is relative to the application they are working in, and an
+   * absolute one is used as written.
+   *
+   * Here rather than only in an adapter's own options because the plan is the adapter's whole world,
+   * and the defect `--browser none` produced was exactly this - a run-time fact that reached the
+   * object built from the plan and never reached the plan itself. An adapter that had to re-read
+   * `environment.yaml` to learn which file it was asked to be would have a second opinion about its
+   * own configuration, and when the two disagree the winner is whichever parsed last.
+   */
+  readonly databasePath: string | null;
   readonly health: HealthPolicy;
   readonly reset: { readonly strategy: ResetStrategy; readonly command: string | null };
   readonly browser: BrowserPolicy;

@@ -41,7 +41,7 @@
         },
         "evidence": {
           "type": "array",
-          "items": { "enum": ["screenshot", "trace", "dom", "console", "network"] },
+          "items": { "enum": ["screenshot", "trace", "dom", "console", "network", "json"] },
           "description": "Artifacts that must exist for this criterion to be satisfiable. Absence of a required artifact means the run is not PASS (PLAN.md §32, M5)."
         }
       },
@@ -106,6 +106,12 @@
               "additionalProperties": false
             }
           },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["sql"],
+          "properties": { "sql": { "type": "string", "description": "One statement put to the database, producing the result set the criterion's `db.value` expectations read. This is how a database world is acted on: it has no page to click and no form to fill, so the equivalent of an interaction is a query with an observable result." } },
           "additionalProperties": false
         }
       ]

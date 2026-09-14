@@ -59,11 +59,11 @@ import { loadSchemaSet } from "../core/schema/index.ts";
 import type { SchemaSet } from "../core/schema/registry.ts";
 import { ValidatorRegistry } from "../core/validation/index.ts";
 import {
-  LocalWebEnvironment,
   PLAYWRIGHT_MISSING,
   playwrightBrowser,
 } from "../adapters/local-web/index.ts";
 import { webUiValidators } from "../validators/playwright/index.ts";
+import { dbValidators } from "../validators/database/index.ts";
 
 import type { CliArguments } from "./arguments.ts";
 import {
@@ -81,9 +81,26 @@ import {
   selectRepairGate,
   systemClock,
 } from "./support.ts";
+import {
+  adapterDescriptors,
+  describeWorlds,
+  findWorld,
+  registeredAdapters,
+} from "./worlds.ts";
 
-/** The only adapter this build ships. A goal naming another one is refused rather than guessed at. */
-const REGISTERED_ADAPTERS: readonly string[] = ["local-web"];
+/**
+ * Every validator this build can judge with.
+ *
+ * Both families, because the registry is what decides whether a criterion is *answerable* and the
+ * answer must not depend on which world the run chose. A contract that names `db.value` is judged by
+ * a database world and refused with `unresolvable_entity` everywhere else — by the plan decoder, at
+ * DEFINE, before anything starts. Registering the family only when a database world was selected
+ * would make the *same contract* resolvable in one world and nonsensical in another, and the
+ * resolvability of a criterion is a property of the criterion.
+ */
+function allValidators() {
+  return [...webUiValidators(), ...dbValidators()];
+}
 
 /** The actor name memory records are written under. */
 const MEMORY_ACTOR = "Veridian";
@@ -151,7 +168,7 @@ async function openSession(parsed: CliArguments, logger: Logger): Promise<Sessio
   // worked only while the CLI was run from the repository root; installed, it asked the caller's
   // directory for Veridian's own schema and reported it missing. See `core/assets.ts`.
   const schemas = await loadSchemaSet(nodeIo({ root: assetsRoot() }));
-  const registry = new ValidatorRegistry(webUiValidators());
+  const registry = new ValidatorRegistry(allValidators());
 
   // One prompt port for the whole process. Two ports would be two answers to "is a human watching",
   // and the one that agreed with the other would be the one nobody checked.
@@ -206,7 +223,8 @@ async function define(session: Session, parsed: CliArguments): Promise<Definitio
     {
       goalPath: parsed.goalPath,
       registry: session.registry,
-      registeredAdapters: REGISTERED_ADAPTERS,
+      registeredAdapters: registeredAdapters(),
+      adapterDescriptors: adapterDescriptors(),
     },
     session.clarifier,
   );
@@ -269,10 +287,16 @@ async function runValidate(parsed: CliArguments, logger: Logger): Promise<number
   }
 
   const { plan, environment, goal } = outcome;
-  if (environment.adapter !== "local-web") {
+  const registration = findWorld(environment.adapter);
+  if (registration === null) {
+    // A lookup against the same table the clarification ladder read, so this refusal is the second
+    // half of one answer rather than a second opinion: a document naming an unregistered adapter has
+    // already been reported as an unsettled blocking gap, and reaching here means the gap was
+    // answered with a name that still does not exist. The list is printed from the table, so it
+    // cannot drift from the worlds that do.
     write(
-      `\nThis build can only run the "local-web" adapter; the goal asks for ` +
-        `"${environment.adapter}". Registered: ${REGISTERED_ADAPTERS.join(", ")}.\n`,
+      `\nThis build cannot run the "${environment.adapter}" adapter. Registered worlds:\n` +
+        `${describeWorlds()}\n`,
     );
     return EXIT_CODES.unusable;
   }
@@ -294,13 +318,28 @@ async function runValidate(parsed: CliArguments, logger: Logger): Promise<number
   // ---- the world ---------------------------------------------------------------------------
   // The flag is applied to the plan before anything is built from it, so the adapter, the loop and
   // the environment record all describe one world: the one that ran.
+  //
+  // A world with no address has no page, so `--browser playwright` cannot mean anything for it. It
+  // was accepted anyway, and the record then named a browser the run never launched - `chromium` in
+  // `reproducibility.browser` for a run whose only interaction was a SQL query. That is the same
+  // defect as the old `--browser none`, one layer out: a flag applied to an object built from the
+  // plan, describing a world the plan did not have. Refused here so the operator learns it now
+  // rather than from a bundle later. `--browser none` and `auto` remain meaningful and still work.
+  if (parsed.browser === "playwright" && environment.url === null) {
+    write(
+      `\nThe "${environment.adapter}" world has no address, so there is no page for a browser to ` +
+        "observe.\nDrop --browser playwright: nothing in this contract is a browser observation.\n",
+    );
+    return EXIT_CODES.unusable;
+  }
+
   const runtimeEnvironment = applyBrowserChoice(environment, parsed.browser);
   const wantsBrowser = runtimeEnvironment.browser.enabled;
   const browser = wantsBrowser ? playwrightBrowser({ headless: !parsed.headed }) : null;
 
-  const adapter = new LocalWebEnvironment(runtimeEnvironment, {
+  const adapter = registration.build({
+    environment: runtimeEnvironment,
     io: session.io,
-    clock: systemClock,
     logger,
     processes: nodeProcessRunner,
     stateDir: parsed.stateDir,
@@ -331,7 +370,7 @@ async function runValidate(parsed: CliArguments, logger: Logger): Promise<number
     veridianVersion: await readVersion(session.io, "package.json"),
     gitCommit: git.commit,
     gitDirty: git.dirty,
-    playwright: await firstVersion(session.io, [
+    playwright: browser === null ? null : await firstVersion(session.io, [
       "node_modules/playwright/package.json",
       "node_modules/playwright-core/package.json",
     ]),
@@ -386,7 +425,11 @@ async function runValidate(parsed: CliArguments, logger: Logger): Promise<number
     limits: goal.limits,
     clarifier: session.clarifier,
     detectorContext: detectorContextFor(
-      { registry: session.registry, registeredAdapters: REGISTERED_ADAPTERS },
+      {
+        registry: session.registry,
+        registeredAdapters: registeredAdapters(),
+        adapterDescriptors: adapterDescriptors(),
+      },
       outcome.environmentPath,
       dirOf(outcome.environmentPath),
     ),

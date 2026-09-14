@@ -12,6 +12,7 @@ import {
   detectEnvironmentAmbiguities,
   detectGoalAmbiguities,
   detectValidationAmbiguities,
+  type AdapterDescriptor,
   type DetectorContext,
   type EnvironmentLike,
 } from "./clarification/detect.ts";
@@ -46,8 +47,17 @@ export interface DefinitionRequest {
   readonly goalPath: string;
   /** Validators that exist. An expectation naming anything else is unresolvable, and is reported. */
   readonly registry: ValidatorRegistry;
-  /** Registered environment adapter kinds, e.g. `["local-web"]`. */
+  /** Registered environment adapter kinds, e.g. `["local-web", "local-db"]`. */
   readonly registeredAdapters: readonly string[];
+  /**
+   * What each registered adapter requires of a document that names it.
+   *
+   * Optional, and omitting it is a real choice rather than a shortcut: a caller that does not know
+   * what its adapters need gets the schema's verdict on the document and nothing more. Passing it is
+   * how a gap becomes a *question* - "which database file?" - asked before a run starts, instead of
+   * an `ENVIRONMENT_FAILURE` an adapter raises at `create()` with nobody left to answer it.
+   */
+  readonly adapterDescriptors?: readonly AdapterDescriptor[];
   /**
    * Directory of the application under test, when the caller knows better than the definition does.
    *
@@ -104,7 +114,7 @@ const describe = (ambiguities: readonly Ambiguity[]): string =>
  * without it would be a question about an application nobody looked at.
  */
 export function detectorContextFor(
-  request: Pick<DefinitionRequest, "registry" | "registeredAdapters">,
+  request: Pick<DefinitionRequest, "registry" | "registeredAdapters" | "adapterDescriptors">,
   sourceLabel: string,
   appDir?: string,
 ): DetectorContext {
@@ -112,6 +122,9 @@ export function detectorContextFor(
     registeredValidators: request.registry.names(),
     validatorDescriptors: request.registry.descriptors(),
     registeredAdapters: request.registeredAdapters,
+    ...(request.adapterDescriptors === undefined
+      ? {}
+      : { adapterDescriptors: request.adapterDescriptors }),
     sourceLabel,
     ...(appDir === undefined ? {} : { appDir }),
   };

@@ -74,7 +74,21 @@ export interface EnvironmentRecord {
   readonly adapter: string;
   readonly app: string;
   readonly appPath: string;
-  readonly url: string;
+  /**
+   * The world's address, or `null` when it has none - a database world is reached by opening a file.
+   *
+   * Recorded as `null` rather than as an empty string so a reader can tell "this world has no
+   * address" from "nobody filled the field in", which are different facts about a run.
+   */
+  readonly url: string | null;
+  /**
+   * The database file this world was, or `null` when it was not a database.
+   *
+   * The mirror of `url` and read for the same reason: the first question asked of a result is *which
+   * world produced it*, and for a file-backed world the address is a path. `null` rather than an
+   * empty string, so "this world is not a database" and "nobody filled the field in" stay apart.
+   */
+  readonly databasePath: string | null;
   readonly command: string;
   readonly args: readonly string[];
   readonly health: EnvironmentPlan["health"];

@@ -18,33 +18,26 @@
  * `tsc` through `tests/shopping-cart-demo.test.ts`, which is what makes the string equality between
  * a defect and the app a compile-time-adjacent fact rather than a hope.
  *
- * The blocks here are written with `\n`, and are re-expressed in the line ending the file on disk
- * actually uses before they are searched for. That is not defensive padding: a Windows checkout with
- * Git's default `core.autocrlf=true` rewrites `cart.js` to CRLF, and a multi-line edit that had been
- * written with `\n` would then match nothing, so the demo would inject nothing and report a PASS the
- * application never earned. The defect is a change of text, not a change of encoding, so the table
- * states it in one and the file's own convention is applied at the point of use.
+ * The *mechanics* - how a block written with `\n` is matched against a file a checkout wrote with
+ * CRLF, how a state of `unknown` is refused rather than guessed at - live in `../defect-text.ts` and
+ * are shared with the other examples. This file owns only the three edits, because only this demo
+ * knows them.
  */
 
-export interface Defect {
-  /** Stable short name, used in log lines and in the demo README. */
-  readonly id: string;
-  /** The criterion this defect causes to fail. */
-  readonly criterionId: string;
-  /** One line, in the words of the failure a reader will see. */
-  readonly summary: string;
-  /** The exact text the correct app contains, exactly once. */
-  readonly correct: string;
-  /** The exact text that replaces it, exactly once. */
-  readonly defective: string;
-}
+import {
+  defectStates,
+  injectDefects,
+  repairDefect,
+  type Defect,
+  type DefectStatus,
+  type InjectResult,
+  type RepairResult,
+} from "../defect-text.ts";
 
-export type DefectState = "injected" | "intact" | "unknown";
+export type { Defect, DefectState, DefectStatus, InjectResult, RepairResult } from "../defect-text.ts";
 
-export interface DefectStatus {
-  readonly defect: Defect;
-  readonly state: DefectState;
-}
+/** The single file every defect in this table is an overlay on. */
+const APP = "cart.js";
 
 /** In criterion order, which is also repair order. */
 export const DEFECTS: readonly Defect[] = Object.freeze([
@@ -80,107 +73,17 @@ export const DEFECTS: readonly Defect[] = Object.freeze([
   }),
 ]);
 
-/** How many times `needle` occurs in `haystack`. */
-function occurrences(haystack: string, needle: string): number {
-  return haystack.split(needle).length - 1;
-}
-
-/** The line ending a buffer actually uses. Mixed endings resolve to whichever appears first. */
-function newlineOf(text: string): string {
-  const firstNewline = text.search(/\r?\n/);
-  return firstNewline !== -1 && text[firstNewline] === "\r" ? "\r\n" : "\n";
-}
-
-/** Re-express a block written with `\n` in the file's own line ending. */
-function inStyle(block: string, newline: string): string {
-  return newline === "\n" ? block : block.split("\n").join(newline);
-}
-
-/**
- * Classify each defect against `text`.
- *
- * `unknown` is a first-class outcome, not an error to be smoothed over. It means the file contains
- * neither the correct nor the defective form of an edit this module believes it owns, so the app is
- * not the app this module was written against. Injecting or repairing from that state would be
- * guessing, and a guess here produces a demo that proves nothing while reporting success.
- */
+/** Classify each defect against `text`. See `defectStates` for why `unknown` is not an error. */
 export function status(text: string): readonly DefectStatus[] {
-  const newline = newlineOf(text);
-  return DEFECTS.map((defect) => {
-    const hasCorrect = occurrences(text, inStyle(defect.correct, newline)) === 1;
-    const hasDefective = occurrences(text, inStyle(defect.defective, newline)) === 1;
-    if (hasDefective && !hasCorrect) return { defect, state: "injected" as const };
-    if (hasCorrect && !hasDefective) return { defect, state: "intact" as const };
-    return { defect, state: "unknown" as const };
-  });
+  return defectStates(DEFECTS, text);
 }
 
-export interface InjectResult {
-  readonly text: string;
-  readonly injected: readonly string[];
-  readonly alreadyInjected: readonly string[];
-}
-
-/**
- * Replace every intact defect with its defective form.
- *
- * Idempotent: running it twice is the same as running it once, because a defect already in its
- * defective form is left alone. Throws on `unknown` rather than reporting a partial success, because
- * a partial success here is a demo that is broken in a way nobody will notice until the verdict is
- * wrong.
- */
+/** Replace every intact defect with its defective form. Throws on `unknown` rather than guessing. */
 export function inject(text: string): InjectResult {
-  let next = text;
-  const injected: string[] = [];
-  const alreadyInjected: string[] = [];
-  const newline = newlineOf(text);
-
-  for (const { defect, state } of status(text)) {
-    if (state === "unknown") {
-      throw new Error(
-        `cannot inject ${defect.id}: cart.js contains neither the correct nor the defective form of ` +
-          `this edit, so it is not the file this demo was written against`,
-      );
-    }
-    if (state === "injected") {
-      alreadyInjected.push(defect.id);
-      continue;
-    }
-    next = next.replace(inStyle(defect.correct, newline), inStyle(defect.defective, newline));
-    injected.push(defect.id);
-  }
-
-  return { text: next, injected, alreadyInjected };
+  return injectDefects(DEFECTS, APP, text);
 }
 
-export interface RepairResult {
-  readonly text: string;
-  readonly repaired: Defect | null;
-}
-
-/**
- * Repair exactly the first defect that is still injected, in criterion order.
- *
- * One per call, on purpose. A repair script that fixed all three at once would take the run from
- * three failures straight to `PASS`, and the intermediate observation - the repaired sub-set that
- * still fails, which is the evidence that a criterion is judged independently of its neighbours -
- * would never be produced.
- */
+/** Repair the first still-injected defect, in criterion order. One per call, on purpose. */
 export function repairOne(text: string): RepairResult {
-  const newline = newlineOf(text);
-  for (const { defect, state } of status(text)) {
-    if (state === "unknown") {
-      throw new Error(
-        `cannot repair ${defect.id}: cart.js contains neither the correct nor the defective form of ` +
-          `this edit, so a repair would be a guess`,
-      );
-    }
-    if (state === "injected") {
-      return {
-        text: text.replace(inStyle(defect.defective, newline), inStyle(defect.correct, newline)),
-        repaired: defect,
-      };
-    }
-  }
-  return { text, repaired: null };
+  return repairDefect(DEFECTS, APP, text);
 }

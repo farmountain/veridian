@@ -15,6 +15,12 @@ dist/
 test-results/
 playwright-report/
 
+# The database the `inventory-db` example builds. Like `.veridian/`, it is a world this machine
+# produced, not source: it is deleted and rebuilt from `app/build.mjs` on every start and every reset,
+# so committing it would commit a copy that can disagree with the script that makes it. The demo's
+# restore does not need to remove it - the build removes it, which is what makes a reset a reset.
+examples/inventory-db/app/**.db
+
 # Editors / OS
 .DS_Store
 Thumbs.db

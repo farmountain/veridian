@@ -16,7 +16,26 @@ import type { AcceptanceContract, AcceptanceCriterion, EvidenceKind } from "./ty
  * execution by any path.
  */
 
-export const STEP_KINDS = ["goto", "click", "reload", "fill", "select", "press", "waitFor"] as const;
+/**
+ * Every action a criterion may take, across every world.
+ *
+ * This is a closed vocabulary *inside `core/`*, and writing that down is worth more than the entry
+ * added to it. A world whose actions are not in this list cannot express them without an edit here,
+ * so adding the first non-web adapter makes the list one entry longer and the coupling between
+ * `core/` and a world one degree more visible - not smaller. The right shape is a register each
+ * adapter contributes to, and it has one caller today; `docs/DISTRIBUTION-AND-ENVIRONMENTS.md`
+ * records it as the change a *second* non-web adapter should force, rather than a list of one.
+ */
+export const STEP_KINDS = [
+  "goto",
+  "click",
+  "reload",
+  "fill",
+  "select",
+  "press",
+  "waitFor",
+  "sql",
+] as const;
 export type StepKind = (typeof STEP_KINDS)[number];
 
 export const WAIT_STATES = ["attached", "detached", "visible", "hidden"] as const;
@@ -30,7 +49,15 @@ export type ValidationStep =
   | { readonly kind: "fill"; readonly target: string; readonly value: string }
   | { readonly kind: "select"; readonly target: string; readonly value: string }
   | { readonly kind: "press"; readonly target: string; readonly key: string }
-  | { readonly kind: "waitFor"; readonly target: string; readonly state: WaitState };
+  | { readonly kind: "waitFor"; readonly target: string; readonly state: WaitState }
+  /**
+   * One statement executed against the world's own database, before the criterion is observed.
+   *
+   * It is the criterion's *action*, not its judgement: it sets the world up, or tries to violate a
+   * constraint, and the `expect` entries read what actually happened. One statement rather than a
+   * batch, so a failure names the statement that produced it.
+   */
+  | { readonly kind: "sql"; readonly statement: string };
 
 export const COMPARISON_KEYS = ["equals", "contains", "matches", "atLeast", "atMost"] as const;
 export type ComparisonKey = (typeof COMPARISON_KEYS)[number];
@@ -144,6 +171,8 @@ export function decodeStep(
         state: state as WaitState,
       };
     }
+    case "sql":
+      return { kind, statement: requireString(body, path, "sql") };
   }
 }
 
@@ -173,6 +202,8 @@ export function encodeStep(step: ValidationStep): Readonly<Record<string, unknow
       return { press: { target: step.target, key: step.key } };
     case "waitFor":
       return { waitFor: { target: step.target, state: step.state } };
+    case "sql":
+      return { sql: step.statement };
   }
 }
 

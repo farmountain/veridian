@@ -59,9 +59,11 @@ const trimTrailingSlash = (value: string): string => value.replace(/\/+$/, "");
  * Exported because it appears in failure artifacts, and an artifact that says "health check failed"
  * without naming the URL is a message the reader has to reconstruct the run to interpret.
  */
-export function probeUrl(plan: EnvironmentPlan): string {
-  const path = plan.health.path.startsWith("/") ? plan.health.path : `/${plan.health.path}`;
-  return `${trimTrailingSlash(plan.url)}${path}`;
+export function probeUrl(plan: EnvironmentPlan): string | null {
+  if (plan.url === null) return null;
+  const path = plan.health.path === null || plan.health.path === "" ? "" : plan.health.path;
+  const suffix = path === "" || path.startsWith("/") ? path : `/${path}`;
+  return `${trimTrailingSlash(plan.url)}${suffix}`;
 }
 
 function readEnv(raw: unknown): Readonly<Record<string, string>> {
@@ -70,22 +72,55 @@ function readEnv(raw: unknown): Readonly<Record<string, string>> {
   return Object.fromEntries(entries) as Record<string, string>;
 }
 
-function readHealth(raw: unknown): HealthPolicy {
+function readHealth(raw: unknown, hasUrl: boolean, stdoutPattern: string | null): HealthPolicy {
   const health = isPlainObject(raw) ? raw : {};
+  // The defaults are HTTP defaults, so they are applied only to a world that is reached over HTTP.
+  // A document with no `url` describes a world with no status to expect, and defaulting
+  // `expectStatus` to 200 there would invent an expectation the world cannot satisfy - either it
+  // never becomes ready (read strictly) or it is ready whatever happens (read loosely).
   return {
-    path: asString(health["path"], "/"),
-    expectStatus: asNumber(health["expectStatus"], 200),
+    path: hasUrl ? asString(health["path"], "/") : null,
+    expectStatus: hasUrl ? asNumber(health["expectStatus"], 200) : null,
     timeoutMs: asNumber(health["timeoutMs"], 20_000),
     intervalMs: asNumber(health["intervalMs"], 100),
-    readyPattern: typeof health["readyPattern"] === "string" ? health["readyPattern"] : null,
+    // Read from `start`, and from nowhere else, because `start.readyPattern` is the only place a
+    // document that validates can declare one - `health` is closed to unknown keys. This used to
+    // read `health["readyPattern"]`, which no valid document could ever set, so `plan.health
+    // .readyPattern` was permanently `null` and the manager's readiness gate
+    // (`readyPattern === null || patternSeen !== false`) could not be false. A guard no document
+    // can trip is not a guard; the operator's one declaration now reaches both the adapter, which
+    // waits for it, and the manager, which requires it.
+    readyPattern: stdoutPattern,
   };
 }
 
-function readBrowser(raw: unknown): BrowserPolicy {
+/**
+ * The browser policy, and the one contradiction that is worth refusing.
+ *
+ * A world with no address cannot be observed through a browser, so `enabled` defaults to `false`
+ * there rather than to the schema's `true`. That default is not a preference: a plan claiming
+ * `browser.enabled: true` for a world with nothing to point a page at is the same class of untruth
+ * as `--browser none` recording `reproducibility.browser: chromium` for a run that launched none -
+ * the bundle would describe a world the run never used.
+ *
+ * Stating `enabled: true` explicitly alongside no `url` is not silently overridden but refused,
+ * because the operator has asserted something the world cannot honour and the repair is theirs to
+ * choose: remove the browser, or give the world an address.
+ */
+function readBrowser(raw: unknown, hasUrl: boolean): BrowserPolicy {
   const browser = isPlainObject(raw) ? raw : {};
   const viewport = isPlainObject(browser["viewport"]) ? browser["viewport"] : null;
+  const stated = browser["enabled"];
+  if (!hasUrl && stated === true) {
+    throw defect(
+      "$.browser.enabled",
+      "this world has no url, so a browser has nothing to open. Remove the browser, or give the " +
+        "environment a url - a plan that promises a browser it cannot point is a bundle that will " +
+        "describe a world the run never used.",
+    );
+  }
   return {
-    enabled: browser["enabled"] !== false,
+    enabled: hasUrl && stated !== false,
     viewport:
       viewport === null
         ? null
@@ -156,7 +191,12 @@ export function finalizeEnvironment(
   }
 
   const url = trimTrailingSlash(asString(raw["url"]));
-  if (!url) throw defect("$.url", "an environment with no URL has no address to health check");
+  const readyPattern = typeof start["readyPattern"] === "string" ? start["readyPattern"] : null;
+  // The database file, resolved the way `app` is: relative to the environment file, because that is
+  // the only directory the schema says a relative path is relative to. Resolved here rather than by
+  // the adapter so that every reader of the plan - the adapter, the bundle, a failure report - names
+  // the same absolute file, and so that `""` is the one spelling of "this world is not a database".
+  const database = asString(raw["databasePath"]).trim();
 
   return {
     adapter: asString(raw["adapter"]),
@@ -173,12 +213,13 @@ export function finalizeEnvironment(
     start: {
       command,
       args: asStringArray(start["args"]),
-      readyPattern: typeof start["readyPattern"] === "string" ? start["readyPattern"] : null,
+      readyPattern,
     },
-    url,
-    health: readHealth(raw["health"]),
+    url: url === "" ? null : url,
+    databasePath: database === "" ? null : resolveSibling(source, database),
+    health: readHealth(raw["health"], url !== "", readyPattern),
     reset: { strategy: strategy as ResetStrategy, command: resetCommand },
-    browser: readBrowser(raw["browser"]),
+    browser: readBrowser(raw["browser"], url !== ""),
     boundary: readBoundary(limits),
   };
 }

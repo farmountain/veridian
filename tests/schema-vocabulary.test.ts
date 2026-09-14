@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { AMBIGUITY_KINDS, AMBIGUITY_ORIGINS, DEFER_REASONS, RUNGS } from "../core/clarification/types.ts";
+import { EVIDENCE_KINDS } from "../core/acceptance/types.ts";
+import { ARTIFACT_KINDS } from "../core/environment/types.ts";
 import { FAILURE_TAXONOMY } from "../core/failure.ts";
 import { nodeIo } from "../core/io.ts";
 import { RUN_STATES, TERMINAL_STATES } from "../core/run/types.ts";
@@ -165,6 +167,23 @@ describe("schemas and code share one vocabulary", () => {
             "the narrower list in code so it can be declared here as a subset.",
         );
       }
+    }
+  });
+
+  it("only lets a criterion require an artifact some world can produce", () => {
+    // The artifact kinds an adapter may *declare* and the kinds a criterion may *demand* are two
+    // lists answering two questions, so they are allowed to differ - `log` is producible and not
+    // demandable. The direction of that difference is not free, though: a demanded kind that no
+    // adapter can declare is a criterion whose evidence can never exist, which is a guarantee of
+    // missing evidence reported as if the application had failed. `json` was added to
+    // `EVIDENCE_KINDS` for the database world, whose evidence *is* JSON; this is the check that
+    // adding it was a widening and not a promise.
+    for (const kind of EVIDENCE_KINDS) {
+      assert.ok(
+        (ARTIFACT_KINDS as readonly string[]).includes(kind),
+        `EVIDENCE_KINDS names "${kind}", which is not an ArtifactKind, so no adapter can ever ` +
+          "declare it and a criterion requiring it can only end in missing evidence.",
+      );
     }
   });
 });

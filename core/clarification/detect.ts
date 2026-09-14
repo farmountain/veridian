@@ -19,6 +19,39 @@ export interface ValidatorDescriptor {
   readonly needsTarget: boolean;
   /** Comparison keys the validator understands, e.g. `["equals","contains","matches"]`. */
   readonly comparisons: readonly string[];
+  /** What `target` names, e.g. `element`, `table`, `column`. Defaults to `element`. */
+  readonly targetNoun?: string;
+}
+
+/**
+ * One field a world cannot be built without.
+ *
+ * Declared by the adapter itself and read by the ladder, in the same shape as `ValidatorDescriptor`:
+ * the artifact's author is asked a question about the artifact, and neither the question nor the
+ * requirement is written down twice.
+ */
+export interface AdapterRequirement {
+  /** The key at the document's root, e.g. `databasePath`. */
+  readonly field: string;
+  readonly question: string;
+  /** Why there is no default, quoted to the operator when the gap reaches DEFER. */
+  readonly why: string;
+}
+
+/**
+ * What a world requires of a document that names it.
+ *
+ * `local-web` requires a `url`; `local-db` requires a `databasePath`; a Kubernetes world would
+ * require a manifest. Encoding that as a rule inside `core/clarification` would be the core learning
+ * every adapter's private shape - which is the coupling §35 of `PLAN.md` claims cannot happen, and
+ * the reason this is a field on the context rather than a `switch` on the adapter name.
+ *
+ * An adapter that declares nothing is not refused; it is a world whose document is complete when its
+ * schema says so, and the schema remains the authority on everything a requirement does not cover.
+ */
+export interface AdapterDescriptor {
+  readonly kind: string;
+  readonly requires: readonly AdapterRequirement[];
 }
 
 export interface DetectorContext {
@@ -26,6 +59,8 @@ export interface DetectorContext {
   readonly validatorDescriptors: readonly ValidatorDescriptor[];
   /** Registered environment adapter kinds. */
   readonly registeredAdapters: readonly string[];
+  /** What each registered adapter requires of a document that names it. */
+  readonly adapterDescriptors?: readonly AdapterDescriptor[];
   /** Label of the artifact being inspected, used as derivation context and in questions. */
   readonly sourceLabel: string;
   /** Directory of the application under test, when known. Enables the manifest derivation. */
@@ -79,6 +114,7 @@ export interface EnvironmentLike {
   readonly app?: unknown;
   readonly start?: { readonly command?: unknown; readonly args?: unknown };
   readonly url?: unknown;
+  readonly databasePath?: unknown;
   readonly health?: {
     readonly path?: unknown;
     readonly expectStatus?: unknown;
@@ -95,6 +131,23 @@ export interface EnvironmentLike {
 
 const isMissing = (value: unknown): boolean =>
   value === undefined || value === null || (typeof value === "string" && value.trim() === "");
+
+/**
+ * Whether the document describes a world reached by opening a file rather than over a socket.
+ *
+ * Decided from the *document*, not from the adapter name, because `core/clarification` is the lowest
+ * layer and may not import an adapter to ask it. The document can answer this on its own: a world
+ * that names a `databasePath` and no `url` is file-backed, and one that names neither is simply an
+ * incomplete web definition and is still asked for its URL.
+ *
+ * Getting this wrong is not cosmetic. The ladder derives `/health/path` as `/` and
+ * `/health/expectStatus` as `200` because a wrong health check can only ever produce an
+ * `ENVIRONMENT_FAILURE`, never a PASS. That argument is sound for an HTTP world and meaningless for
+ * one with no HTTP: deriving `200` there invents a status the world cannot return, and the run then
+ * waits out its whole health timeout for a number nothing was ever going to produce.
+ */
+const isFileBacked = (environment: EnvironmentLike): boolean =>
+  isMissing(environment.url) && !isMissing(environment.databasePath);
 
 const asArray = <T>(value: readonly T[] | undefined): readonly T[] => value ?? [];
 
@@ -470,7 +523,7 @@ export function detectValidationAmbiguities(
             origin: "validation",
             path: at("target"),
             kind: "underspecified",
-            question: `Which element should ${name} inspect for ${label}?`,
+            question: `Which ${descriptor.targetNoun ?? "element"} should ${name} inspect for ${label}?`,
             // Without a target there is nothing to observe, so the criterion cannot be decided.
             blocking: isBlocking({ makesUnexecutable: true }),
             context: { validator: name },
@@ -532,6 +585,13 @@ export function detectValidationAmbiguities(
  * against `/` that fails classifies as `ENVIRONMENT_FAILURE`, and no run can be PASS while the
  * environment is invalid. So choosing `/` can only ever make the run *less* likely to report PASS —
  * which is precisely the condition under which a default is permitted.
+ *
+ * The rule has a boundary, and it is drawn by the document: every HTTP-shaped question here is
+ * skipped for a world that names a file instead of an address. The argument above is sound for a
+ * world reached over a socket and *meaningless* for one reached by opening a database, where
+ * deriving `expectStatus: 200` invents a number nothing will ever return and the run waits out its
+ * whole health timeout for it. `isFileBacked` is that boundary, and it reads the artifact because
+ * `core/clarification` is the lowest layer and may not ask an adapter what it is.
  */
 export function detectEnvironmentAmbiguities(
   environment: EnvironmentLike,
@@ -567,6 +627,28 @@ export function detectEnvironmentAmbiguities(
     );
   }
 
+  // What this particular world needs, asked of the artifact's author rather than discovered by the
+  // adapter mid-run. `local-db` opens a database file; a document that names it and no file describes
+  // a world nobody can build, and the repair is the operator's - there is no defensible default,
+  // because inventing a path would pick a file rather than the one they meant. Reporting it here
+  // turns "ENVIRONMENT_FAILURE at create()" into a question with a place to answer it.
+  const declared = isMissing(environment.adapter) ? null : String(environment.adapter);
+  const descriptor = asArray(ctx.adapterDescriptors).find((entry) => entry.kind === declared);
+  const document = environment as unknown as Record<string, unknown>;
+  for (const requirement of asArray(descriptor?.requires)) {
+    if (!isMissing(document[requirement.field])) continue;
+    found.push(
+      ambiguity({
+        origin: "environment",
+        path: `/${requirement.field}`,
+        kind: "missing_value",
+        question: requirement.question,
+        blocking: isBlocking({ makesUnexecutable: true, changesEnvironmentMeaning: true }),
+        context: { adapter: declared ?? "", reason: requirement.why },
+      }),
+    );
+  }
+
   if (isMissing(environment.app)) {
     found.push(
       ambiguity({
@@ -594,7 +676,8 @@ export function detectEnvironmentAmbiguities(
     );
   }
 
-  if (isMissing(environment.url)) {
+  const fileBacked = isFileBacked(environment);
+  if (!fileBacked && isMissing(environment.url)) {
     found.push(
       ambiguity({
         origin: "environment",
@@ -607,7 +690,7 @@ export function detectEnvironmentAmbiguities(
     );
   }
 
-  if (isMissing(environment.health) || isMissing(environment.health?.["path"])) {
+  if (!fileBacked && (isMissing(environment.health) || isMissing(environment.health?.["path"]))) {
     found.push(
       ambiguity({
         origin: "environment",
@@ -649,7 +732,7 @@ export function detectEnvironmentAmbiguities(
   // -------------------------------------------------------------------------------------------
   const health = environment.health ?? {};
 
-  if (isMissing(health.expectStatus)) {
+  if (!fileBacked && isMissing(health.expectStatus)) {
     found.push(
       ambiguity({
         origin: "environment",
@@ -703,7 +786,7 @@ export function detectEnvironmentAmbiguities(
     );
   }
 
-  if (isMissing(environment.browser?.["enabled"])) {
+  if (!fileBacked && isMissing(environment.browser?.["enabled"])) {
     found.push(
       ambiguity({
         origin: "environment",
