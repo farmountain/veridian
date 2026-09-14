@@ -35,11 +35,15 @@ TypeScript and Node runs it directly. Requires **Node 22.18.0 or newer**.
 git clone <this-repository-url> veridian
 cd veridian
 npm ci                    # runtime dependency: yaml. dev: typescript, @types/node.
-npm run gate              # tsc --noEmit, then the whole test suite. 330 tests, ~1s.
+npm run gate              # tsc --noEmit, then the whole test suite. 338 tests, under a second.
 
 npm run e2e:install       # one-time, ~150 MB: fetch the Playwright browser
 npm run demo              # the canonical demo: 3 defects, FAIL -> repair -> PASS
 ```
+
+Run those four in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
+Playwright is installed **outside** the lockfile on purpose, so installing the browser before `npm ci`
+would discard it.
 
 To point Veridian at your own application, write a goal, an acceptance contract and an environment
 document (their shapes are under [Goal, contract and environment](#goal-contract-and-environment)),
