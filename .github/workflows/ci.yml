@@ -80,7 +80,16 @@ jobs:
         with:
           name: veridian-evidence
           path: .veridian/
-          if-no-files-found: warn
+          # `include-hidden-files` is not decoration: `.veridian/` is a *hidden* directory, and
+          # upload-artifact v4 excludes hidden files by default. Without this the step ran on every
+          # green build, printed "No files were found with the provided path: .veridian/", and
+          # uploaded nothing - a step named "upload the evidence bundle" that had never uploaded an
+          # evidence bundle, sitting in a list of warnings a reader learns to skip. Found by watching
+          # the first run of this commit rather than by reading the workflow.
+          include-hidden-files: true
+          # `error`, not `warn`, for the same reason: the run just wrote a bundle, so an empty path
+          # means the thing this step exists to carry is not there. A warning would let that pass.
+          if-no-files-found: error
           retention-days: 7
 
   dist:

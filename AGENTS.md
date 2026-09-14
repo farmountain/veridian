@@ -442,6 +442,28 @@ Dockerfile is a built image rather than a correct-looking file, and `npm pack` i
 rather than a configuration. Docker cannot be exercised on this machine at all, which is precisely
 why the job has to exist and why watching its first run is part of the change rather than a follow-up.
 
+**And the newest run - `34853388649` on `135919e`, the `sim-k8s` commit - was green while one of its
+steps did nothing.** The `demo` job's last step is named *"upload the evidence bundle"*; it reported
+`No files were found with the provided path: .veridian/`, uploaded nothing, and the build passed. Two
+causes, both worth stating. `.veridian/` is a **hidden** directory and `upload-artifact@v4` excludes
+hidden files by default, so the path was searched and nothing in it was eligible; and the step was
+configured `if-no-files-found: warn`, so the failure to carry the one thing it exists to carry was a
+line in a list of warnings a reader learns to skip - alongside two Node-20 deprecation notices, which
+is what makes that list easy to skip. Both are fixed (`include-hidden-files: true`,
+`if-no-files-found: error`), and the point is the same one this file makes about guards: **a step
+whose name states an outcome must fail when that outcome does not happen, or the name is a claim.**
+Every green run up to this one carried the same silent no-op, which is why the defect was found by
+reading *this* run's annotations rather than by reading the workflow - the workflow looks correct.
+
+*Written into `AGENTS.md`:* **a requirement that names a *place* must be resolved as a pointer, not
+read as a literal key**; **two implementations of one rule disagree the first time a world arrives
+that only one of them was written for**; **a capability report must be derived from what the code did,
+not from a literal list beside it**; **a test that asks whether a value is in a list cannot see a list
+that is wrong in a different way**; **a register whose members are schema `oneOf` branches needs a
+guard of its own**; **a read must not mutate the record it reads**; **a resource that is absent and a
+request that is refused are two different observations, and HTTP already has a word for each**; and
+**a step whose name states an outcome must fail when that outcome does not happen**.
+
 The `demo` exit-2 step reads `$?` after `set +e` because Actions runs bash with `-e`, which would
 abort on the 2 before the assertion could look at it. Both new exit-code assertions use the same
 shape.
