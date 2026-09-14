@@ -28,14 +28,31 @@ export function dirOf(path: string): string {
 
 /** Join a relative reference onto a source's directory, collapsing `.` and `..`. */
 export function resolveSibling(source: SourceRef, relative: string): string {
-  const combined = relative.startsWith("/") ? relative : `${source.dir}/${relative}`;
+  const combined = (relative.startsWith("/") ? relative : `${source.dir}/${relative}`).replace(
+    /\\/g,
+    "/",
+  );
+  /**
+   * Whether the result is rooted decides whether the root survives the collapse below.
+   *
+   * An absolute POSIX path splits into an empty first segment, and skipping empty segments - which
+   * is what collapses `//`, `./` and a trailing `/` - would delete the root along with them, turning
+   * `/home/x/acceptance.yaml` into the relative `home/x/acceptance.yaml`. That path is then resolved
+   * against the process cwd, so the file is reported missing while it sits in plain sight, and the
+   * reader is sent to inspect the one thing that is not broken.
+   *
+   * Windows never had the problem: `D:/x/acceptance.yaml` has no empty first segment, so the root
+   * is a drive letter and survives. That asymmetry is why this lasted - the tree was developed on
+   * one platform, where the shape of a path hides the difference between the two.
+   */
+  const rooted = combined.startsWith("/");
   const parts: string[] = [];
-  for (const part of combined.replace(/\\/g, "/").split("/")) {
+  for (const part of combined.split("/")) {
     if (part === "" || part === ".") continue;
     if (part === "..") parts.pop();
     else parts.push(part);
   }
-  return parts.join("/");
+  return `${rooted ? "/" : ""}${parts.join("/")}`;
 }
 
 /**

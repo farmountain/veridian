@@ -1,13 +1,22 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { nodeIo, preloadSchemas, type IoPort } from "../io.ts";
 import { SchemaValidator, SchemaViolationError, validateAgainst, type JsonSchema } from "./validate.ts";
 
-const repoRoot = (() => {
-  const url = new URL("../../", import.meta.url);
-  return decodeURIComponent(url.pathname).replace(/^\//, "").replace(/\/$/, "");
-})();
+/**
+ * The repository root, taken from this file's own location.
+ *
+ * `fileURLToPath` rather than `url.pathname`, because the two differ in a way that shows on only
+ * one platform. `pathname` carries a leading `/` that has to be stripped to leave a Windows drive
+ * letter intact (`/D:/repo` -> `D:/repo`); stripping it turns a POSIX path into a relative one
+ * (`/home/x/repo` -> `home/x/repo`), which the port then resolves against the cwd into a directory
+ * that does not exist. Every schema read from that root then reports the file as missing.
+ *
+ * `demo.ts` and `app/serve.mjs` already use `fileURLToPath`; this was the last hand-rolled copy.
+ */
+const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 
 const SCHEMA_URIS = [
   "schemas/ambiguity.schema.json",
