@@ -198,19 +198,54 @@ describe("injecting and repairing round-trips the same bytes", () => {
     assert.equal(status(stranger).length, DEFECTS.length, "every defect must be reported, not the first");
   });
 
-  it("edits a line ending the script actually uses", async () => {
+  it("is ending-insensitive by construction, which is why the rule is tested elsewhere", async () => {
     // The rule this project paid for: a textual overlay authored with `\n` against a CRLF checkout
-    // matches nothing, and the run then reports a PASS the application never earned. D1's block is
-    // multi-line precisely so that a mismatch would be visible here.
-    const body = await readBuild();
-    assert.ok(body.includes("\r\n"), `${buildPath} is not CRLF, so this test's premise has changed`);
+    // matches nothing, and the run then reports a PASS the application never earned.
+    //
+    // **That rule cannot be exercised by this demo, and this test says so instead of pretending
+    // otherwise.** Every block in this table is a single line, so `newlineOf`/`inStyle` never reach
+    // it and the file's ending cannot change the outcome. Measured rather than asserted: with
+    // `newlineOf` replaced by a function that always returns `"\n"`, the whole suite still passed.
+    // The rule is therefore held by `tests/defect-text.test.ts`, against the shared implementation
+    // with synthetic multi-line blocks, where breaking it is actually detectable.
+    //
+    // What is worth holding *here* is the consequence: this table is ending-insensitive, so the
+    // database demo behaves identically on an LF checkout and a CRLF one.
+    for (const entry of DEFECTS) {
+      assert.ok(
+        !entry.correct.includes("\n") && !entry.defective.includes("\n"),
+        `${entry.id} is multi-line, so this demo now depends on the file's line ending and ` +
+          "`tests/defect-text.test.ts` is no longer the only place that rule is held",
+      );
+    }
 
-    const { text } = inject(body);
-    assert.notEqual(text, body, "the injection changed nothing, which is what a line-ending mismatch looks like");
-    assert.ok(
-      text.split("\r\n").length === body.split("\r\n").length,
-      "an injected block changed the line count, so its own newlines are not the file's",
+    // And the file's own ending is a property of the *checkout*, not of this repository:
+    // `git ls-files --eol` reports the committed blob as `lf` while a Windows worktree is `crlf`,
+    // because `core.autocrlf` differs per platform and there is no `.gitattributes`. The first
+    // version of this test asserted `\r\n` and could therefore never pass on `ubuntu-latest`. It
+    // asserts the file's *presence* and that its ending is *consistent* - two facts that hold
+    // everywhere - rather than naming one ending and proving nothing on the other.
+    const body = await readBuild();
+    const crlf = (body.match(/\r\n/g) ?? []).length;
+    const lf = (body.match(/\n/g) ?? []).length - crlf;
+    assert.equal(
+      crlf === 0 || lf === 0,
+      true,
+      `${buildPath} has mixed line endings (${String(crlf)} CRLF, ${String(lf)} LF), so ` +
+        "`newlineOf` would pick whichever came first and match only part of the file",
     );
+
+    // Both endings behave identically, because no block spans a line.
+    for (const eol of ["\n", "\r\n"] as const) {
+      const variant = body.replace(/\r\n|\n/g, eol);
+      let text = inject(variant).text;
+      for (let i = 0; i < DEFECTS.length; i += 1) {
+        const step = repairOne(text);
+        assert.notEqual(step.repaired, null, `repair ${String(i + 1)} found nothing to fix in a ${JSON.stringify(eol)} script`);
+        text = step.text;
+      }
+      assert.equal(text, variant, `the round trip must restore a ${JSON.stringify(eol)} script byte for byte`);
+    }
   });
 });
 

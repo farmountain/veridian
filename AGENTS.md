@@ -8,7 +8,7 @@ instructions file for this workspace — do not add a second one
 > `local-web` adapter, the Playwright validators, the CLI, the schemas and the canonical demo all exist.
 > `local-db` - a second adapter and a second validator family, against a SQLite file with no browser -
 > exists beside them, and is the proof that `EnvironmentAdapter` is a seam. `npx tsc --noEmit` is silent
-> and `node --test` reports 417 passing tests. Two distribution routes ship - a clone and an npm package -
+> and `node --test` reports 427 passing tests. Two distribution routes ship - a clone and an npm package -
 > and there is still **no build step between the source tree and the running program**: Node 22 strips
 > types and runs `.ts` straight from the source. `npm run build` exists only to produce the *compiled*
 > copy an installed package needs, because Node refuses type-stripping under `node_modules`. Read
@@ -352,7 +352,7 @@ on this machine and is quoted from its real output.
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 417 tests, ~1s. No directory argument.
+node --test                # the whole suite. 427 tests, ~1s. No directory argument.
 npm run gate               # typecheck then test. Run this before claiming anything is done.
 
 npm run build              # tsc -p tsconfig.build.json, then node scripts/copy-assets.mjs
@@ -504,6 +504,32 @@ computes the file's newline and converts, and `examples/shopping-cart/demo.ts` l
 lesson the hard way - its own copy of the replacement left a defect injected and still printed
 "restored the correct app". **There is exactly one implementation of undoing a defect
 (`repairOne`), and a function that changes a file must not announce a change it has not verified.**
+- **A test that asserts a property of the checked-out file is asserting a property of the developer's
+platform, not of the program.** The rule above is right, and the first test written for it was wrong
+in the one way that rule does not cover: it read `examples/inventory-db/app/build.mjs` and asserted
+`body.includes("\r\n")`. Measured, `git ls-files --eol` reports the committed blob as **`lf`**,
+`core.autocrlf` is `true` on this machine and `false` in CI, and there is no `.gitattributes` to
+normalise either way - so that assertion was a statement about Windows, and `gate (ubuntu-latest)`
+failed on it at `416/417` the first time the workflow ran. It could never have passed there. The
+property is not "the file is CRLF"; it is "the overlay is expressed in the file's own ending". Do
+**not** "fix" this with `.gitattributes` forcing `eol=lf`: that would delete the CRLF checkout that
+naturally reproduces the original defect, and the natural reproduction is worth more than the
+tidiness. *The same shape as the `resolveSibling` defect one section down, one layer out: there the
+platform was the filesystem, here it is the developer's git configuration.*
+- **And that test proved nothing even where it passed, which is the worse half.** Every block in the
+inventory demo's defect table is a **single line** - `quantityOnHand: 30,`, `return Math.round(dollars
+* 100);`, `WHERE quantity_on_hand < reorder_level` - so `newlineOf`/`inStyle` never touched them and
+the line-ending rule was never reached. Measured rather than argued: replacing `newlineOf` with a
+function that always returns `"\n"` left that test **16/16 green**. The comment above it claimed "D1's
+block is multi-line precisely so that a mismatch would be visible here", and that sentence was false
+about the very table it described. The rule is now held by `tests/defect-text.test.ts`, against the
+shared implementation, with synthetic multi-line blocks and both endings supplied by the test; under
+the same probe it fails **4 subtests**, which is the difference between a test and a comment. The demo
+test keeps the honest half - that *its* table is single-line, and therefore ending-insensitive by
+construction, so the rule cannot be exercised there and must be tested somewhere it can be. *A test
+that passes whether or not the rule holds is not a test. And a green suite is not evidence that a rule
+is held - it is evidence that nothing has broken it yet; the evidence is what happens when you break
+it on purpose.*
 - **A contradiction detector must key on (observable, scenario), not (validator, target).** Two
 criteria reading the same selector with different values are the *ordinary* shape of a contract -
 add an item and expect 1 row, add and remove and expect 0. Keyed on the target alone, the detector
