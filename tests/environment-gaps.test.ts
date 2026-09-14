@@ -159,37 +159,51 @@ describe("environment gaps: requirements name a pointer, not a key", () => {
 describe("environment gaps: HTTP questions are not asked of a world with no HTTP", () => {
   const HTTP_PATHS = ["/url", "/health/path", "/health/expectStatus", "/browser/enabled"];
 
-  it("skips them for a world reached through a file", () => {
-    const raised = paths({ ...skeleton("local-db"), databasePath: "app/data.db" });
-    for (const path of HTTP_PATHS) {
-      assert.ok(!raised.includes(path), `local-db was asked ${path}, and it has no socket`);
-    }
-  });
+  /**
+   * The document keys that stand for a shape with no HTTP surface of its own.
+   *
+   * This is the detector's own vocabulary - the five clauses of `hasNoHttp` in
+   * `core/clarification/detect.ts` - written once here so the *members* can be derived rather than
+   * listed. A world named below is one whose own declaration says which of the five it is; a world
+   * that names none of them is asked every HTTP question, which is the other half.
+   */
+  const NO_HTTP_KEYS = ["databasePath", "cluster", "posix", "os", "cloud"];
 
-  it("skips them for a world reached through a substitute cluster", () => {
-    const raised = paths(satisfier("sim-k8s"));
-    for (const path of HTTP_PATHS) {
-      assert.ok(!raised.includes(path), `sim-k8s was asked ${path}, and it has no socket`);
-    }
-    // Non-HTTP questions are still asked, so this is a boundary and not a blanket silence.
-    assert.ok(raised.includes("/reset/strategy"), "a cluster world still has a reset to describe");
-  });
+  it("skips them for every world whose own declaration says it has no socket", () => {
+    // **Derived from the register, not listed here, and that is the half that cost a defect.** The
+    // predicate is an `||` chain, so the failure mode of a new world is that it *is* covered - by
+    // somebody else's clause - while its own is missing, and the run then reports a world with no
+    // address after being asked for one and handed `expectStatus: 200`. That is the `sim-k8s` abort one
+    // family out. A hand-written list of kinds cannot see it: this test named `["sim-posix","sim-os"]`,
+    // and adding the third shape (`cloud`) left those two subtests passing unchanged, which is exactly
+    // the shape of the thing being guarded. *A test that iterates a list can only cover the list it was
+    // written with; the coverage has to come from the register.*
+    const covered: string[] = [];
+    for (const descriptor of adapterDescriptors()) {
+      const shapes = new Set(descriptor.requires.map((requirement) => requirement.field.split(".")[0] ?? ""));
+      const named = NO_HTTP_KEYS.filter((key) => shapes.has(key));
+      if (named.length === 0) continue;
+      covered.push(descriptor.kind);
 
-  it("skips them for a world whose subject is a system rather than a service", () => {
-    // Two declarations, not one: a POSIX world and a Windows world are different shapes in the document
-    // (`posix` and `os`) and the predicate names both. It is asserted for each because the predicate is
-    // an `||` chain, so the failure mode of a new world is that it *is* covered - by somebody else's
-    // block - while its own is missing, and the run then reports a world with no address after being
-    // asked for one and handed `expectStatus: 200`. That is the `sim-k8s` abort one family out, and it
-    // is why every shape in that chain needs a case of its own rather than one case for "not web".
-    for (const kind of ["sim-posix", "sim-os"]) {
-      const raised = paths(satisfier(kind));
+      const raised = paths(satisfier(descriptor.kind));
       for (const path of HTTP_PATHS) {
-        assert.ok(!raised.includes(path), `${kind} was asked ${path}, and it has no address`);
+        assert.ok(
+          !raised.includes(path),
+          `${descriptor.kind} (${named.join(", ")}) was asked ${path}, and it has no address`,
+        );
       }
       // Non-HTTP questions are still asked, so this is a boundary and not a blanket silence.
-      assert.ok(raised.includes("/reset/strategy"), `${kind} still has a reset to describe`);
+      assert.ok(raised.includes("/reset/strategy"), `${descriptor.kind} still has a reset to describe`);
     }
+
+    // And the derivation itself is asserted, because a loop over an empty set passes for the wrong
+    // reason. One world per clause of the predicate, so dropping a world's shape declaration - or
+    // dropping a clause from the predicate - fails here rather than silently covering less.
+    assert.deepEqual(
+      [...covered].sort(),
+      ["local-db", "sim-cloud", "sim-k8s", "sim-os", "sim-posix"],
+      "one registered world per no-HTTP shape, and the register no longer names them all",
+    );
   });
 
   it("still asks them for a world reached over a socket", () => {

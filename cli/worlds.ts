@@ -30,6 +30,7 @@ import { LocalWebEnvironment } from "../adapters/local-web/index.ts";
 import type { BrowserPort } from "../adapters/local-web/index.ts";
 import { LocalDbEnvironment } from "../adapters/local-db/index.ts";
 import { SimK8sEnvironment } from "../adapters/sim-k8s/index.ts";
+import { SimCloudEnvironment } from "../adapters/sim-cloud/index.ts";
 import { SimOsEnvironment } from "../adapters/sim-os/index.ts";
 import { SimPosixEnvironment } from "../adapters/sim-posix/index.ts";
 import type { AdapterDescriptor, AdapterRequirement } from "../core/clarification/detect.ts";
@@ -260,6 +261,71 @@ const WORLDS: readonly World[] = [
     ],
     build: ({ environment, io, logger, processes, stateDir }) =>
       new SimOsEnvironment(environment, {
+        io,
+        clock: systemClock,
+        logger,
+        processes,
+        stateDir,
+      }),
+  },
+  {
+    kind: "sim-cloud",
+    summary:
+      "a simulated provider account the application provisions itself, with no credentials and no cloud",
+    // Four fields, and they are one declaration rather than four conveniences: the adapter refuses a
+    // plan with no `cloud` block outright, because this world's subject *is* the account, and a
+    // substituted account that will not say whose it is cannot be judged against anything. The
+    // *principal* is the one that decides a verdict rather than a reading - every access question is
+    // decided as it, so a privileged principal is refused for exactly the reason `sim-posix` refuses
+    // `root` and `sim-os` refuses `SYSTEM`: it holds every permission, and an access contract judged
+    // as one reports a pass for an account no ordinary caller has.
+    //
+    // Asked as four pointers rather than as one `cloud` object because the ladder resolves a
+    // requirement against a *place*: a single `cloud` field would report the whole block missing
+    // however much of it the document already stated, and the operator's answer would be written over
+    // the fields they had already written correctly.
+    requires: [
+      {
+        field: "cloud.provider",
+        question: "Which provider is this world standing in for?",
+        why:
+          "Every reading records it and the provisioner's own output is written in its terms, because " +
+          "a criterion of the form \"this is the deployment we certified\" is a claim about a named " +
+          "provider and not about providers in general. There is no default: this adapter substitutes " +
+          "a provider account, and a substituted account that will not say which provider it is " +
+          "stands in for cannot be judged against anything.",
+      },
+      {
+        field: "cloud.region",
+        question: "Which region is this account in?",
+        why:
+          "A bucket is created in a region and a reading carries it, so a region is where the " +
+          "application's own provisioning commands land rather than a label on the run. Defaulting it " +
+          "would put a location into the evidence that nobody chose, and would silently accept a " +
+          "program that provisioned somewhere the operator did not ask for.",
+      },
+      {
+        field: "cloud.account",
+        question: "What is this account called?",
+        why:
+          "It is the identity every reading is scoped to and the name the adapter's environment id is " +
+          "built from, so a run without one records evidence about an account nothing names. There is " +
+          "no default for the same reason there is none for a cluster name: `sim-cloud` saying " +
+          "nothing is not a declaration that it stood in for an anonymous account.",
+      },
+      {
+        field: "cloud.principal",
+        question: "Which principal do the criteria act as?",
+        why:
+          "Every access decision is decided as this principal, which is what makes an authority " +
+          "criterion a question about a named caller rather than about authority in general. A " +
+          "privileged principal - `root`, `account-root`, `owner`, `administrator` or `admin` - is " +
+          "refused by the loader rather than defaulted, because it holds every permission and would " +
+          "pass an access contract no ordinary caller can satisfy.",
+      },
+    ],
+    build: ({ environment, io, logger, processes, stateDir }) =>
+      new SimCloudEnvironment(environment, {
         io,
         clock: systemClock,
         logger,

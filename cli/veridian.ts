@@ -67,6 +67,7 @@ import { dbValidators } from "../validators/database/index.ts";
 import { k8sValidators } from "../validators/k8s/index.ts";
 import { posixValidators } from "../validators/posix/index.ts";
 import { osValidators } from "../validators/os/index.ts";
+import { cloudValidators } from "../validators/cloud/index.ts";
 
 import type { CliArguments } from "./arguments.ts";
 import {
@@ -109,6 +110,7 @@ function allValidators() {
     ...k8sValidators(),
     ...posixValidators(),
     ...osValidators(),
+    ...cloudValidators(),
   ];
 }
 
