@@ -6,7 +6,7 @@ instructions file for this workspace — do not add a second one
 
 > **Status: the MVP is implemented and green.** Core, the `local-web` adapter, the Playwright
 > validators, the CLI, the schemas and the canonical demo all exist. `npx tsc --noEmit` is silent and
-> `node --test` reports 330 passing tests. There is **no build step**: Node 22 strips types and runs
+> `node --test` reports 346 passing tests. There is **no build step**: Node 22 strips types and runs
 > `.ts` straight from the source tree. Read [`docs/IMPLEMENTATION-PLAN.md`](./docs/IMPLEMENTATION-PLAN.md)
 > for what was built and [`docs/PLAN.md`](./docs/PLAN.md) for why.
 
@@ -312,7 +312,7 @@ what runs. Every command below was executed on this machine and is quoted from i
 ```powershell
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 330 tests, ~1s. No directory argument.
+node --test                # the whole suite. 346 tests, ~1s. No directory argument.
 npm run gate               # typecheck then test. Run this before claiming anything is done.
 ```
 
@@ -489,11 +489,15 @@ wrote it agrees with itself.*
 - **Print ASCII in anything a console will display.** This machine's code page renders an em dash as
 `鈥?`, so a CLI message or a demo line using one arrives as noise. The rule covers every string the program
 can print, not just CLI narration: criterion messages, failure reasons, the `failure.md` written into
-a bundle, and test titles, because a test runner prints those too. A sweep found roughly thirty such
-strings behind em dashes, arrows, middle dots and ellipses - while `veridian help` and
-`veridian clarify` were already pure ASCII, which is why the defect was invisible in the two commands
-most likely to be run first. An inventory that only checks the output you happen to look at is a
-claim, not a record.
+a bundle, and test titles, because a test runner prints those too. Re-measured rather than trusted:
+the tree carries 259 non-ASCII characters and **none is in a string Veridian prints**. 208 sit on
+comment lines, 11 are `§` in the `description` fields of `schemas/*.schema.json` - metadata that
+`core/schema` never reads, let alone quotes back, since a violation is reported as a `path` and a
+`message` - and the remainder is a trailing comment in `.github/hooks/format.mjs`. The only
+descriptions that reach a bundle's `failure.md` are the operator's own, read out of their
+`acceptance.yaml`. The figure that used to stand here - "roughly thirty such strings" - did not
+reproduce when it was checked. *An inventory that only checks the output you happen to look at is a
+claim, not a record; so is a count nobody can reproduce.*
 - **A runtime documented as "runs TypeScript directly" may still refuse the one copy that ships.**
 Both this file and the README said "no build step: Node 22 strips types and runs `.ts` directly". True
 for every file in this repository, and false under `node_modules` -
@@ -531,6 +535,23 @@ port had none, which is why the defect reached a demo run.
   one codebase, and M1 named each criterion that moved. `tests/run-metrics.test.ts` holds both halves;
   stashing the fix fails exactly one of the two, which is the difference between a test that passes
   and a test that tests.
+
+- **A platform CI claims to cover, but has never run, is a platform that does not pass.** This file
+  said CI "runs `npm run gate` on `ubuntu-latest` and `windows-latest`", and the workflow did - but the
+  repository had no remote until this session, so the workflow had never executed once. Its first run
+  found **two** defects, both on ubuntu, and both the same bug: a leading separator - or the empty
+  first path segment that stands for it - silently dropped. `resolveSibling` (`core/goal/load.ts`)
+  skipped every empty segment in order to collapse `.`, `..` and `//`, which deleted the POSIX root
+  along with them, so `/home/runner/.../acceptance.yaml` came back as `home/runner/.../acceptance.yaml`
+  and `loadDocument` reported as missing a file sitting in plain sight; the demo exited 3 before it
+  ever reached a browser. `core/schema/validate.test.ts` built its repository root from `url.pathname`
+  with the leading `/` stripped - the very strip that leaves a Windows drive letter intact and turns a
+  POSIX path relative - so all six of its schema subtests said `could not be read`. Windows sees
+  neither, because `D:/x/a.yaml` has no leading separator and no empty first segment to lose. Both now
+  go through the platform-aware primitive (`fileURLToPath`, and a rooted check before the collapse),
+  and `core/goal/load.test.ts` exercises the POSIX cases on every platform - which is the only way one
+  developer on one platform can hold a two-platform claim. *An inventory that only checks the output
+  you happen to look at is a claim, not a record; so is a check that has never run.*
 
 ## Documentation
 

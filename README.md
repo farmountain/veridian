@@ -35,7 +35,7 @@ TypeScript and Node runs it directly. Requires **Node 22.18.0 or newer**.
 git clone <this-repository-url> veridian
 cd veridian
 npm ci                    # runtime dependency: yaml. dev: typescript, @types/node.
-npm run gate              # tsc --noEmit, then the whole test suite. 338 tests, under a second.
+npm run gate              # tsc --noEmit, then the whole test suite. 346 tests, under a second.
 
 npm run e2e:install       # one-time, ~150 MB: fetch the Playwright browser
 npm run demo              # the canonical demo: 3 defects, FAIL -> repair -> PASS
@@ -201,10 +201,17 @@ Exit codes:
 
 ```
 0  PASS - every mandatory criterion passed with its required evidence present.
-1  FAIL - at least one mandatory criterion failed. (metrics: a metric was violated.)
+1  FAIL - at least one mandatory criterion failed.
 2  INCONCLUSIVE, or a definition that could not be resolved. Neither is success.
-3  The command line itself was unusable.
+3  The command line itself was unusable, or this build cannot run the requested goal.
 ```
+
+A definition that will not load - a missing file, a schema violation, a truncated document - is a
+*caller* problem rather than a verdict, so it exits 3 and never 1. Exit 1 is the one code a caller
+acts on, and "the application under test failed" is not what happened. The commands that ask a
+different question answer with the same codes for their own question: `metrics` exits 0 when the
+history is clean, 1 when a metric was violated, and 2 when there is no run to measure, because an
+empty history is `INCONCLUSIVE` rather than success.
 
 `--browser` is a statement about *this run's world*, so it is applied to the environment plan before
 anything is built from it. That is why `--browser none` reports "the environment was planned with
@@ -339,7 +346,7 @@ adapters/local-web/     starts, health-checks, resets a local app; drives Playwr
 validators/playwright/  web.element/text/value/count/url/console/network
 schemas/                goal / acceptance / environment / run / result / ambiguity
 examples/shopping-cart/ the canonical demo: correct app, defect overlay, goal, contract, world
-tests/                  330 tests, `node --test`
+tests/                  346 tests, `node --test`
 ```
 
 The interfaces are small on purpose:
