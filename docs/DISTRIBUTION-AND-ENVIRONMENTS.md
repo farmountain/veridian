@@ -20,7 +20,7 @@ the MVP, this one covers what comes after it.
 | 2 | Docker install route | Never attempted | this doc, Phase A2 |
 | 3 | VS Code extension | **Built** (Phase B) | `PLAN.md` §30, this doc, Phase B |
 | 4 | Database environment | Roadmap "Later" | `PLAN.md` §38, this doc, Phase C |
-| 5 | Linux / Kali / Windows / macOS | Roadmap Tier 2-3 | Linux built as a **simulated** world, `sim-posix` (Phase C3); Windows/macOS planned (`sim-os`), §5 |
+| 5 | Linux / Kali / Windows / macOS | Roadmap Tier 2-3 | Linux/Kali built as a **simulated** world, `sim-posix` (Phase C3); Windows built as `sim-os` (Phase C4), §7 |
 | 6 | Kubernetes, cloud, data platform | Roadmap Tier 4-5 | Kubernetes built as a **simulated** world, `sim-k8s`; cloud and data planned (§5) |
 
 Nothing in this list is forbidden. `PLAN.md` §3 forbids Veridian becoming a *Kubernetes management
@@ -270,6 +270,44 @@ at all.
 repair agent rewrites the provisioning program one defect per iteration, and `environment.json` names
 which system was stood in for.
 
+### Phase C4 - the fifth adapter: `sim-os`, the machine world
+
+Phase C3 proved a world can be an operating system. This one proves the family seam admits a *second*
+operating system whose questions are not the same questions, which is a stronger claim than another
+POSIX-shaped world would have been.
+
+A Windows file does not have a mode; it has an ACL. So the POSIX family's single `permission`
+question becomes three, and the split is the point rather than a detail:
+
+- `os.owner` - the owning account. A fact about who holds the object.
+- `os.acl` - the entries written on it, each explicit or inherited. A fact about what was granted.
+- `os.access` - what one named account may **actually do**, which is the answer to the ordering rules
+  (explicit beats inherited, deny beats allow, groups consulted, `Everyone` last) and not a sum of the
+  entries.
+
+Three validators because they are three facts with three different repairs - a `chown`, an `icacls
+/remove`, and an inheritance defect nobody's entry explains. One validator judging all three would
+report a single defect where there are three, and on Windows would report a `chown` for a system that
+expresses the same intent as an ACL.
+
+`os.access` judges the world's recorded decision and the entry that fired, never a re-derivation of
+them: the ordering rules are exactly the part of a real system that is easy to model *almost*
+correctly, and a model that is almost correct produces a confident wrong answer.
+
+- `core/` gains `core/environment/os-observation.ts` and one more plan field (`OsPlan`), and again
+  nothing a validator could have reached through an adapter.
+- A fifth validator family - `os.ran`, `os.account`, `os.setting`, `os.file`, `os.contents`,
+  `os.owner`, `os.access`, `os.acl`, `os.service`, `os.running`, `os.principal`, `os.probe` - needs no
+  change to `core/validation` or `core/execution`. That is the third demonstration and the reason the
+  rule is now stated as a rule.
+- The run is judged **as `svc-audit`**, an account the loader refuses to let be `SYSTEM`: an
+  administrator reads every file, so a hardening contract judged as one is vacuous.
+- The application declares the `windows` family and **refuses any other by name** rather than adapting,
+  and one criterion expects the world to refuse a command naming a path outside the sandbox.
+
+**Acceptance:** four deliberate defects, seventeen criteria, the same `FAIL` -> repair -> `PASS`
+descent, and a bundle that names the substitute. Measured in §7.
+
 ### Phase D - the rest of Tier 1
 
 `local-api` and `local-process` (`PLAN.md` §36 Tier 1). Both need only a child process and an HTTP
@@ -333,7 +371,7 @@ run ids rather than adjectives.
 | `sim-cloud` | real app process against real HTTP endpoints | the AWS / Azure / GCP services | planned |
 | `sim-container` | real app process | the runtime, the image store, cgroup semantics | planned |
 | `sim-posix` (linux, kali) | real process runner + real sandboxed filesystem | the kernel, the distro, the package manager; Kali's attack network | **built** (Linux/Debian; Kali is the same world with a different declared distribution) |
-| `sim-os` (windows, macos) | real process runner | registry / plist, path and ACL semantics, the OS API surface | planned |
+| `sim-os` (windows, macos) | real process runner | the machine accounts, the ACL engine, the registry / plist store, services and ports | **built** (Windows, judged as `svc-audit`; macOS is the same world with a different declared family) |
 | `sim-data` | real app process against real protocol endpoints | the Kafka / Spark / Hadoop / Airflow runtimes | planned |
 | `sim-mobile` | real app code against a real device API surface | the device, the emulator, the touch OS | planned |
 | `vscode-host` | a real VS Code extension host process | - | planned (Phase B-adjacent) |
@@ -343,7 +381,7 @@ statement - each names the world it blocks, and the simulated row that answers i
 
 | Blocked | Why | Answered by |
 |---------|-----|-------------|
-| a real Linux / Windows / macOS / Kali guest | No VM substrate on this machine. Booting a guest nobody can boot is the unverifiable claim this document refuses. | `sim-posix`, `sim-os` |
+| a real Linux / Windows / macOS / Kali guest | No VM substrate on this machine. Booting a guest nobody can boot is the unverifiable claim this document refuses. | `sim-posix`, `sim-os` - both **built**, see §7 |
 | a real Kubernetes cluster | Same, plus no `kubectl`. | `sim-k8s` - **built**, see §7 |
 | a real container runtime as a *world* | No runtime here. Phase A2's Dockerfile is a *distribution* route and needs none; an adapter that starts and resets containers does. | `sim-container` |
 | a real cloud account | Not a runtime question: an unattended run against a metered, credentialed account is a cost model rather than a test. | `sim-cloud` |
@@ -625,3 +663,65 @@ in the bundle ledger with `kind: "log"` and `criterion_id: null` and named from 
 that stderr is now in the bundle it produced. Held by `tests/command-repair-gate.test.ts` (11 tests)
 and five tests in `tests/execution-loop.test.ts`, both falsified rather than trusted - see the rule in
 [`AGENTS.md`](../AGENTS.md).
+
+### Phase C4: the machine world, and what the fifth adapter proved
+
+| Step | Status | Evidence |
+|------|--------|----------|
+| Substitute machine | built | `adapters/sim-os/os-port.ts` holds the machine accounts, the file tree with modes and ACLs (each entry explicit or inherited, with the decision that follows recorded alongside the entry that fired), package records, registry store entries, service definitions and ports; it executes the command vectors the provisioning program prints. `os-port.test.ts` is 27 tests over it, falsified four times. |
+| Adapter lifecycle | built | `adapters/sim-os/sim-os-environment.ts` implements all ten `EnvironmentAdapter` methods. It declares the five `VERIDIAN_OS_*` names the application reads - the host path this machine can open *and* the world's own spelling of the same directory, because a program that handed the host path to a `run` step would be refused. `reset` rebuilds the world, and the reset is what makes a repair observable. |
+| Observation vocabulary | built | `core/environment/os-observation.ts`, so no validator imports an adapter. The fifth family needed **no core change** beyond this and the name registration - the third sample of that claim, and the point at which it is stated as a rule rather than a coincidence. |
+| Validator family | built | `validators/os/` - twelve validators, 45 tests, falsified by breaking a comparison rather than trusted. The three state questions about one file are split on purpose (`owner` / `acl` / `access`), and the family's file header records what it deliberately does **not** judge. |
+| Judged as a named account | built | The loader refuses `user: "SYSTEM"` by name. An administrator reads every file, so a hardening contract judged as one is vacuous - which is the same reason `sim-posix` refuses `root`. |
+| Family refusal | built | The application declares `windows` and **refuses any other family by name** rather than adapting to it, so the world cannot silently answer a macOS question with Windows semantics. |
+| Demo | built | `examples/sim-os/` - four deliberate defects, seventeen criteria, `npm run demo:os`. Measured, verbatim, on run `run-20260914-161553-7d003e`: iteration 1 `FAIL`s `AC-001`, `AC-006`, `AC-007`, `AC-009`, `AC-010`, `AC-013`, `AC-014` and cannot judge `AC-012`; iterations 2-4 each repair one defect in criterion order (`AC-006`+`AC-007` and `AC-009` are the two pairs that move **together**); iteration 5 is `PASS` on all seventeen with the reason `17/17 mandatory criteria passed, environment valid, no safety violation, evidence complete.` |
+| Refusal as a result | built | `AC-013` runs a command naming a path outside the sandbox and expects the world to **refuse** it, judging the refusal rather than the exit code. The criterion's own description carries the limitation it knows about: the validator reads the world's *result* and not its stated *reason*, so it cannot distinguish a path that escapes from a command the world does not implement. |
+| Regression tests | built | `tests/sim-os-demo.test.ts` (22 tests), `tests/sim-os-environment.test.ts` (44), `validators/os/os-validators.test.ts` (45), `adapters/sim-os/os-port.test.ts` (27), plus one `os` case in `tests/environment-gaps.test.ts` and the new `tests/readme-rosters.test.ts` (2) - each falsified rather than trusted. |
+
+**What the fifth world settled.** `core/` changed by an observation vocabulary and a name, for the
+third time. The stronger claim is the one this world was built to make: a *second* operating system
+does not mean a second copy of the first family's questions. A POSIX permission is three bits and an
+owner, so one `posix.permission` covers it; a Windows ACL is an owner, a set of entries with
+inheritance, and a decision that follows from ordering rules, and the three have three different
+repairs. One family judged both worlds by analogy and would have reported one defect where there are
+three - and a `chown` for a system that expresses the same intent as an ACL.
+
+**Four defects this world's build produced.**
+
+1. **A substitute that resolves a token as a path cannot tell a grant from an escape.** The escape
+   predicate recognised a drive with `^[A-Za-z]:`, so `icacls <path> /grant x:(R)` - an account named
+   `x` - was refused as a boundary crossing, and so was any registry value whose data began `a:b`. The
+   world reported "this names a place outside the sandbox" about a *permission grant*, sending the
+   reader to inspect the path. A drive **path** has a separator after the colon; a grant token does
+   not. Tightened to `^([A-Za-z]):[\\/]`, and the tightening loses nothing: a drive-relative spelling
+   (`D:secrets.txt`) still reaches the command, whose own resolution refuses it by name. *An error
+   message may only name a cause the reporter observed - and here the reporter named a path it had not
+   looked at.*
+
+2. **A command that skips the world's own path grammar gives one world two answers for one question.**
+   Every path-taking command (`where`, `icacls`, `chmod`, `reg`) resolved through the family's grammar
+   and refused what it cannot express; `type`/`cat` went straight to the host mapping, and `path.join`
+   accepts a separator the grammar does not have. So in a Windows world `type /etc/os-release` looked
+   *inside the sandbox* for `etc/os-release` and answered "cannot find the path because it does not
+   exist" - a missing-file answer for a spelling the world would have **refused to resolve**, and a
+   second grammar for one world's paths. Resolved first, the two commands agree. *Two implementations
+   of one rule disagree the first time a world arrives that only one of them was written for.*
+
+3. **A guard whose null branch is reachable by omitting a field is a guard no document reaches.**
+   `linkAcceptance` refuses a contract naming a different goal, but `finalizeAcceptance` sets `goalId`
+   to `null` when `goal_id` is absent, the schema does not require it, and
+   `examples/sim-os/acceptance.yaml` did not carry one - so the newest world's cross-goal
+   contradiction guard was **dormant** while every other demo exercised it. Nothing failed, because a
+   guard's unreached branch is silent by construction; it was found by asking why this run's
+   `latest-result.json` had no `goal_id` where the other demos' did. *The third occurrence in this
+   repository of "a guard no code path can trip is not a guard".*
+
+4. **A roster written as a shared prefix plus suffixes reads as complete while hiding an omitted
+   name.** `README.md` printed the browser family as `element, value, text, count, url, console,
+   network`, which folded `console.clean` and `network.ok` into shorthand and **omitted `web.visible`
+   entirely** - implemented, exported, registered, and named by no document at all. Found by
+   `tests/readme-rosters.test.ts` on its first run, which parses the README's layout block and compares
+   each family's printed roster against the constant the code exports - not by reading the README,
+   which looked complete. *A document that prints a vocabulary must print every member in full, and the
+   cheapest way to hold it is a test that reads both.*
+

@@ -172,12 +172,21 @@ export function homeOf(family: OsFamily, account: string): string {
  * the adapter watches for the *application's* attempts so it can file a boundary crossing. Written
  * twice, the two would agree on `..` and disagree the first time a token named another drive - which
  * is the case only one of them would have been written for. One rule, one place.
+ *
+ * **The drive form requires a separator, and that is a defect this world shipped rather than a
+ * detail.** `^[A-Za-z]:` alone reads any argument beginning with one letter and a colon as a drive, so
+ * `icacls <path> /grant x:(R)` - an account named `x` - was refused as an escape, and so was any
+ * registry value whose data began `a:b`. The world reported "this names a place outside the sandbox"
+ * about a permission grant, which sends the reader to look at the path. A drive *path* has a separator
+ * after the colon; a grant token does not, and the handler for it (`parseGrant`) is where it belongs.
+ * The tightening loses nothing: a drive-relative spelling (`D:secrets.txt`) still reaches the command,
+ * and the command's own resolution refuses it by name - see the resolution `readAsAccount` performs.
  */
 export function osEscapes(family: OsFamily, token: string): boolean {
   const segments = token.split(/[\\/]/);
   if (segments.includes("..")) return true;
   if (family !== "windows") return false;
-  const drive = /^([A-Za-z]):/.exec(token);
+  const drive = /^([A-Za-z]):[\\/]/.exec(token);
   return drive !== null && (drive[1] ?? "").toUpperCase() !== SANDBOX_DRIVE;
 }
 
@@ -719,8 +728,21 @@ export function osPort(options: OsPortOptions): OsPort {
    * express. Both families have a program for this - `type` on Windows, `cat` on macOS - and both are
    * answered by this one function, because two spellings of one question should not be two
    * implementations of the answer.
+   *
+   * **The spelling is resolved before anything is looked at, and that was a defect rather than a
+   * tidy-up.** Every other command that takes a path (`where`, `icacls`, `chmod`, `reg`) resolves it
+   * through the world's grammar and refuses what that grammar cannot express; this one went straight to
+   * the host mapping, and `path.join` accepts a separator the grammar does not have. So in a Windows
+   * world `type /etc/os-release` looked *inside the sandbox* for `etc/os-release` and answered "cannot
+   * find the path because it does not exist" - a missing-file answer for a spelling the world would
+   * have refused to resolve, and a second grammar for one world's paths. Resolved, the two commands
+   * agree: both refuse the other family's spelling, by name and for the stated reason. The `..` and
+   * cross-drive shapes never reach here, because `osEscapes` refuses the whole command first.
    */
-  const readAsAccount = async (path: string): Promise<Outcome> => {
+  const readAsAccount = async (spelling: string): Promise<Outcome> => {
+    const located = resolveOsPath(family, spelling);
+    if (located.kind === "refused") return { exitCode: 1, stderr: `${located.reason}\n` };
+    const path = located.value;
     const held = securityAt(path);
     const stats = await lstat(hostOf(path)).catch(() => null);
     if (stats === null) {

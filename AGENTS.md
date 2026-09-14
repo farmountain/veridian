@@ -4,7 +4,7 @@ Agent instructions for the **Veridian** repository. This is the single always-on
 instructions file for this workspace — do not add a second one
 (`.github/copilot-instructions.md`) alongside it.
 
-> **Status: the MVP is implemented and green, and three more sandbox worlds have landed.** Core, the
+> **Status: the MVP is implemented and green, and four more sandbox worlds have landed.** Core, the
 > `local-web` adapter, the Playwright validators, the CLI, the schemas and the canonical demo all exist.
 > `local-db` - a second adapter and a second validator family, against a SQLite file with no browser -
 > exists beside them, and is the proof that `EnvironmentAdapter` is a seam. `sim-k8s` is the third, and
@@ -13,8 +13,11 @@ instructions file for this workspace — do not add a second one
 > `sim-posix` is the fourth and the second simulated one, and it attacks a different axis: a real
 > application process really provisioning a substitute Linux system through commands it really issues,
 > judged as a **named account** rather than as root, with no virtual machine and no guest kernel
-> anywhere in the loop. `npx tsc --noEmit` is silent and `node --test` reports 872 passing tests -
-> Veridian's own 812 plus the 60 the VS Code Cockpit contributes, which the root runner discovers
+> anywhere in the loop. `sim-os` is the fifth and the third simulated one: the same shape one family
+> out, with a substitute holding machine accounts, ACLs, registry store entries, services and ports,
+> judged as `svc-audit` rather than as `SYSTEM`, and with no guest and no image anywhere in the loop.
+> `npx tsc --noEmit` is silent and `node --test` reports 1013 passing tests -
+> Veridian's own 953 plus the 60 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Four distribution routes ship - a clone, an npm package, the Cockpit, and
 > a container image - and there is still **no
 > build step between the source tree and the running program**: Node 22 strips types and runs `.ts`
@@ -252,7 +255,9 @@ core/environment/       EnvironmentAdapter interface + Environment Manager (life
                         health checks, reset, snapshot/restore) + web-observation.ts, the shared
                         vocabulary that keeps validators from depending on adapters + db-observation.ts,
                         the same idea for the database family + k8s-observation.ts for the cluster
-                        family + posix-observation.ts for the system family + the boundary vocabulary
+                        family + posix-observation.ts for the system family + os-observation.ts for the
+                        machine family (the fifth, and the third proof that the rule holds - a validator
+                        family that needs no core change to exist) + the boundary vocabulary
                         (BoundaryPolicy/BoundaryReport) that keeps a declared safety limit from being
                         mistaken for an enforced one.
 core/evidence/          Evidence Engine. Writes the run bundle.
@@ -289,8 +294,18 @@ adapters/sim-posix/     SimPosixEnvironment - the second SIMULATED world, and th
                         `posix-port.test.ts` is 20 tests over it), and `sim-posix-environment.ts` is
                         the adapter, which **refuses by name** a `snapshot-restore` reset it cannot
                         perform rather than silently downgrading it to a restart.
-validators/playwright/  Playwright web validators (element, value, text, count, url, console,
-                        network).
+adapters/sim-os/        SimOsEnvironment - the third SIMULATED world, and the one whose subject is a
+                        machine rather than a cluster or a system. Same shape as `sim-posix` one
+                        family out: the application really provisions, by printing command vectors
+                        the substitute really executes, and the substitute holds machine accounts,
+                        file modes and ACLs with explicit and inherited entries, package records,
+                        registry store entries, service definitions and ports. `os-port.ts` is the
+                        substitute, and `sim-os-environment.ts` is the adapter, which declares the
+                        five `OS_ENV` names the application reads - a host path this machine can
+                        open and the world's own spelling of the same directory, because a program
+                        that passed the host path to a `run` step would be refused.
+validators/playwright/  Playwright web validators (element, visible, value, text, count, url,
+                        console.clean, network.ok).
 validators/database/    Database validators (table, column, count, value). Judge a reading in
                         core/environment/db-observation.ts, which is what keeps them from importing
                         an adapter. Each declares its own `targetNoun`, so the clarification ladder
@@ -303,6 +318,15 @@ validators/posix/        System validators (ran, package, installed, user, file,
                         core/environment/posix-observation.ts - the fourth family, and the second
                         reason that rule holds. `owner` and `permission` are deliberately different
                         questions, which is why AC-009 exists to prove it.
+validators/os/          System validators for a machine (ran, account, setting, file, contents,
+                        owner, access, acl, service, running, principal, probe). Judge a reading in
+                        core/environment/os-observation.ts - the fifth family, and the third reason
+                        that rule holds. The three state questions about one file are split on
+                        purpose: `owner` is who holds the object, `acl` is what was written on it
+                        and whether each entry is explicit or inherited, and `access` is what one
+                        named account may actually do. Three facts with three different repairs, so
+                        one validator judging all three would report one defect where there are
+                        three.
 cli/                    The interface that exists today: arguments, support, worlds.ts (the adapter
                         register and the requirements each adapter declares), veridian.ts.
 schemas/                goal/acceptance/environment/run/result/ambiguity .schema.json - the
@@ -320,6 +344,13 @@ examples/sim-posix/     The fourth demo, and the first whose subject is an opera
                         application provisions a substitute Linux system and is judged as a named
                         account. Four defects, thirteen criteria, one of which acts in the world
                         through a `run` step and one of which expects the world to **refuse** it.
+examples/sim-os/        The fifth demo, and the same shape one family out: the application
+                        provisions a substitute Windows system and is judged as `svc-audit` - an
+                        account the loader refuses to let be `SYSTEM`, because an administrator
+                        reads every file and a hardening contract judged as one is vacuous. Four
+                        defects, seventeen criteria, with the same `run` step and the same expected
+                        refusal. The `windows` family is declared, and the application **refuses**
+                        any other family by name rather than adapting to it.
 examples/defect-text.ts One implementation of the CRLF rule for a textual overlay on a source file.
                         Two demos injecting defects is two chances to teach the rule differently;
                         a third copy is where the rule gets broken.
@@ -414,8 +445,8 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 872 tests, 1.7s. No directory argument.
-                           # 872 = the root's own 812 + the Cockpit's 60, because the runner walks
+node --test                # the whole suite. 1013 tests, 2.5s. No directory argument.
+                           # 1013 = the root's own 953 + the Cockpit's 60, because the runner walks
                            # the tree and reaches extension/vscode/src/*.test.ts. Neither figure is
                            # the whole story on its own: the root tsconfig EXCLUDES extension/**, so
                            # `npx tsc --noEmit` here does not typecheck the Cockpit and the root gate
@@ -480,6 +511,10 @@ npm run demo:posix                          # the fourth demo, and the second si
                                             # provisions a substitute Linux system through commands it
                                             # really issues, judged as a named account. Exit 0 when it
                                             # passes.
+npm run demo:os                             # the fifth demo, and the third simulated world: the app
+                                            # provisions a substitute Windows system and is judged as
+                                            # `svc-audit`, which the loader refuses to let be SYSTEM.
+                                            # Exit 0 when it passes.
 npm run demo:no-browser                     # the same demo with `--browser none`. Every criterion is
                                             # a browser observation, so this must end INCONCLUSIVE
                                             # (exit 2). It shows the refusal, not the aha.
@@ -1111,6 +1146,93 @@ port had none, which is why the defect reached a demo run.
   must *hide* the status bar, which the old sequence never asserted. *A test that waits on a clock is
   testing the clock.*
 
+- **A substitute that resolves a token as a path cannot tell a grant from an escape.** `osEscapes`
+  tested a token against `^[A-Za-z]:` to recognise a drive, so `icacls <path> /grant x:(R)` - an
+  account named `x` - was refused as a boundary crossing, and so was any registry value whose data
+  began `a:b`. The world reported "this names a place outside the sandbox" about a *permission grant*,
+  which sends the reader to inspect the path. A drive **path** has a separator after the colon; a grant
+  token does not, and a token whose tail has no separator is `parseGrant`'s question, not the escape
+  predicate's. Tightened to `^([A-Za-z]):[\\/]`, and the tightening loses nothing: a drive-relative
+  spelling (`D:secrets.txt`) still reaches the command, whose own resolution refuses it by name. *An
+  error message may only name a cause the reporter observed - and here the reporter named a path it had
+  not looked at.* Held in `adapters/sim-os/os-port.test.ts`.
+
+- **A command that skips the world's own path grammar gives one world two answers for one question.**
+  Every path-taking command in the substitute (`where`, `icacls`, `chmod`, `reg`) resolved through the
+  family's grammar and refused what it cannot express; `type`/`cat` went straight to the host mapping,
+  and `path.join` accepts a separator the grammar does not have. So in a Windows world `type
+  /etc/os-release` looked *inside the sandbox* for `etc/os-release` and answered "cannot find the path
+  because it does not exist" - a missing-file answer for a spelling the world would have **refused**,
+  and a second grammar for one world's paths. Resolved first, the two commands agree: both refuse the
+  other family's spelling, for the stated reason. *This is the same shape as the environment predicate
+  written twice - two implementations of one rule disagree the first time a world arrives that only one
+  of them was written for.*
+
+- **Two readings of one fact in one log is one reading too many.** `create()` logged the *resolved*
+  sandbox root while `environment.start` logged `this.#plan.os?.root` - the document's own spelling,
+  which may be relative to the io root. A reader asking "where did this world actually live" would
+  trust the second, and it is not a path this machine can open. The same edit added both to the
+  `os.exec` line (`root` as the document spells it, `host` as this machine can open it) rather than
+  replacing one with the other, because a log holding only the first cannot answer the question and a
+  log holding only the second cannot be compared with the document the reader is holding. *A record
+  that disagrees with itself is not a harder record to read; it is a wrong one.*
+
+- **A guard whose null branch is reachable by omitting a field is a guard no document reaches.**
+  `linkAcceptance` refuses a contract that names a different goal - but `finalizeAcceptance` sets
+  `goalId` to `null` when `goal_id` is absent, the schema does not require it, and
+  `examples/sim-os/acceptance.yaml` **did not carry one**. So the newest world's cross-goal
+  contradiction guard - the check that stops one goal's criteria being evaluated against another's
+  environment - was dormant, while every other demo's contract exercised it. Nothing failed, because a
+  guard's unreached branch is silent by construction. The field is now declared, which is what makes
+  the guard's live branch live for that demo. *The third occurrence in this repository of "a guard no
+  code path can trip is not a guard", after the boundary clauses that could not be false and the
+  `--browser none` flag that never reached the plan.* Found by asking why `latest-result.json` had no
+  `goal_id` where the other demos' did.
+
+- **A list of variable names recalled in a test is a claim about two files that nothing reconciles.**
+  A test asserting the environment names the `sim-os` adapter declares listed `VERIDIAN_OS_HOST_ROOT`
+  among them - a name that exists in **neither** file. Its neighbours (`VERIDIAN_OS_ROOT`,
+  `VERIDIAN_OS_FAMILY`, `VERIDIAN_OS_SYSTEM`, `VERIDIAN_OS_USER`) were right, so it read as a typo in
+  a list rather than as a claim nothing checks, and the list is exactly what a reader consults to learn
+  the interface. It now reads the names out of the application's own source
+  (`readProvision().match(/VERIDIAN_OS_[A-Z_]+/g)`) and intersects that set with the adapter's - so the
+  test's subject is the agreement, not one recalled spelling of it. *Two files that must agree need a
+  test that reads both, or the agreement is an opinion.*
+
+- **An assertion against a literal cannot fail, so it is not a test.** The same suite carried
+  `assert.match(JSON.stringify(...), /"simulated":"substitute"/)` - a regex matched against a string
+  the test itself had just built. It would have passed with the field removed, with the value changed,
+  and with the whole reading replaced by a constant. Replaced by an assertion on the reading the code
+  actually produced. *This is the falsification probe written as a permanent test: if you cannot say
+  what would make it fail, it cannot be doing work.*
+
+- **A roster written as a shared prefix plus suffixes reads as complete while hiding an omitted
+  name.** `README.md` printed the browser family as `element, value, text, count, url, console,
+  network` - which required the reader to expand `console` into `console.clean` and `network` into
+  `network.ok`, and which **omitted `web.visible` entirely**: implemented, exported in
+  `WEB_UI_VALIDATOR_NAMES`, registered in `cli/veridian.ts`, and named by no document at all. Found by
+  `tests/readme-rosters.test.ts` on its first run, which parses the README's layout block and compares
+  each family's printed roster against the constant the code exports - not by reading the README, which
+  looked complete. Falsified twice: deleting one name from the README fails the comparison naming it,
+  and restoring the shorthand fails *"which is not a validator name - the family prefix was factored
+  out into the column, and that is how a name went missing"*. *A document that prints a vocabulary must
+  print every member in full, and the cheapest way to hold it is a test that reads both.* The third
+  occurrence of the shape the `db.query` / `db.rowCount` entries record.
+
+- **A predicate written as an `||` chain covers a new world with somebody else's block.** Adding
+  `os` to `hasNoHttp` left the earlier `posix` test passing unchanged - it iterates its own kind, so the
+  new world's predicate could have been wrong in its own way with nothing failing.
+  `tests/environment-gaps.test.ts` now runs the HTTP questions against **every** no-HTTP world the
+  register names, and it was falsified rather than trusted: deleting `!isMissing(environment.os)` fails
+  with `sim-os was asked /url, and it has no address`. *A test that iterates a list can only cover the
+  list it was written with; the coverage has to come from the register.*
+
+- **A reading is about the run that wrote it, not the run you meant.** Reading
+  `.veridian/latest-result.json` to quote the fifth demo's progression returned four `INCONCLUSIVE`
+  criteria - the last run in the bundle was the `--browser none` cart demo, not the `sim-os` demo. The
+  figures quoted in `README.md` were re-measured after re-running the demo. *A bundle is a file; the
+  verdict in it belongs to whoever wrote it last.*
+
 ## Documentation
 
 | Document | Contents |
@@ -1119,7 +1241,7 @@ port had none, which is why the defect reached a demo run.
 | [`docs/PLAN.md`](./docs/PLAN.md) | The authoritative product and architecture specification: product definition, scope boundary, execution lifecycle, acceptance/validation model, MVP scope, repo structure, 4-week build plan, Definition of Done, roadmap. **Read before any non-trivial design decision.** |
 | [`docs/IMPLEMENTATION-PLAN.md`](./docs/IMPLEMENTATION-PLAN.md) | What was actually built against that plan: module inventory, the decisions taken and the ones reversed, the open items. **Read before assuming something is missing.** |
 | [`docs/BOUNDARY-ENFORCEMENT.md`](./docs/BOUNDARY-ENFORCEMENT.md) | Why the goal's safety limits are applied rather than only recorded: the audit that found the third clause of the `PASS` rule unfalsifiable, the self-prompted questions that resolved it, the four-move design, and what the implementation changed about the plan. |
-| [`docs/DISTRIBUTION-AND-ENVIRONMENTS.md`](./docs/DISTRIBUTION-AND-ENVIRONMENTS.md) | What comes after the MVP: the npm, Docker and VS Code routes, the next adapters in the order they can be **proven**, the self-prompting resolution table that ordered them, and the environments that are blocked with their blocker named. **Read before promising an adapter.** |
+| [`docs/DISTRIBUTION-AND-ENVIRONMENTS.md`](./docs/DISTRIBUTION-AND-ENVIRONMENTS.md) | What comes after the MVP: the npm, Docker and VS Code routes, the next adapters in the order they can be **proven**, the self-prompting resolution table that ordered them, and §5's reframing of what "blocked" actually means - every remaining row names the `sim-*` world that answers it, because a world may be simulated and a real-infrastructure absence is not a blocker. **Read before promising an adapter.** |
 | [`extension/vscode/README.md`](./extension/vscode/README.md) | The Cockpit's front door. `src/host/activate.ts` points here, so it has to exist and say what the extension is not (VS Code is not Veridian), how to install it for development, and - explicitly - what only a real VS Code test host could exercise and what no check in this tree can reach at all. |
 
 Add a one-line index entry here for each new doc instead of duplicating its content in this file.

@@ -213,7 +213,11 @@ export class SimOsEnvironment implements EnvironmentAdapter {
     this.#requireId(id);
     const port = this.#requirePort();
     await port.prepare();
-    this.#logger.debug("environment.start", { id, root: this.#plan.os?.root ?? "" });
+    // The *resolved* root, the same value `create()` logged and the same one the port was handed. The
+    // unresolved `os.root` used to be logged here while `create()` logged the resolved form, so the
+    // bundle's own log held two readings of one fact - and the one a reader would trust when asking
+    // "where did this world actually live" was the one that is not a path this machine can open.
+    this.#logger.debug("environment.start", { id, root: this.#hostRoot() });
     await this.#provisionApplication();
     this.#provisioned = true;
   }
@@ -589,7 +593,14 @@ export class SimOsEnvironment implements EnvironmentAdapter {
       command,
       args,
       cwd: this.#plan.appPath,
+      // Two readings of one fact, and they are not the same string. `root` is the plan's own value -
+      // what the document said, as `core/environment/load.ts` left it, which may be relative to the io
+      // root - and `host` is what this machine can be opened from, which is what the port and the
+      // application were both handed. A log that held only the first could not answer "where did this
+      // world actually live", and a log that held only the second could not be compared with the
+      // document a reader is looking at.
       root: this.#plan.os?.root ?? "",
+      host: this.#hostRoot(),
     });
 
     const result = await runToCompletion(

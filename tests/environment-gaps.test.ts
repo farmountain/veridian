@@ -175,6 +175,23 @@ describe("environment gaps: HTTP questions are not asked of a world with no HTTP
     assert.ok(raised.includes("/reset/strategy"), "a cluster world still has a reset to describe");
   });
 
+  it("skips them for a world whose subject is a system rather than a service", () => {
+    // Two declarations, not one: a POSIX world and a Windows world are different shapes in the document
+    // (`posix` and `os`) and the predicate names both. It is asserted for each because the predicate is
+    // an `||` chain, so the failure mode of a new world is that it *is* covered - by somebody else's
+    // block - while its own is missing, and the run then reports a world with no address after being
+    // asked for one and handed `expectStatus: 200`. That is the `sim-k8s` abort one family out, and it
+    // is why every shape in that chain needs a case of its own rather than one case for "not web".
+    for (const kind of ["sim-posix", "sim-os"]) {
+      const raised = paths(satisfier(kind));
+      for (const path of HTTP_PATHS) {
+        assert.ok(!raised.includes(path), `${kind} was asked ${path}, and it has no address`);
+      }
+      // Non-HTTP questions are still asked, so this is a boundary and not a blanket silence.
+      assert.ok(raised.includes("/reset/strategy"), `${kind} still has a reset to describe`);
+    }
+  });
+
   it("still asks them for a world reached over a socket", () => {
     // The falsifier for the other direction: widening the predicate must not swallow the web case.
     // A definition that names an adapter and no address at all is an *incomplete* web definition, not

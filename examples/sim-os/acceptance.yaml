@@ -37,6 +37,14 @@
 
 version: 1
 
+# The goal these criteria belong to, so the loader's own cross-check can run: `core/acceptance/load.ts`
+# compares this against the goal document it is evaluated with and refuses the pairing when they
+# disagree. It was absent here while the other four demos declared it, and the loader's guard -
+# `contract.goalId !== null` - therefore could not fail for this world: the check existed, and no
+# document reached it. A contract that does not name its goal is a contract that cannot be paired with
+# the wrong one.
+goal_id: sim-os
+
 criteria:
   - id: AC-001
     description: >-

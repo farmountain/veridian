@@ -37,8 +37,8 @@ in `extension/vscode/`, if you want the same engine with a UI.
 git clone <this-repository-url> veridian
 cd veridian
 npm ci                    # runtime dependency: yaml. dev: typescript, @types/node.
-npm run gate              # tsc --noEmit, then the whole test suite. 872 tests, about two seconds
-                          # (this tree's own 812 plus the Cockpit's 60, which the runner discovers
+npm run gate              # tsc --noEmit, then the whole test suite. 1013 tests, about three seconds
+                          # (this tree's own 953 plus the Cockpit's 60, which the runner discovers
                           # because it walks the tree; the extension has its own gate as well).
 
 npm run e2e:install       # one-time, ~150 MB: fetch the Playwright browser
@@ -46,16 +46,20 @@ npm run demo              # the canonical demo: 3 defects, FAIL -> repair -> PAS
 npm run demo:db           # the second demo: the same loop against SQLite, no browser at all
 npm run demo:k8s          # the third demo: the app deploys itself into a SIMULATED control plane
 npm run demo:posix        # the fourth: the app provisions a SIMULATED Linux system it is judged on
+npm run demo:os           # the fifth: the app provisions a SIMULATED Windows system, judged as an
+                          # account that is deliberately not an administrator
 ```
 
-Run those six in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
+Run those seven in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
 Playwright is installed **outside** the lockfile on purpose, so installing the browser before `npm ci`
 would discard it.
 
-`demo`, `demo:db` and `demo:posix` need no extra setup. `demo:k8s` needs neither a cluster nor
-`kubectl`, and `demo:posix` needs neither a virtual machine nor a Linux host - there is no cluster
-software and no guest kernel anywhere in those runs - which is the point of them: Veridian builds
-worlds, and a world may be simulated.
+`demo`, `demo:db`, `demo:posix` and `demo:os` need no extra setup. `demo:k8s` needs neither a cluster
+nor `kubectl`, `demo:posix` needs neither a virtual machine nor a Linux host, and `demo:os` needs
+neither a Windows guest nor a hypervisor - there is no cluster software, no guest kernel and no image
+anywhere in those runs - which is the point of them: Veridian builds worlds, and a world may be
+simulated. What a simulated world may never do is pass itself off as a real one, so each run records
+what it stood in for and a verdict a simulation cannot justify is reported `INCONCLUSIVE`.
 
 Requires **Node 22.18.0 or newer**.
 
@@ -472,6 +476,40 @@ reset: { strategy: restart }
 `AC-010`, `AC-011`, `AC-012` and cannot judge `AC-007`; iteration 5 is `PASS` on all thirteen with the
 reason `13/13 mandatory criteria passed, environment valid, no safety violation, evidence complete.`).
 
+The `os` world is that same shape one family out, and it exists to answer a question `sim-posix`
+cannot: the two families do not ask the same questions with the same answers. A POSIX permission is
+three bits and an owner, so one `posix.permission` covers the whole story. A Windows file carries an
+ACL, and there are **three** facts to judge rather than one, which is why this family splits them:
+`os.owner` reads the owning account, `os.acl` reads the entries written on the file and whether each
+grant was explicit or inherited, and `os.access` reads what one named account may actually do. An
+owner that is wrong is a `chown`; an entry that should not be there is a different fix; and access
+that is too broad while every entry looks correct is an *inheritance* defect - a different place in
+the reading again. One validator judging all three would report one defect where there are three.
+
+```yaml
+# environment.yaml, against the sim-os world
+adapter: sim-os
+app: app
+url: null                       # no HTTP surface to probe
+dependencyInstall: null         # the app's own program needs no package manager to fetch it
+os:
+  family: windows               # the application refuses any other family by name, and exits 2
+  system: Windows Server 2022   # the release to stand in for; there is no guest and no image
+  user: svc-audit               # the account criteria act as; the loader refuses SYSTEM by name
+  root: sandbox                 # resolved against the application directory
+start: { command: node, args: [provision.mjs], readyPattern: 'cart-web provisioned: \d+ files installed' }
+health: { timeoutMs: 30000, intervalMs: 100 }
+reset: { strategy: restart }
+```
+
+`npm run demo:os` drives this: four deliberate defects, seventeen criteria, and a `FAIL` → repair →
+`PASS` descent in five iterations (measured, verbatim: iteration 1 fails `AC-001`, `AC-006`, `AC-007`,
+`AC-009`, `AC-010`, `AC-013` and `AC-014` and cannot judge `AC-012`; iteration 5 is `PASS` on all
+seventeen with the reason `17/17 mandatory criteria passed, environment valid, no safety violation,
+evidence complete.`). One of its criteria expects the world to **refuse** a command that names a path
+outside the sandbox, and judges the refusal rather than the exit code - a substitute that resolved the
+escaping path would be reading the developer's own tree while calling it the sandbox's.
+
 ---
 
 ## How the code is arranged
@@ -485,8 +523,8 @@ core/goal/              goal definition, loading, persistence, versioning
 core/acceptance/        AcceptanceCriterion, and the engine that turns a contract into a sequence
 core/execution/         the run controller: state machine, bounded exits, repair gate
 core/validation/        ValidationResult, the validator registry, status semantics, verdict rollup
-core/environment/       EnvironmentAdapter, the environment manager, the shared web, database, k8s
-                        and posix vocabularies that keep validators from importing an adapter
+core/environment/       EnvironmentAdapter, the environment manager, the shared web, database, k8s,
+                        posix and os vocabularies that keep validators from importing an adapter
 core/evidence/          the evidence engine and the run bundle
 core/run/               run identity, history, iteration state
 core/metrics/           M1..M5, measured over the bundles on disk
@@ -495,11 +533,19 @@ adapters/local-db/      builds a SQLite file, reads it, resets by rebuilding; no
 adapters/sim-k8s/      starts the app against a substitute control plane it serves itself; no cluster
 adapters/sim-posix/     provisions a real tree while a substitute holds accounts, modes, packages,
                         units and sockets; no virtual machine and no guest kernel
-validators/playwright/  web.element/text/value/count/url/console/network
-validators/database/    db.table/column/count/value
-validators/k8s/         k8s.applied/deployment/image/ready/pod/service/event
-validators/posix/       posix.ran/package/installed/user/file/contents/permission/owner/
-                        service/running/port/probe
+adapters/sim-os/        the same shape as `sim-posix` one family out: a substitute holds machine
+                        accounts, file modes and ACEs, packages, services and ports, and answers
+                        the query forms the `windows` family reads; no Windows guest and no image
+validators/playwright/  web.element, web.visible, web.text, web.value, web.count, web.url,
+                        web.console.clean, web.network.ok
+validators/database/    db.table, db.column, db.count, db.value
+validators/k8s/         k8s.applied, k8s.deployment, k8s.image, k8s.ready, k8s.pod, k8s.service,
+                        k8s.event
+validators/posix/       posix.file, posix.permission, posix.owner, posix.contents, posix.user,
+                        posix.package, posix.installed, posix.service, posix.running, posix.port,
+                        posix.ran, posix.probe
+validators/os/          os.file, os.contents, os.owner, os.access, os.acl, os.account, os.setting,
+                        os.service, os.running, os.principal, os.ran, os.probe
 schemas/                goal / acceptance / environment / run / result / ambiguity
 scripts/                bootstrap and build steps that must run before anything is checked
 examples/shopping-cart/ the canonical demo: correct app, defect overlay, goal, contract, world
@@ -509,9 +555,11 @@ examples/sim-k8s/       the third demo, and the first simulated world: the app d
                         substitute control plane and is judged on what the substitute holds
 examples/sim-posix/     the fourth demo: the app provisions a substitute Linux system through commands
                         it really issues, and is judged as a named account rather than as root
+examples/sim-os/        the fifth demo: the app provisions a substitute Windows system the same way,
+                        judged as `svc-audit` - an account the loader refuses to let be SYSTEM
 extension/vscode/       the VS Code Cockpit: a thin client, no validation logic. The one directory
                         with a build step, because the extension host is not Node's loader
-tests/                  872 tests in a root `node --test` run: this tree's own 812 plus the
+tests/                  1013 tests in a root `node --test` run: this tree's own 953 plus the
                         Cockpit's 60
 
 dist/                   GENERATED by `npm run build`. Never edited, never committed.
@@ -545,15 +593,17 @@ Layering is enforced by hand, and `core/*` may not import `adapters/*`, `validat
 ## Scope
 
 **In, for the MVP:** VS Code + Veridian Core + a local application + a browser + Playwright +
-deterministic acceptance criteria + evidence + reset/replay. Four adapters exist: `local-web`,
-`local-db` - the proof that `EnvironmentAdapter` is a seam rather than a browser harness with an
-interface bolted on - and two *simulated* worlds: `sim-k8s`, in which a real application process
-really deploys itself into a substitute control plane over a real HTTP surface it really calls, with
-no cluster software anywhere in the loop, and `sim-posix`, in which a real application process really
+deterministic acceptance criteria + evidence + reset/replay. Five adapters exist: `local-web` and
+`local-db`, the second being the proof that `EnvironmentAdapter` is a seam rather than a browser
+harness with an interface bolted on - and three *simulated* worlds. `sim-k8s`: a real application
+process really deploys itself into a substitute control plane over a real HTTP surface it really
+calls, with no cluster software anywhere in the loop. `sim-posix`: a real application process really
 provisions a substitute Linux system through commands it really issues, with no virtual machine and
-no guest kernel anywhere in the loop. In both, the substitution is **declared**: `environment.json`
-names what was stood in for, so a `PASS` is traceable to a named substitute rather than to unexamined
-reality.
+no guest kernel anywhere in the loop. `sim-os`: the same shape for a Windows or macOS machine, judged
+as a named account rather than as `SYSTEM`, with no guest and no image anywhere in the loop. In all
+three, the substitution is **declared**: `environment.json` names what was stood in for and the
+reading carries a `simulated` field, so a `PASS` is traceable to a named substitute rather than to
+unexamined reality - and a verdict a substitute cannot justify is reported `INCONCLUSIVE`.
 
 **Out, deliberately:** Kubernetes, cloud deployment, VM or mobile orchestration, distributed
 execution, data lakes, multi-agent orchestration, LLM training, a plugin marketplace, a SaaS backend.
