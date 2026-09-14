@@ -18,7 +18,7 @@ the MVP, this one covers what comes after it.
 |---|-----------|-------------------------|--------------------|
 | 1 | npm install route | Declined at ship time | this doc, Phase A1 |
 | 2 | Docker install route | Never attempted | this doc, Phase A2 |
-| 3 | VS Code extension | Specified, not built | `PLAN.md` §30, this doc, Phase B |
+| 3 | VS Code extension | **Built** (Phase B) | `PLAN.md` §30, this doc, Phase B |
 | 4 | Database environment | Roadmap "Later" | `PLAN.md` §38, this doc, Phase C |
 | 5 | Linux / Kali / Windows / macOS | Roadmap Tier 2-3 | blocked, §5 |
 | 6 | Kubernetes, cloud, data platform | Roadmap Tier 4-5 | Kubernetes built as a **simulated** world, `sim-k8s`; cloud and data planned (§5) |
@@ -132,7 +132,7 @@ document is arguing against.
 **Exit:** if the image cannot be built in CI within two rounds, the Dockerfile is reverted rather than
 shipped unrun.
 
-### Phase B - the VS Code Cockpit
+### Phase B - the VS Code Cockpit (built here)
 
 `PLAN.md` §30: sidebar, goal and acceptance editors, environment status, run and reset, history, a
 PASS/FAIL dashboard, an evidence viewer. It stays thin - `VS Code != Veridian` - and drives Core
@@ -142,9 +142,55 @@ Ordering note: this is deliberately *after* A, not because A is more valuable bu
 stable way to locate and start Core, and A1 is what makes Core locatable from outside its own
 directory tree.
 
-**Acceptance:** the extension compiles; a Core-facing session test runs headless; the activation path
-is exercised under a VS Code test host, and whatever cannot be exercised that way is named in the
-document rather than described as working.
+**Built:** `extension/vscode/` - six commands, four settings, a status-bar dashboard, and a hand-written
+`src/port.ts` that declares the slice of the editor API the Cockpit uses so that every *decision* is
+testable without an editor. The extension has no runtime dependency; `@types/vscode` is types only.
+
+**The one clause of the acceptance test that is not met, and why it is written here rather than
+quietly dropped:** *"the activation path is exercised under a VS Code test host"* - **it is not.** There
+is no VS Code test host in this repository, and building one is a separate phase rather than a step.
+What exists instead is the nearest thing that can be run here, and the two are not equivalent:
+
+| Gate | Command | Result |
+|------|---------|--------|
+| Typecheck | `npx tsc --noEmit` | silent (exit 0) |
+| Decisions, headless | `node --test` | 60 tests, 0 failing |
+| Build | `npm run build` | `out/` - 6 files |
+| **Compiled artifact** | `npm run smoke:out` | 14 checks, exit 0 |
+| All of the above | `npm run gate` | exit 0 |
+
+The third row is the reason this phase could be built at all: the extension host is not Node's
+loader, so this one directory *must* be compiled, and the decisions had to be moved out of the host
+files for anything to be testable. `src/host-boundary.test.ts` holds that boundary as an executable
+rule - only `src/host/vscode-port.ts` and `src/host/activate.ts` may import `vscode`, and no test may
+import them - and it was falsified rather than trusted: prepending an import of the host binding to
+another test file fails it, naming the cause and the remedy.
+
+The fourth row is the same move `npm run smoke:dist` makes for the npm package. `node --test` runs
+`.ts` and the extension host runs `out/*.js`, so the six files that actually ship were covered by
+nothing. `scripts/smoke-out.mjs` resolves the manifest's `main`, aliases `vscode` to a recording
+double (`scripts/vscode-stub.mjs`), loads the compiled entry point, calls `activate`, and asserts the
+registered commands equal the six the manifest declares. It was falsified too: pointing `main` at a
+path the build does not produce makes it fail with that sentence and exit 1.
+
+**Named as unexercised** - the list a VS Code test host would have to cover, stated here so that
+nothing above is read as claiming it was observed:
+
+- `src/host/vscode-port.ts` and `src/host/activate.ts` against the real API rather than the double;
+- the command palette, keybindings and menus, which are the editor's contribution;
+- the status bar's real rendering, its prioritisation against other items, and its tooltip;
+- workspace trust, multi-root workspaces, and a workspace whose folder is a UNC path;
+- `openTextDocument` on a file deleted between the read and the reveal.
+
+A green `smoke:out` is a **necessary** condition for this extension to work and not a sufficient one,
+and `scripts/vscode-stub.mjs` is a recording double rather than a simulation of VS Code - the same
+distinction §5 draws about worlds, applied one layer up to a tool.
+
+**Also not built, and not claimed:** no `.vsix`. Packaging needs `@vscode/vsce`, which is not a
+dependency of this repository and whose output has never been produced on this machine, so the
+install route that ships is the development install (F5 against a checkout) and it is documented as
+such in `extension/vscode/README.md`. Adding a package script nobody has run would be the same
+unverified claim this document refuses for a Dockerfile.
 
 ### Phase C - the second adapter: `local-db`
 

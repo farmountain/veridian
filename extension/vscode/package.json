@@ -1,0 +1,103 @@
+{
+  "name": "veridian-cockpit",
+  "displayName": "Veridian Cockpit",
+  "description": "A thin client for Veridian - run a sandbox validation, see the verdict, open the evidence.",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "BSD-2-Clause",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/farmountain/veridian.git"
+  },
+  "private": true,
+  "engines": {
+    "vscode": "^1.94.0"
+  },
+  "categories": [
+    "Testing",
+    "Other"
+  ],
+  "keywords": [
+    "veridian",
+    "sandbox",
+    "validation",
+    "agent"
+  ],
+  "main": "./out/host/activate.js",
+  "files": [
+    "out"
+  ],
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "veridian.init",
+        "title": "Veridian: Initialise the state directory",
+        "category": "Veridian"
+      },
+      {
+        "command": "veridian.clarify",
+        "title": "Veridian: Resolve the definition and show the transcript",
+        "category": "Veridian"
+      },
+      {
+        "command": "veridian.validate",
+        "title": "Veridian: Run a validation",
+        "category": "Veridian"
+      },
+      {
+        "command": "veridian.metrics",
+        "title": "Veridian: Measure M1..M5 over the runs on disk",
+        "category": "Veridian"
+      },
+      {
+        "command": "veridian.showResult",
+        "title": "Veridian: Show the last verdict",
+        "category": "Veridian"
+      },
+      {
+        "command": "veridian.openFailure",
+        "title": "Veridian: Open the last failure report",
+        "category": "Veridian"
+      }
+    ],
+    "configuration": {
+      "title": "Veridian",
+      "properties": {
+        "veridian.cli": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the Veridian CLI entry point. Empty means: resolve it from the workspace (node_modules/.bin, then cli/veridian.ts), then `npx --no-install veridian`."
+        },
+        "veridian.goal": {
+          "type": "string",
+          "default": "",
+          "description": "Goal document the commands run against, relative to the workspace folder or absolute. Empty means: the active file if it is a goal, then goal.yaml in the workspace folder."
+        },
+        "veridian.stateDir": {
+          "type": "string",
+          "default": ".veridian",
+          "description": "Where run bundles are written, relative to the workspace folder. The same default the CLI uses."
+        },
+        "veridian.browser": {
+          "type": "string",
+          "enum": ["auto", "playwright", "none"],
+          "default": "auto",
+          "description": "Passed to the CLI as --browser. `none` makes every browser observation INCONCLUSIVE, which is the loop refusing to judge, not a failure."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "node --test",
+    "smoke:out": "node scripts/smoke-out.mjs",
+    "gate": "npm run typecheck && npm test && npm run build && npm run smoke:out"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.1",
+    "@types/vscode": "^1.94.0",
+    "typescript": "^5.9.3"
+  }
+}

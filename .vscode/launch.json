@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Veridian Cockpit",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/extension/vscode"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/extension/vscode/out/**/*.js"
+      ],
+      "preLaunchTask": "Veridian Cockpit: build"
+    }
+  ]
+}

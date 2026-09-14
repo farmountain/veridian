@@ -10,11 +10,13 @@ instructions file for this workspace — do not add a second one
 > exists beside them, and is the proof that `EnvironmentAdapter` is a seam. `sim-k8s` is the third, and
 > the first **simulated** world: a real application process really deploying itself into a substitute
 > control plane over routes it really calls, with scheduler, kubelet, etcd and admission standing in.
-> `npx tsc --noEmit` is silent and `node --test` reports 634 passing tests. Two distribution routes ship
-> - a clone and an npm package - and there is still **no build step between the source tree and the
-> running program**: Node 22 strips types and runs `.ts` straight from the source. `npm run build` exists
-> only to produce the *compiled* copy an installed package needs, because Node refuses type-stripping
-> under `node_modules`. Read [`docs/IMPLEMENTATION-PLAN.md`](./docs/IMPLEMENTATION-PLAN.md) for what was
+> `npx tsc --noEmit` is silent and `node --test` reports 694 passing tests - Veridian's own 634 plus
+> the 60 the VS Code Cockpit contributes, which the root runner discovers because it walks the tree.
+> Three distribution routes ship - a clone, an npm package, and the Cockpit - and there is still **no
+> build step between the source tree and the running program**: Node 22 strips types and runs `.ts`
+> straight from the source. `npm run build` exists only to produce the *compiled* copy an installed
+> package needs, because Node refuses type-stripping under `node_modules`, and the Cockpit has its own
+> `npm run build` for the third runtime, because the extension host is not Node's loader either. Read [`docs/IMPLEMENTATION-PLAN.md`](./docs/IMPLEMENTATION-PLAN.md) for what was
 > built and [`docs/PLAN.md`](./docs/PLAN.md) for why.
 
 ## Project
@@ -219,12 +221,19 @@ Full protocol: [`.github/skills/hipcortex-memory`](./.github/skills/hipcortex-me
 
 ## Layout
 
-Everything except the VS Code extension now exists and holds real code. Single repository — do not
+Everything in this tree now exists and holds real code. Single repository - do not
 split it into multiple repos prematurely. Create a directory only when its first real file lands.
 
 ```
-extension/vscode/       NOT BUILT YET. The VS Code Cockpit extension. Thin client; no validation
-                        logic. The CLI is the interface that exists.
+extension/vscode/       The VS Code Cockpit - a thin client, no validation logic. `src/port.ts`
+                        declares the slice of the editor API the Cockpit uses, by hand, so every
+                        decision is testable without an editor; only `src/host/vscode-port.ts` and
+                        `src/host/activate.ts` import `vscode`, and `src/host-boundary.test.ts` holds
+                        that as an executable rule. The one directory with a build step: the
+                        extension host is not Node's loader, so it compiles to `out/`, and
+                        `npm run smoke:out` is what loads that artifact (no test in the tree can).
+                        Read `extension/vscode/README.md` for the install route and the list of what
+                        a real VS Code test host would still have to cover.
 core/clarification/     The ambiguity protocol: ladder (derived → inferred → defaulted → answered →
                         deferred), detectors, JSON-pointer editing, the report. Lowest layer.
 core/schema/            JSON Schema validation + the loader that reads schemas/.
@@ -303,7 +312,8 @@ docs/                   Design documents. Indexed below.
 ```
 
 Also at repo root: `README.md`, `AGENTS.md` (this file), `LICENSE` (BSD 2-Clause), `package.json`,
-`tsconfig.json`, `.nvmrc`, `.gitignore`. **`README.md` is the front door** - the first thing a reader opens - and this file is
+`tsconfig.json`, `.nvmrc`, `.gitignore`, and `.vscode/` (the two files the Cockpit's F5
+development-install route needs, kept as plain JSON so a parser can check them). **`README.md` is the front door** - the first thing a reader opens - and this file is
 the hand-off to the next agent. They answer different questions: the README says what Veridian is and
 how to see it work, this file says how to change it without breaking a rule it paid for. When a change
 alters what the README claims - a command, an exit code, quoted output - correct the README in the
@@ -361,19 +371,51 @@ artifacts — an external agent reads them to learn what failed without Veridian
 build step **for the artifact**, and the difference matters enough to state twice. Node 22 strips
 types and executes `.ts` directly, so development, the gate and the demo all run the source. An
 *installed* Veridian cannot be that source, because Node refuses to strip types under `node_modules`,
-so `npm run build` compiles it to `dist/` and copies the schemas in. Every command below was executed
-on this machine and is quoted from its real output.
+so `npm run build` compiles it to `dist/` and copies the schemas in. The **VS Code Cockpit** is the
+third runtime and has a build step for the same class of reason rather than a preference: the
+extension host loads JavaScript and is not Node's loader, so `extension/vscode` compiles to `out/`.
+Every command below was executed on this machine and is quoted from its real output.
 
 ```powershell
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 634 tests, ~2s. No directory argument.
+node --test                # the whole suite. 694 tests, 1.7s. No directory argument.
+                           # 694 = the root's own 634 + the Cockpit's 60, because the runner walks
+                           # the tree and reaches extension/vscode/src/*.test.ts. Neither figure is
+                           # the whole story on its own: the root tsconfig EXCLUDES extension/**, so
+                           # `npx tsc --noEmit` here does not typecheck the Cockpit and the root gate
+                           # is not the extension's gate.
 npm run gate               # typecheck then test. Run this before claiming anything is done.
 
 npm run build              # tsc -p tsconfig.build.json, then node scripts/copy-assets.mjs
 npm run smoke:dist         # drive the COMPILED CLI from a temp directory; asserts exit 2, not 3
 ```
+
+The Cockpit has its own gate, and it is **three** commands rather than one, because the extension is
+the only tree that ships compiled:
+
+```powershell
+cd extension/vscode
+npm ci                     # install. Dev only: typescript, @types/node, @types/vscode.
+                           # There is no runtime dependency, and Playwright is not one of them.
+npm run gate               # typecheck, test, build, smoke:out - in that order.
+                           # npx tsc --noEmit  -> silent
+                           # node --test       -> 60 tests, 0 failing
+                           # npm run build     -> out/, 6 files
+                           # npm run smoke:out -> loads the compiled entry point, 14 checks
+npm run smoke:out          # alone: resolve the manifest's `main`, activate it twice under a
+                           # recording double of `vscode` (scripts/vscode-stub.mjs), and assert the
+                           # registered commands equal the six the manifest declares. Exit 1 if the
+                           # compiled file the manifest names is not there.
+```
+
+**`npm run smoke:out` exists for the same reason `npm run smoke:dist` does, one runtime further out.**
+`node --test` runs `.ts`; the extension host runs `out/*.js`; so the six files that ship are covered by
+nothing in this tree. It was falsified rather than trusted - pointing `main` at a path the build does
+not produce makes it fail naming that path and exit 1. It is also only *necessary*, never sufficient:
+`scripts/vscode-stub.mjs` is a recording double, and `extension/vscode/README.md` names what only a
+real VS Code test host could exercise.
 
 **`npm run smoke:dist` is not optional when the build, the packaging or the asset resolution
 changes.** Every test in `tests/` covers `.ts` files that are never shipped; without this, the
@@ -474,9 +516,11 @@ shape.
 
 ## Distribution
 
-**Two routes ship: a clone, and a package.** This section used to say the shipped model was a clone
-and the registry path was declined. That reversal is recorded rather than quietly dropped, because
-the reasons it was declined were correct and are now the reasons the build exists.
+**Three routes ship: a clone, a package, and the Cockpit.** This section used to say the shipped
+model was a clone and the registry path was declined. That reversal is recorded rather than quietly
+dropped, because the reasons it was declined were correct and are now the reasons the build exists.
+The third route is in `extension/vscode/`; the reasoning behind it is in **The third runtime** below,
+and it is the same reasoning one layer out.
 
 Node 22 strips types and runs `.ts` directly - **but not for files under `node_modules`**:
 
@@ -526,11 +570,45 @@ Guards, in place of the old `private: true`:
   `npm pack` -> install -> run round trip, which is the only check that reads `files` and `bin` the
   way a consumer does.
 
-`Dockerfile` is the third route and is a *distribution* route, not a sandbox environment - "Docker"
+`Dockerfile` is a route of its own and is a *distribution* route, not a sandbox environment - "Docker"
 names two unrelated things in this project and only one of them is packaging. It is verified in CI
 because Docker is not installed on this machine, and a Dockerfile that has never been built is a
 claim. A container-the-application adapter is a different thing entirely and is recorded as blocked
 in [`docs/DISTRIBUTION-AND-ENVIRONMENTS.md`](./docs/DISTRIBUTION-AND-ENVIRONMENTS.md).
+
+### The third runtime: `extension/vscode`
+
+The VS Code Cockpit is the fourth route and the third runtime, and **it is compiled for a reason that
+is a fact rather than a preference**: the extension host is not Node's loader. It loads JavaScript, so
+it cannot strip types and cannot run the `.ts` the rest of Veridian runs directly. That is the same
+class of constraint as `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, one runtime further out, and it
+is why `extension/vscode` is the *only* directory in the repository with a build step.
+
+What the phase produced, all measured on this machine:
+
+```
+npx tsc --noEmit    silent (exit 0)
+node --test         60 tests, 0 failing
+npm run build       out/, 6 files
+npm run smoke:out   14 checks, exit 0
+npm run gate        exit 0
+```
+
+- `src/port.ts` declares by hand the slice of the editor API the Cockpit uses, so the *decisions* are
+  testable without an editor; `src/host-boundary.test.ts` makes "only the two host files may import
+  `vscode`" an executable rule, and it was falsified (prepending such an import to an ordinary test
+  fails it, naming the cause and the remedy).
+- `scripts/vscode-stub.mjs` and `scripts/smoke-out.mjs` cover the **compiled** artifact, because
+  `node --test` runs `.ts` and the host runs `out/*.js` - the same gap `npm run smoke:dist` closes for
+  the package. Falsified: a `main` the build does not produce fails the check and exits 1.
+- **Not built and not claimed: a `.vsix`.** Packaging needs `@vscode/vsce`, which is not a dependency
+  here and whose output has never been produced on this machine; the shipping install route is the
+  development install against a checkout (F5, configured in `.vscode/launch.json` and
+  `.vscode/tasks.json`). The list of what only a real VS Code test host could exercise is written out
+  in [`extension/vscode/README.md`](./extension/vscode/README.md) rather than left implied.
+- `extension/vscode/out/` is generated, never edited, never committed, and ignored by `.gitignore`
+  for the same reason `dist/` is: a generated tree that is not ignored is one `git add .` away from
+  being committed.
 
 Consequence for anyone touching the CLI: **the source is still the interface.** Keep `cli/veridian.ts`
 runnable by `node` directly, and never introduce a step between the source tree and the running
@@ -678,7 +756,7 @@ for every file in this repository, and false under `node_modules` -
 `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, raised for an import and for a `bin` entry alike - so
 `"bin": "./cli/veridian.ts"` could never have run for anyone who installed the package. The claim was
 not wrong about the codebase; it was wrong about the world the codebase would be shipped into, and a
-distribution claim is only ever about that world. Distribution is now two routes (`## Distribution`):
+distribution claim is only ever about that world. Distribution is now three routes (`## Distribution`):
 the clone still runs source, and the package runs `dist/`, which is why `npm run smoke:dist` exists -
 **the shipped artifact is the one no test in `tests/` can reach, so it needs a check of its own.**
 - **A file the install path resolves through the *caller's* directory is a file the installed program
@@ -873,6 +951,35 @@ port had none, which is why the defect reached a demo run.
   condition, and `cluster-port.test.ts` holds each. *A substitute that merges `404` and `405` makes the
   verdict unearned, and an error message may only name a cause the reporter observed.*
 
+- **A probe must be shown to change the thing it claims to change, and to measure the thing it claims
+  to measure.** The root `node --test` run reported **695** against a documented 634, and the first two
+  probes each pointed somewhere wrong. `git status --short` found the first cause: a stray
+  `?? bundle.test.ts` at the repository root, 0 bytes, left behind by a falsification probe whose
+  cleanup had failed - and **an empty file is still a test to a discovery runner**, so a failed probe
+  had added a test to the very count it was measuring. Deleting it moved the run to 694. The second
+  probe *appeared* to exonerate the root runner: renaming `extension` to `extension.hidden` reported
+  695 both ways. It proves nothing - **renaming a directory inside the tree does not remove it from a
+  recursive glob**, and the tree still held `extension.hidden/vscode/src/*.test.ts`. The decisive
+  probe was to ask the root run whether it contained test names that exist *only* in the extension
+  (`the manifest and the Cockpit declare the same commands` matched twice): it does. The decomposition
+  is 634 + 60 = 694. In the same session a path check printed
+  `preLaunchTask matches a declared task : False` for two labels that are byte-identical, because the
+  probe rested on a `.Count` produced by a PowerShell pipeline rather than on a count of the objects it
+  was assumed to count; compared directly, the two match. *A "control" that does not change the thing
+  it claims to change is not a control, and a failed probe is not evidence about the code - in both
+  cases the files were right and the measurement was wrong.*
+
+- **A generated tree that is not ignored is one `git add .` away from being committed, and a comment in
+  a configuration file is a check you cannot run.** `extension/vscode/out/` existed and was **not**
+  ignored - `git check-ignore -v` matched `node_modules/` for the extension's dependencies and nothing
+  for its build output, so the next `git add .` would have committed the compiled tree, the same defect
+  class as committing `dist/`. The rule is now explicit and re-verified (`IGNORED_EXIT=0`). The other
+  half is the `.vscode/launch.json` written first with a `//` block explaining its pre-launch task:
+  the configuration was correct and **unverifiable**, because the file stopped being plain JSON to the
+  parser anything would use to check it. The comment was moved into the documentation and the file
+  reduced to JSON that parses, after which its four path facts could be - and were - asserted.
+  *Anything you cannot check, you have to take on faith, and this repository does not.*
+
 ## Documentation
 
 | Document | Contents |
@@ -882,6 +989,7 @@ port had none, which is why the defect reached a demo run.
 | [`docs/IMPLEMENTATION-PLAN.md`](./docs/IMPLEMENTATION-PLAN.md) | What was actually built against that plan: module inventory, the decisions taken and the ones reversed, the open items. **Read before assuming something is missing.** |
 | [`docs/BOUNDARY-ENFORCEMENT.md`](./docs/BOUNDARY-ENFORCEMENT.md) | Why the goal's safety limits are applied rather than only recorded: the audit that found the third clause of the `PASS` rule unfalsifiable, the self-prompted questions that resolved it, the four-move design, and what the implementation changed about the plan. |
 | [`docs/DISTRIBUTION-AND-ENVIRONMENTS.md`](./docs/DISTRIBUTION-AND-ENVIRONMENTS.md) | What comes after the MVP: the npm, Docker and VS Code routes, the next adapters in the order they can be **proven**, the self-prompting resolution table that ordered them, and the environments that are blocked with their blocker named. **Read before promising an adapter.** |
+| [`extension/vscode/README.md`](./extension/vscode/README.md) | The Cockpit's front door. `src/host/activate.ts` points here, so it has to exist and say what the extension is not (VS Code is not Veridian), how to install it for development, and - explicitly - what only a real VS Code test host could exercise and what no check in this tree can reach at all. |
 
 Add a one-line index entry here for each new doc instead of duplicating its content in this file.
 

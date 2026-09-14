@@ -6,7 +6,7 @@
 # emits dist/ for the npm package and for the container image, because Node 22
 # refuses to strip types under node_modules.
 #
-# Four jobs, because they answer different questions:
+# Five jobs, because they answer different questions:
 #   gate   - does the source still hold? Runs on both platforms that matter.
 #   demo   - does the product still do the thing it exists to do? Needs a
 #            browser, so it is separate and does not slow the gate down.
@@ -16,6 +16,11 @@
 #   image  - does the container build and run? Docker is not installed on the
 #            maintainer's machine, so CI is the only place this can be proven,
 #            and a Dockerfile that has never been built is a claim.
+#   cockpit- does the VS Code extension still hold? It is a third runtime with
+#            its own tsconfig, its own suite and its own compiled artifact, and
+#            the root `gate` job neither typechecks nor tests it: the root
+#            tsconfig excludes extension/**. Two gates, because they are two
+#            programs in one repository.
 name: CI
 
 on:
@@ -160,3 +165,31 @@ jobs:
             echo "expected exit 2 from a browserless run in the container, got $code"
             exit 1
           fi
+
+  cockpit:
+    name: VS Code Cockpit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension/vscode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          # Two lockfiles, two caches. Without this the extension install would
+          # fall back to no cache and re-resolve the tree on every run.
+          cache: npm
+          cache-dependency-path: extension/vscode/package-lock.json
+      - run: npm ci
+      # typecheck, test, build, smoke:out - in that order. The unit suite runs
+      # .ts and the extension host runs out/*.js, so the compiled artifact is
+      # reached by `npm run smoke:out` and by nothing else. It loads that
+      # artifact against a recording double of `vscode` and asserts the
+      # registered commands are exactly the six the manifest declares.
+      #
+      # What this job therefore does NOT prove: anything about the real VS Code
+      # API, the palette, the status bar's rendering, workspace trust or
+      # multi-root workspaces. There is no VS Code test host here, and
+      # extension/vscode/README.md names that gap rather than implying it away.
+      - run: npm run gate
