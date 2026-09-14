@@ -1,0 +1,31 @@
+# Keep the build context to the files the Dockerfile actually copies.
+#
+# Not a size optimisation for its own sake: `COPY` of a directory that happens to contain
+# `node_modules` in the *source tree* would shadow the container's own install with the host's
+# platform-specific one, which fails at run time with a module-resolution error rather than a build
+# error - so the mistake would be attributed to the image's build, not to this omission.
+
+node_modules
+dist
+
+# Runtime state, which is per-run and never part of a build.
+.veridian
+
+# Version control and CI metadata.
+.git
+.gitignore
+.github
+
+# Tests and the canonical demo: neither is shipped, so neither belongs in the context.
+tests
+examples
+
+# Documentation and the docs tree.
+*.md
+docs
+
+# Container and editor noise.
+Dockerfile
+.dockerignore
+.vscode
+.DS_Store

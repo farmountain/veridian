@@ -1,10 +1,21 @@
-# Veridian's own gate. There is no build step: Node 22 runs the TypeScript
-# source directly, so `npm run gate` is typecheck-then-tests and nothing else.
+# Veridian's own gate.
 #
-# Two jobs, because they answer different questions:
-#   gate  - does the source still hold? Runs on both platforms that matter.
-#   demo  - does the product still do the thing it exists to do? Needs a
-#           browser, so it is separate and does not slow the gate down.
+# The source tree is still the program - Node 22 strips types and runs .ts
+# directly, so `npm run gate` is typecheck-then-tests and nothing else. What
+# changed is that the *distributed* artifact is now compiled: `npm run build`
+# emits dist/ for the npm package and for the container image, because Node 22
+# refuses to strip types under node_modules.
+#
+# Four jobs, because they answer different questions:
+#   gate   - does the source still hold? Runs on both platforms that matter.
+#   demo   - does the product still do the thing it exists to do? Needs a
+#            browser, so it is separate and does not slow the gate down.
+#   dist   - does the artifact we would publish actually work? Compiled
+#            JavaScript is touched by no unit test, and npm reads `files` and
+#            `bin` in ways the source tree never exercises.
+#   image  - does the container build and run? Docker is not installed on the
+#            maintainer's machine, so CI is the only place this can be proven,
+#            and a Dockerfile that has never been built is a claim.
 name: CI
 
 on:
@@ -71,3 +82,72 @@ jobs:
           path: .veridian/
           if-no-files-found: warn
           retention-days: 7
+
+  dist:
+    name: distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # Drives the compiled CLI from a fresh temporary directory and requires
+      # exit 2 from a browserless run. Exit 3 would mean the built CLI could not
+      # find the schemas it shipped with - the failure an installed CLI would
+      # have had, and the reason the `bin` entry cannot point at the sources.
+      - run: npm run smoke:dist
+      # Then the same thing through npm itself. This is the only check that
+      # reads the `files` allowlist and the `bin` entry the way a consumer does,
+      # and the only one that would notice a `dist/` that failed to reach the
+      # tarball.
+      - name: the packed tarball must install and run somewhere else
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/consumer"
+          cd "$RUNNER_TEMP/consumer"
+          npm init -y >/dev/null
+          npm install "$RUNNER_TEMP"/veridian-*.tgz
+          ./node_modules/.bin/veridian help
+
+  image:
+    name: container image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build the image
+        run: docker build -t veridian:ci .
+      # The image's default command is `help`.
+      - name: the image must run the CLI
+        run: |
+          set +e
+          docker run --rm veridian:ci
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ]; then
+            echo "expected exit 0 from the containerised CLI, got $code"
+            exit 1
+          fi
+      # `help` prints text and loads no schema, so on its own it would pass for
+      # an image that shipped no schemas at all. This mounts the example goal
+      # read-only from outside the image and requires the browserless exit 2 -
+      # which is only reachable if the schemas inside /app/dist resolved. The
+      # mount is deliberately the *goal*, not the schemas: an image that read
+      # its contracts from the mount would not be a distribution.
+      - name: the image must resolve its own schemas, not the mount's
+        run: |
+          set +e
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE/examples:/work/examples:ro" \
+            veridian:ci validate \
+              --goal /work/examples/shopping-cart/goal.yaml \
+              --state-dir /tmp/.veridian \
+              --browser none --no-repair
+          code=$?
+          set -e
+          if [ "$code" -ne 2 ]; then
+            echo "expected exit 2 from a browserless run in the container, got $code"
+            exit 1
+          fi

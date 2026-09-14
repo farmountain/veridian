@@ -173,7 +173,7 @@ let a declaration be read as an enforcement.
 | A boundary ambiguity raised through the clarification ladder | Q5: a detector reports document gaps, not adapter capabilities. |
 | Real filesystem isolation (containers, jobs, a VM) | Out of MVP scope; the adapter interface leaves room for it. |
 | A second non-web adapter, to close `acceptance/veridian-mvp.yaml` | Q6: excluded by the scope boundary. |
-| Publishing to npm | Declined by the user at ship time; `private: true` holds the line. |
+| Publishing to npm | Declined by the user at ship time, and since taken - see [`DISTRIBUTION-AND-ENVIRONMENTS.md`](./DISTRIBUTION-AND-ENVIRONMENTS.md) §4 A1. Out of *boundary enforcement*'s scope either way. |
 | A schema for the bundle's `environment.json` | `schemas/environment.schema.json` describes the environment *document* an operator writes, not the environment *record* a run writes, and only `result.json` is validated by the writer. The new `boundary` block therefore has no machine-readable contract yet. Adding one is a bundle-format change of its own, larger than this fix, and the record still cannot claim an enforcement it did not measure. |
 
 ## 8. What would overturn this

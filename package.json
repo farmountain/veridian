@@ -1,20 +1,40 @@
 {
   "name": "veridian",
   "version": "0.1.0",
-  "private": true,
   "description": "Veridian - the sandbox testing and validation layer for AI coding agents. The agents remain external.",
   "type": "module",
   "license": "BSD-2-Clause",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/farmountain/veridian.git"
+  },
+  "keywords": [
+    "ai-agents",
+    "validation",
+    "playwright",
+    "testing",
+    "sandbox"
+  ],
   "engines": {
     "node": ">=22.18.0"
   },
   "bin": {
-    "veridian": "./cli/veridian.ts"
+    "veridian": "./dist/cli/veridian.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "test": "node --test",
     "typecheck": "tsc --noEmit",
     "gate": "npm run typecheck && npm test",
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
+    "smoke:dist": "node scripts/smoke-dist.mjs",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run gate",
     "veridian": "node cli/veridian.ts",
     "clarify": "node cli/veridian.ts clarify",
     "demo": "node examples/shopping-cart/demo.ts",

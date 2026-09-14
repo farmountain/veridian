@@ -27,15 +27,16 @@ strategy. Veridian never decides *how* to write the code; it decides *whether th
 
 ## Getting started
 
-Veridian is installed by cloning it. There is no npm package (see
-[Why there is no npm package](#why-there-is-no-npm-package)) and **no build step**: the source is
-TypeScript and Node runs it directly. Requires **Node 22.18.0 or newer**.
+Two ways in: **clone it** if you want the source, the tests and the canonical demo; **install it** if
+you want the `veridian` command and nothing else.
+
+### Clone
 
 ```bash
 git clone <this-repository-url> veridian
 cd veridian
 npm ci                    # runtime dependency: yaml. dev: typescript, @types/node.
-npm run gate              # tsc --noEmit, then the whole test suite. 373 tests, under a second.
+npm run gate              # tsc --noEmit, then the whole test suite. 378 tests, under a second.
 
 npm run e2e:install       # one-time, ~150 MB: fetch the Playwright browser
 npm run demo              # the canonical demo: 3 defects, FAIL -> repair -> PASS
@@ -45,14 +46,41 @@ Run those four in that order. `npm ci` removes `node_modules` and rebuilds it fr
 Playwright is installed **outside** the lockfile on purpose, so installing the browser before `npm ci`
 would discard it.
 
+Requires **Node 22.18.0 or newer**.
+
+### Install
+
+```bash
+npm install -g veridian
+veridian help
+```
+
+The package ships compiled JavaScript in `dist/`, which is why there is a build step at all: Node
+refuses to strip types for files under `node_modules`
+(`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), so the thing npm delivers cannot be the `.ts` files.
+The source tree is still what runs during development - `npm test` executes `.ts` directly through
+Node - and `npm run build` is what produces the artifact. The two facts do not contradict each other;
+they describe two different trees.
+
+**Playwright is deliberately not a dependency**, so a freshly installed Veridian is a validator that
+cannot yet observe a page, and every criterion in a browser contract will honestly report
+`INCONCLUSIVE` until one is present. Add it wherever Veridian can resolve it:
+
+```bash
+npm install playwright
+npx playwright install chromium
+```
+
 To point Veridian at your own application, write a goal, an acceptance contract and an environment
 document (their shapes are under [Goal, contract and environment](#goal-contract-and-environment)),
 then:
 
 ```bash
-node cli/veridian.ts clarify --goal my-app/goal.yaml    # resolve every gap first; starts nothing
-node cli/veridian.ts validate --goal my-app/goal.yaml   # run it, validate it, write the bundle
+veridian clarify  --goal my-app/goal.yaml    # resolve every gap first; starts nothing
+veridian validate --goal my-app/goal.yaml    # run it, validate it, write the bundle
 ```
+
+From a clone, `node cli/veridian.ts` is the same program and needs no build.
 
 `npm run demo` asks the environment document for its browser, so the progression actually runs. If
 Playwright is not installed it says so and tells you the one command that fixes it.
@@ -68,29 +96,46 @@ veridian warning: boundary (declared=networkPolicy: deny enforcement=unsupported
 planned without a browser, so nothing can refuse a request on its behalf)
 ```
 
-### Why there is no npm package
+### Why the package is built, and what it deliberately leaves out
 
-This is a decision with evidence behind it, not an oversight. Node refuses to strip types for files
-under `node_modules`:
+This section replaces one that said there was no npm package. The reversal is recorded rather than
+quietly dropped, because the reasons it was declined are still the reasons the build exists.
+
+The blocker was always technical, and it is not negotiable:
 
 ```
 Error [ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING]: Stripping types is currently unsupported for
 files under node_modules
 ```
 
-That applies to a package's `bin` as well as to an import, so `npm install -g veridian` could not run
-the TypeScript source it would deliver. Two independent facts point the same way: the schema set is
-loaded through a port whose root is the process working directory, so an installed CLI would not find
-its own `schemas/`; and Playwright is deliberately **not** a dependency, so an installed Veridian
-would be a tool that cannot observe anything until its user adds one.
+That applies to a package's `bin` as well as to an import, so a package that delivered `.ts` could
+never have run. **A package must therefore deliver compiled JavaScript**, which is what
+`npm run build` produces: `tsc -p tsconfig.build.json` emits `dist/`, and
+`node scripts/copy-assets.mjs` carries `schemas/` alongside it, because the schema set is
+package-relative and a distribution that shipped code without its contracts would install cleanly and
+fail at the first command.
 
-Shipping to a registry therefore needs a build step, a packaging design and a peer-dependency story -
-and the MVP Definition of Done asks for something else: *"a developer can clone the repository"*. So
-the shipped model is a clone, `bin` is what `npm link` and `node_modules/.bin` use from that clone,
-and **the registry path is declined**, with its cost recorded in
-[`docs/IMPLEMENTATION-PLAN.md`](./docs/IMPLEMENTATION-PLAN.md), rather than left open. `package.json`
-stays `private: true`, which is the guard that keeps a package that cannot work from being published
-by accident.
+The second blocker was a genuine defect and is now fixed rather than worked around. The schema set was
+read through a port rooted at the process working directory, so an installed CLI would have reported
+a missing goal schema that was sitting inside its own package - the worst kind of error, because it
+sends the reader to inspect the one thing that is not broken. The CLI now reads its own files through
+`core/assets.ts`, which resolves against the module rather than the caller, and reads *your* files
+through the working directory, because that is what `--goal my-app/goal.yaml` means.
+`tests/assets.test.ts` holds both halves.
+
+What the package does **not** include is Playwright, and that is still a real cost rather than a
+detail. Veridian validates a browser application but is not shipped with a browser, so an installed
+Veridian cannot observe anything until its user adds one. This is the peer-dependency story a future
+version would have to settle; for now it degrades honestly - `INCONCLUSIVE`, never `PASS` - and says
+which command fixes it.
+
+Two guards keep a package that cannot work from being published by accident. `prepublishOnly` runs
+`npm run gate`, so a build whose own tests are red cannot leave the machine, and `npm run smoke:dist`
+is a separate check that drives the **compiled** CLI from a temporary directory - because otherwise
+every test covers `.ts` files nobody ships, and the artifact that is shipped is covered by nothing.
+That is the same defect this project has already paid for twice: *an inventory that only checks the
+output you happen to look at is a claim, not a record.* CI runs it, along with a full
+pack-install-and-run round trip through npm itself.
 
 ---
 
@@ -360,6 +405,7 @@ indistinguishable from one that is broken.
 
 ```
 cli/                    arguments, session, the `veridian` bin
+core/assets.ts          where Veridian's own files live - the schema set, resolved by module
 core/clarification/     the ambiguity protocol: ladder, detectors, pointer editing, the report
 core/schema/            JSON Schema validation and the loader for schemas/
 core/goal/              goal definition, loading, persistence, versioning
@@ -373,9 +419,17 @@ core/metrics/           M1..M5, measured over the bundles on disk
 adapters/local-web/     starts, health-checks, resets a local app; drives Playwright lazily
 validators/playwright/  web.element/text/value/count/url/console/network
 schemas/                goal / acceptance / environment / run / result / ambiguity
+scripts/                bootstrap and build steps that must run before anything is checked
 examples/shopping-cart/ the canonical demo: correct app, defect overlay, goal, contract, world
-tests/                  373 tests, `node --test`
+tests/                  378 tests, `node --test`
+
+dist/                   GENERATED by `npm run build`. Never edited, never committed.
 ```
+
+The tree above is the program. `dist/` is the artifact the package and the container ship, and it
+exists for one reason: Node will not strip types for files under `node_modules`, so an installed
+Veridian cannot be the `.ts` files above. `npm run build` compiles them and copies `schemas/` in;
+`npm run smoke:dist` proves the result runs from a directory that is not the package.
 
 The interfaces are small on purpose:
 
@@ -410,6 +464,13 @@ Also not built yet, and named here rather than implied away: the **VS Code Cockp
 designed to be a thin client over the same local Core interface so that CLI, CI and MCP can drive one
 engine later. *"MCP is the door. Veridian is the building."*
 
+[`docs/DISTRIBUTION-AND-ENVIRONMENTS.md`](./docs/DISTRIBUTION-AND-ENVIRONMENTS.md) is the plan for
+what comes after the MVP: the npm and Docker routes, the VS Code Cockpit, a database environment, and
+the environments that are named as **blocked with their blocker stated** rather than stubbed. Its
+ordering rule is this project's own - *a phase is built when it can be proven, not when it can be
+written* - so an environment whose runtime is not present is recorded as blocked, not shipped as a
+placeholder that reports `INCONCLUSIVE` for every criterion.
+
 ---
 
 ## Documentation
@@ -419,6 +480,8 @@ engine later. *"MCP is the door. Veridian is the building."*
 | [`AGENTS.md`](./AGENTS.md) | How to work in this repository: the rules, the layout, the commands, and the defects each of those rules was paid for with. |
 | [`docs/PLAN.md`](./docs/PLAN.md) | The authoritative product and architecture specification: scope boundary, lifecycle, acceptance model, MVP scope, roadmap. |
 | [`docs/IMPLEMENTATION-PLAN.md`](./docs/IMPLEMENTATION-PLAN.md) | What was actually built against that plan: module inventory, decisions taken and reversed, open items. |
+| [`docs/BOUNDARY-ENFORCEMENT.md`](./docs/BOUNDARY-ENFORCEMENT.md) | Why the goal's safety limits are applied rather than only recorded: the audit that found the third clause of the PASS rule unfalsifiable, and the design that fixed it. |
+| [`docs/DISTRIBUTION-AND-ENVIRONMENTS.md`](./docs/DISTRIBUTION-AND-ENVIRONMENTS.md) | What comes after the MVP: the npm, Docker and VS Code routes, the next adapters in the order they can be proven, and the environments that are blocked with their blocker named. |
 
 ## License
 

@@ -79,9 +79,17 @@ export class SchemaSet {
     for (const uri of uris) {
       const text = await io.readTextFile(uri);
       if (text === null) {
+        // The root is named because the root is the thing the reporter actually observed, and it is
+        // the thing the reader needs: these schemas ship *beside* the code, so "not found" means the
+        // lookup went to the wrong place or the installation is incomplete. This message used to
+        // say the contracts "live in the repository", which was true only while distribution was a
+        // clone; now that they can also arrive inside an installed package, that sentence would send
+        // a user to inspect a repository they do not have. An error may only name a cause the
+        // reporter observed.
         throw new Error(
-          `schema "${uri}" could not be read. Veridian's contracts live in the repository; a missing ` +
-            "schema means no artifact of that kind can be trusted.",
+          `schema "${uri}" could not be read from ${io.cwd}. Veridian's own schemas ship beside its ` +
+            "code, so either that directory is not the installation root or the installation is " +
+            "incomplete. A missing schema means no artifact of that kind can be trusted.",
         );
       }
       let parsed: unknown;

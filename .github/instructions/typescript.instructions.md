@@ -10,10 +10,12 @@ applyTo:
 This file governs **Veridian's own source**. `AGENTS.md` governs the project; the two do not
 duplicate each other, so read that first and treat this as the language-level detail.
 
-> **There is no build step.** Node 22 strips types and executes `.ts` directly from the source tree,
-> so **the source tree is the program**. Nothing may introduce a step between the two. The one place
-> this does not hold is `node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), which is why
-> distribution is a clone — see `AGENTS.md` → `## Distribution`.
+> **The source tree is the program.** Node 22 strips types and executes `.ts` directly, so development,
+> the gate and the demo all run the source, and nothing may introduce a step between the tree and the
+> running program. There is a **second** copy - `npm run build` compiles `dist/` - and it exists only
+> because `node_modules` refuses type-stripping (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), which
+> is what makes an installed package possible at all. `dist/` is generated, never edited, never
+> committed, and never the way you run the code. See `AGENTS.md` → `## Distribution`.
 
 ## What the compiler enforces — do not fight it
 

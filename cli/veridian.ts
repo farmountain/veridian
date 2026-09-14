@@ -37,6 +37,7 @@ import {
 } from "../core/clarification/index.ts";
 import { detectorContextFor, resolveDefinition } from "../core/definition.ts";
 import type { DefinitionOutcome } from "../core/definition.ts";
+import { assetsRoot } from "../core/assets.ts";
 import { EnvironmentManager } from "../core/environment/index.ts";
 import {
   RunBundle,
@@ -142,7 +143,14 @@ interface Session {
 
 async function openSession(parsed: CliArguments, logger: Logger): Promise<Session> {
   const io = nodeIo();
-  const schemas = await loadSchemaSet(io);
+
+  // Two ports on purpose, because there are two roots and only one of them is the operator's.
+  // `io` resolves the operator's files (`--goal my-app/goal.yaml`) against the working directory,
+  // which is what those paths mean. The schemas are not the operator's files: they shipped inside
+  // the package, so they are resolved against the module that ships them. Reading them through `io`
+  // worked only while the CLI was run from the repository root; installed, it asked the caller's
+  // directory for Veridian's own schema and reported it missing. See `core/assets.ts`.
+  const schemas = await loadSchemaSet(nodeIo({ root: assetsRoot() }));
   const registry = new ValidatorRegistry(webUiValidators());
 
   // One prompt port for the whole process. Two ports would be two answers to "is a human watching",

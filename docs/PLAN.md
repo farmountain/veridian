@@ -2336,6 +2336,16 @@ AVF MVP is DONE when a developer can clone the repository and perform:
 
 No other capability is required to declare MVP complete.
 
+> **Amended after the MVP shipped.** *"Clone the repository"* was the weakest form of the requirement
+> and it has been superseded: the registry path was declined at ship time and then taken, because the
+> request became *"ship Veridian as a tool others install and run"*, which a clone alone does not
+> satisfy. The definition above is unchanged as the *floor* — every step in it is still what done
+> means — and `npm install -g veridian` now reaches the same CLI. See
+> [`IMPLEMENTATION-PLAN.md`](./IMPLEMENTATION-PLAN.md) assumption A11 and
+> [`DISTRIBUTION-AND-ENVIRONMENTS.md`](./DISTRIBUTION-AND-ENVIRONMENTS.md). This note is placed here
+> rather than by editing the sentence above, because the plan is the record of what was decided when,
+> and a plan quietly rewritten to match its outcome stops being evidence of anything.
+
 ---
 
 # 57. The First Product Demonstration

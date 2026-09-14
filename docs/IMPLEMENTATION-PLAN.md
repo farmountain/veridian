@@ -42,7 +42,7 @@ core/clarification   the Ambiguity Resolution Protocol — see §3
 | Kind | Package | Justification |
 |---|---|---|
 | runtime | `yaml` | Spec §48/§49 make YAML a first-class persistence format (`goal.yaml`, `acceptance.yaml`, `config.yaml`). Hand-rolling a YAML parser would be a far larger, riskier surface than a single well-known dependency. |
-| dev | `typescript` | Typecheck-only gate (`tsc --noEmit`). Node 22.18 strips types at runtime, so there is **no build step** and no bundler. |
+| dev | `typescript` | Typecheck gate (`tsc --noEmit`) **and** the build that produces the distributed copy. Node 22.18 strips types at runtime, so development has no build step and there is no bundler; `tsc -p tsconfig.build.json` exists only because `node_modules` refuses type-stripping, so an installed package must ship `.js`. |
 | dev | ~~`prettier`~~ | **Not installed, and the `format` script that called it has been removed.** The intent was to install it last so the `PostToolUse` hook could not reformat files mid-build; what shipped instead is a hand-maintained, consistent tree and a hook that is a documented no-op. A first `prettier --write` would touch almost every file, so it is a deliberate decision to take rather than a gap to close. **The dependency list is two, not three.** |
 
 Everything else is Node built-ins: `node:test`, `node:assert/strict`, `node:fs/promises`, `node:child_process`, `node:crypto`.
@@ -70,7 +70,7 @@ trail. Any row may be overturned; none of them blocks the build.
 | A8 | Can a `blocking` ambiguity be DEFAULTed? | DERIVE | Yes, but only when a value exists whose selection **cannot make the run report PASS more readily than the truth**. That is the precise statement of the fail-safe rule that protects metric **M3 (zero false PASS)**. Where no such value exists, DEFAULT is unavailable and the ladder escalates. |
 | A9 | Offline demonstration | DERIVE | Playwright's browser download is ~150 MB and mutates the machine; it is not fetched unprompted. The full loop is therefore proven offline against **test doubles at the port boundary** (mandated by `.github/instructions/tests.instructions.md`: *"never launch a real browser in a unit test"*), and the Playwright path is shipped complete behind one documented command. See §6. |
 | A10 | `rtk` prefix | DERIVE | `rtk` is **not on PATH** on this machine (observed `CommandNotFoundException`). AGENTS.md is corrected to stop recommending it. |
-| A11 | Distribution model | DERIVE | **A clone, not an npm package.** Node 22 type-stripping is unavailable under `node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, verified for the import path and for the `bin` path alike), and the schema set resolves through a port rooted at `process.cwd()`, so an installed CLI would report a missing goal schema sitting inside its own package. `PLAN.md` §56 asks for the weaker thing: *"a developer can clone the repository"*. `private: true` is therefore retained so the registry path cannot be taken by accident. |
+| A11 | Distribution model | DERIVE → **REVERSED** | **A clone, not an npm package**, on two verified causes: Node 22 type-stripping is unavailable under `node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, verified for the import path and for the `bin` path alike), and the schema set resolved through a port rooted at `process.cwd()`, so an installed CLI would report a missing goal schema sitting inside its own package. `PLAN.md` §56 asks for the weaker thing: *"a developer can clone the repository"*. `private: true` was therefore retained so the registry path could not be taken by accident. **Reversed:** the request is to *"ship Veridian as a tool others install and run"*, which a clone does not satisfy. Both causes are now fixed rather than avoided - `tsconfig.build.json` compiles `dist/` because a package *must* ship JavaScript, and `core/assets.ts` resolves Veridian's own files against `import.meta.url` while `io.ts` keeps resolving the operator's against the working directory. `private: true` is gone, replaced by guards that can actually be tripped: `prepublishOnly` (gate) and `prepare` (build), plus `npm run smoke:dist`, which drives the compiled CLI from a temporary directory. |
 | A12 | Licence | DEFAULT → **REVERSED** | **MIT**, `Copyright (c) 2026 Liew Keong Han`, chosen at build time: the manifest said `UNLICENSED`, which denies the thing the request asks for - a tool others install and run - and the choice is the user's call in principle, so the least restrictive and most easily reversed option was taken. **Reversed at ship time by the user in favour of BSD 2-Clause**, `Copyright (c) 2026, Liew Keong Han`. The GitHub scaffolding the repository was created from had arrived with a BSD 2-Clause `LICENSE` naming `farmountain`; the user kept that licence text and their own name as holder. The identifier was written in three places - `LICENSE`, `package.json`, and the lockfile's root entry - and **two of the three had already drifted before the reversal**: the lockfile still said `UNLICENSED` while the manifest said `MIT`, and nothing caught it, because `npm ci` checks dependencies rather than that metadata. An identifier declared in several places is a claim that will disagree with itself if they are edited independently, so all three moved together. |
 
 **The one item genuinely worth a user decision** is A9 — whether to install Playwright now. It is
@@ -404,13 +404,21 @@ request centred on.
   it is transport-agnostic — which is all this step requires.
 - **No speculative abstraction.** One adapter, one validator family, one client. The layering rule
   keeps the *door* open for more; nothing is built for a case that does not yet exist.
-- **No npm package, and no build step.** Veridian is installed by cloning it. Publishing to a
-  registry needs a compile step (`tsc` to `dist/*.js` with `rewriteRelativeImportExtensions`), a
-  published-files allowlist, a location-independent resolver for `schemas/` and the demo's
-  HTML/CSS, and a smoke test that drives the *built* CLI — because a shipped `dist/*.js` that no
-  test touches is precisely the unverified claim this project refuses to make. See AGENTS.md
-  `## Distribution` and assumption A11. **The registry path is declined rather than pending**: the
-  user ruled it out at ship time, so `private: true` is a settled guard and not a placeholder.
+- **No npm package, and no build step — reversed.** This item originally read *"Veridian is installed
+  by cloning it"* and listed what publishing would need: a compile step (`tsc` to `dist/*.js` with
+  `rewriteRelativeImportExtensions`), a published-files allowlist, a location-independent resolver
+  for `schemas/`, and a smoke test that drives the *built* CLI — because a shipped `dist/*.js` that no
+  test touches is precisely the unverified claim this project refuses to make. That list was correct,
+  and it is now the specification the build was measured against: all four exist. See AGENTS.md
+  `## Distribution`, assumption A11, and
+  [`docs/DISTRIBUTION-AND-ENVIRONMENTS.md`](./DISTRIBUTION-AND-ENVIRONMENTS.md).
+  **The registry path was declined rather than pending, and is now taken** — the request is to ship a
+  tool others install and run, which a clone alone does not satisfy. `private: true` is gone, replaced
+  by `prepublishOnly` (must pass the gate) and `prepare` (must build), which are guards a broken
+  package can actually trip, unlike a flag that only says "do not publish this by accident".
+  **The build step is still not the way the code runs.** The source tree is the program; `dist/` is a
+  second copy for people who install it, and `npm run smoke:dist` is the check that the second copy
+  works, because no test in `tests/` can reach it.
 
 ---
 
