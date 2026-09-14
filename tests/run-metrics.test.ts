@@ -276,6 +276,36 @@ describe("M3 is zero false PASS, and it is read from the bundle", () => {
     });
     assert.deepEqual(falsePasses([honest], ["AC-001"]), []);
   });
+
+  it("marks M3 inconclusive when no ground truth was supplied, rather than reporting none", () => {
+    // `none` is a claim about a comparison. Without a named defect, one half of M3 - the pass that
+    // blessed code known to be broken - was never compared, so reporting the half that *was* checked
+    // as the whole answer is the comfortable pass this metric exists to refuse. M2 already said
+    // INCONCLUSIVE in the same situation; M3 alone printed `none`.
+    const clean = snapshot({
+      runId: "run-clean",
+      verdict: "PASS",
+      iterations: [{ iteration: 1, statuses: { "AC-001": "PASS" } }],
+    });
+    assert.match(
+      formatMetrics(successMetrics([clean])).join("\n"),
+      /M3 false PASS: INCONCLUSIVE \(no known defects were named/,
+    );
+  });
+
+  it("still reports a false pass it found without ground truth", () => {
+    // The missing-evidence half is decidable from the bundle alone, so a violation there must not be
+    // hidden behind the INCONCLUSIVE line that covers the half which could not be compared.
+    const unproven = snapshot({
+      runId: "run-unproven",
+      verdict: "PASS",
+      iterations: [{ iteration: 1, statuses: { "AC-001": "PASS" } }],
+      criteria: [{ criterionId: "AC-001", status: "PASS", missing: ["trace"] }],
+    });
+    const lines = formatMetrics(successMetrics([unproven])).join("\n");
+    assert.match(lines, /M3 false PASS: 1/);
+    assert.doesNotMatch(lines, /M3 false PASS: INCONCLUSIVE/);
+  });
 });
 
 describe("M4 counts the resets that happened, not the ones that were asked for", () => {

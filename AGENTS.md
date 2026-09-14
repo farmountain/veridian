@@ -518,6 +518,20 @@ refused write reports `precondition blocked` and does **not** contain "unreachab
 reporter is the only one holding the evidence.* This is also why `core/memory/` has tests now: the
 port had none, which is why the defect reached a demo run.
 
+- **A metric that reports `none` for a comparison it never made is the comfortable pass it exists to
+  refuse.** `formatMetrics` printed `M3 false PASS: none` whenever it found no false passes, including
+  when `--defects` had named nothing - and without a named defect, half of M3 (a `PASS` that blessed
+  code known to be broken) is not comparable, because nothing said what was broken. The line claimed a
+  clean bill on the strength of the half it could still check. `M2` had always answered correctly
+  (`INCONCLUSIVE (no known defects were named to detect)`), so the two ground-truth-dependent metrics
+  disagreed about how to behave when the ground truth was absent - and `README.md` already promised
+  the behaviour M3 did not have. M3 now says `INCONCLUSIVE`, naming what was left out, while a false
+  pass it *did* find is still printed. Found by running the metrics over a paired
+  browser/browserless pair, which is also what proves M1 discriminates on real bundles: two worlds,
+  one codebase, and M1 named each criterion that moved. `tests/run-metrics.test.ts` holds both halves;
+  stashing the fix fails exactly one of the two, which is the difference between a test that passes
+  and a test that tests.
+
 ## Documentation
 
 | Document | Contents |

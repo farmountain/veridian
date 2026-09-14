@@ -424,9 +424,16 @@ export function successMetrics(runs: readonly RunSnapshot[], options: MetricOpti
  * The report as console lines.
  *
  * ASCII only, because this machine's code page renders a typographic dash as noise, and
- * `INCONCLUSIVE` for an unmeasurable metric rather than a comfortable `PASS`: M2 and M3 need ground
- * truth, and printing `PASS` for a metric that had nothing to compare would be the same lie this
- * module refuses at the level of the runs.
+ * `INCONCLUSIVE` for an unmeasurable metric rather than a comfortable `PASS`: M2 cannot be measured
+ * at all without ground truth, and printing `PASS` for a metric that had nothing to compare would be
+ * the same lie this module refuses at the level of the runs.
+ *
+ * M3 is measured only *in part* without ground truth, and says so rather than reporting the half it
+ * could check as the whole answer. A `PASS` whose required evidence is missing is visible from the
+ * bundle alone and is still reported; a `PASS` that blessed a known defect is not, because nothing
+ * named the defect. Without that half, `none` would be a claim about a comparison that never
+ * happened - so the line says `INCONCLUSIVE` and names what was left out, while any false pass it
+ * *did* find is still printed.
  */
 export function formatMetrics(metrics: SuccessMetrics): readonly string[] {
   const lines: string[] = [];
@@ -450,10 +457,13 @@ export function formatMetrics(metrics: SuccessMetrics): readonly string[] {
       : `M2 defect detection: ${String(m2.detected.length)}/${String(m2.expected.length)}${m2.missed.length > 0 ? ` (missed ${m2.missed.join(", ")})` : ""}`,
   );
 
+  const m3 = metrics.falsePasses;
   lines.push(
-    metrics.falsePasses.length === 0
-      ? "M3 false PASS: none"
-      : `M3 false PASS: ${String(metrics.falsePasses.length)}${metrics.falsePasses.map((entry) => `\n  ${entry.runId}: ${entry.detail}`).join("")}`,
+    m3.length > 0
+      ? `M3 false PASS: ${String(m3.length)}${m3.map((entry) => `\n  ${entry.runId}: ${entry.detail}`).join("")}`
+      : metrics.detection.expected.length === 0
+        ? "M3 false PASS: INCONCLUSIVE (no known defects were named, so a pass that blessed one could not be told from an earned pass)"
+        : "M3 false PASS: none",
   );
 
   const m4 = metrics.reset;
