@@ -206,6 +206,37 @@ export const compareBooleans =
 export const comparePresence = compareBooleans(true);
 export const compareTruth = compareBooleans(false);
 
+/**
+ * `equals` against a vocabulary the reading owns, rather than against free text.
+ *
+ * The expected value is checked against the vocabulary, so a criterion asking whether a service
+ * `equals: "started"` is reported as a contract that cannot be read instead of as a comparison that is
+ * always false. The second shape is the dangerous one: it is indistinguishable from an application
+ * defect, and it sends an agent to repair working code.
+ *
+ * It lives here rather than inside a family for the reason this file's header already gives about the
+ * vocabulary at large - a comparison declared twice will eventually disagree with itself. It was
+ * written inside `validators/posix/` first, and the moment a second family needed it the choice was
+ * between importing one family from another (forbidden - `validators/*` may not depend on
+ * `validators/*`) and writing a second copy whose message wording could drift. The vocabulary is
+ * passed in by the caller, so the list judged here is always the same list the reading is written
+ * from, whichever world asked.
+ */
+export function compareWord(vocabulary: readonly string[], what: string) {
+  return (key: ComparisonKey, actual: string, expected: unknown): ComparisonOutcome => {
+    if (key !== "equals") return notDeclared(key, "equals");
+    if (typeof expected !== "string" || !vocabulary.includes(expected)) {
+      return {
+        kind: "unusable",
+        message:
+          `"equals" on ${what} wants one of ${vocabulary.join(", ")}; it received ` +
+          `${describe(expected)}.`,
+      };
+    }
+    return { kind: "judged", holds: actual === expected, phrase: `to be ${expected}` };
+  };
+}
+
 // ---- the shape every scalar validator follows -----------------------------------------------------
 
 export const statedComparisons = (raw: Readonly<Record<string, unknown>>): readonly ComparisonKey[] =>

@@ -1,5 +1,6 @@
 import type { FailureKind } from "../failure.ts";
 import type { FilesystemWritePolicy, NetworkPolicy } from "../goal/types.ts";
+import type { OsFamily } from "./os-observation.ts";
 
 /**
  * Shared environment contracts.
@@ -224,6 +225,34 @@ export interface EnvironmentDefinitionShape {
     readonly namespace?: unknown;
     readonly images?: unknown;
   };
+  /**
+   * The POSIX-like system this world stands in for, when the world is one.
+   *
+   * The pattern `cluster` follows, one kind of world further out - and it is written out here rather
+   * than elided as "the same as cluster" because the three names it holds are read by a detector that
+   * may not import an adapter, and a shape a reader has to go and find is a shape that gets guessed.
+   */
+  readonly posix?: {
+    readonly distribution?: unknown;
+    readonly user?: unknown;
+    readonly root?: unknown;
+  };
+  /**
+   * The operating system this world stands in for, when the world is one.
+   *
+   * Four facts, because a system has four that decide what its readings *mean*: which family it is
+   * (the path rules and the store's addressing follow from it, and nothing else can supply them),
+   * which release the readings name, which account the criteria act as, and which directory is the
+   * sandbox root. `family` is the field that makes this a declaration rather than a diary entry: a
+   * reading can report a family, but only a plan can *promise* one, and a world that promised Windows
+   * and reported macOS paths would otherwise be a world nobody could catch.
+   */
+  readonly os?: {
+    readonly family?: unknown;
+    readonly system?: unknown;
+    readonly user?: unknown;
+    readonly root?: unknown;
+  };
   readonly health?: {
     readonly path?: unknown;
     readonly expectStatus?: unknown;
@@ -343,6 +372,17 @@ export interface EnvironmentPlan {
    * afterwards.
    */
   readonly posix: PosixPlan | null;
+  /**
+   * The operating system this world stands in for, or `null` when the world is not one.
+   *
+   * The fifth of the same field, one per kind of world, and read for the same reason as the other
+   * four: the first question asked of a result is *which world produced it*. A simulated Windows has
+   * four answers that have to travel with the verdict - which family the readings were taken against,
+   * which release they name, which account the criteria act as, and which directory is the sandbox
+   * root - because each one changes what an `os.*` expectation means and none of them can be
+   * recovered from the reading afterwards.
+   */
+  readonly os: OsPlan | null;
   readonly health: HealthPolicy;
   readonly reset: { readonly strategy: ResetStrategy; readonly command: string | null };
   readonly browser: BrowserPolicy;
@@ -389,6 +429,30 @@ export interface PosixPlan {
   /** The distribution the readings name, e.g. `veridian-simulated-linux`. */
   readonly distribution: string;
   /** The account the criteria act as. Readings are decided *as* this account, never as root. */
+  readonly user: string;
+  /** Absolute, resolved against `appPath` on the same rule `databasePath` follows. */
+  readonly root: string;
+}
+
+/**
+ * An operating-system world's resolved declaration.
+ *
+ * `family` is the field that makes this declaration worth having. The other three could each be
+ * recorded in a reading; the family could not, because a reading that reported its own family could
+ * not be contradicted by anything - and the family is what decides how a path is spelled in every
+ * criterion, how the configuration store is addressed, and whether two spellings of a path are one
+ * file. A world that promised Windows and reported macOS paths is a world that should not have run,
+ * and this is the field that makes the disagreement expressible.
+ *
+ * `root` is a *sandbox* directory, not the application directory, on the same reasoning as
+ * {@link PosixPlan.root}: the world's filesystem is destroyed and rebuilt on every reset, so pointing
+ * it at the application would delete the code under test on the first iteration.
+ */
+export interface OsPlan {
+  readonly family: OsFamily;
+  /** The release the readings name, e.g. `Windows 11 23H2`. A record, not an installed image. */
+  readonly system: string;
+  /** The account the criteria act as. Access is decided *as* this account, never as SYSTEM or root. */
   readonly user: string;
   /** Absolute, resolved against `appPath` on the same rule `databasePath` follows. */
   readonly root: string;

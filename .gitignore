@@ -42,6 +42,17 @@ examples/sim-k8s/app/build/
 # so the tree the world creates and the tree this rule excludes are the same one by construction.
 examples/sim-posix/app/sandbox/
 
+# The sandbox tree the `sim-os` example's world builds. The reasoning is the `sim-posix` one exactly,
+# and it is worth stating separately rather than as a glob over both, because the *thing* is different:
+# this tree is not a POSIX filesystem with modes, it is a tree plus the security record, the account
+# list, the configuration store and the service definitions the world holds about it. A committed copy
+# would let a criterion read a registry value the run never wrote, an access decision the run never
+# reached, or a service the world never registered - and the bundle would hold a PASS for a system this
+# machine did not build. It sits under `app/` because `environment.yaml` resolves `os.root` against its
+# own `app:` value, so the tree the world creates and the tree this rule excludes are the same one by
+# construction.
+examples/sim-os/app/sandbox/
+
 # Editors / OS
 .DS_Store
 Thumbs.db

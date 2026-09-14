@@ -64,6 +64,18 @@
       "required": ["distribution", "user", "root"],
       "additionalProperties": false
     },
+    "os": {
+      "type": ["object", "null"],
+      "description": "The operating system this world stands in for, when the world is one. Present for a simulated system such as `sim-os`; absent for every other world. Same reasoning as `posix`: stated here rather than as an adapter-private option, so the plan every reader sees names the same family, release, account and sandbox root the run measured, and so that 'this world is not a machine' stays distinguishable from 'nobody filled the field in'. A world declaring `os` has no url, no cluster and no posix, exactly as a database world has no url.",
+      "properties": {
+        "family": { "type": "string", "enum": ["windows", "macos"], "description": "Which system this world stands in for. It is the field that decides a path's spelling, the section separator, whether volumes fold case, and how the platform's configuration store is addressed - none of which the reading can supply on its own, because a reading that supplied them could not be contradicted by the plan that promised them." },
+        "system": { "type": "string", "minLength": 1, "description": "The release the readings name, e.g. `Windows 11 23H2` or `macOS 14.5`. A record, not an installed image: the world has no ABI, and saying which release it stood in for is how a verdict stays traceable to a named substitute." },
+        "user": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$", "description": "The account the criteria act as. Access is decided as this account, never as SYSTEM or root - a hardening contract judged as an account with every permission passes for a machine no ordinary account can log into. The loader refuses the privileged names by name." },
+        "root": { "type": "string", "description": "The sandbox directory, relative to `app`. The world's filesystem is rebuilt here on every reset, which is why it is a directory of the world's own rather than the application directory: resetting a world rooted at the application would delete the code under test." }
+      },
+      "required": ["family", "system", "user", "root"],
+      "additionalProperties": false
+    },
     "health": {
       "type": "object",
       "properties": {

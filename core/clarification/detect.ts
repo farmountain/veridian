@@ -131,6 +131,15 @@ export interface EnvironmentLike {
   readonly cluster?: unknown;
   /** Present when the world stands in for a POSIX-like system. It has no address at all. */
   readonly posix?: unknown;
+  /**
+   * Present when the world stands in for an operating system.
+   *
+   * It has no address at all, and it is a *different* declaration from `posix` rather than a variant
+   * of it: a POSIX world and a Windows world answer the same questions with different vocabularies,
+   * and `family` is what decides which. Collapsing them into one field would make the detector ask a
+   * Windows document for a `distribution`.
+   */
+  readonly os?: unknown;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -144,10 +153,11 @@ const isMissing = (value: unknown): boolean =>
  * Whether the document describes a world with no HTTP surface of its own.
  *
  * Decided from the *document*, not from the adapter name, because `core/clarification` is the lowest
- * layer and may not import an adapter to ask it. Three shapes have no HTTP: a world reached by
- * opening a file (`databasePath`), one whose address is a substitute control plane (`cluster`), and
- * one that is a system rather than a service (`posix`). Anything else is a socket world, and is still
- * asked for its URL.
+ * layer and may not import an adapter to ask it. Five shapes have no HTTP: a world reached by
+ * opening a file (`databasePath`), one whose address is a substitute control plane (`cluster`), one
+ * that is a system rather than a service (`posix`), one that is a machine (`os`), and one whose
+ * surface is an operating system's rather than a socket's. Anything else is a socket world, and is
+ * still asked for its URL.
  *
  * Getting this wrong is not cosmetic, and each new shape is how the cost was measured. Every question
  * gated below is an HTTP question - the address, the health path, the health status, whether to drive
@@ -163,7 +173,8 @@ const hasNoHttp = (environment: EnvironmentLike): boolean =>
   isMissing(environment.url) &&
   (!isMissing(environment.databasePath) ||
     !isMissing(environment.cluster) ||
-    !isMissing(environment.posix));
+    !isMissing(environment.posix) ||
+    !isMissing(environment.os));
 
 const asArray = <T>(value: readonly T[] | undefined): readonly T[] => value ?? [];
 

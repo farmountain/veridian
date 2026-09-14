@@ -114,6 +114,7 @@ import {
   assertion,
   comparePresence,
   compareText,
+  compareWord,
   describe,
   judge,
   notDeclared,
@@ -222,29 +223,6 @@ function portNumber(validator: string, target: string | null): number | Assertio
 }
 
 // ---- comparisons against a closed vocabulary ------------------------------------------------------
-
-/**
- * `equals` against a vocabulary the reading owns.
- *
- * The expected value is checked against the vocabulary rather than treated as free text. A criterion
- * asking whether a service `equals: "started"` would otherwise be a comparison that is always false,
- * which reads as an application defect and is a misspelt word in a contract. The vocabulary is passed
- * in from `core/environment/`, so the list judged here is the same list the reading is written from.
- */
-function compareWord(vocabulary: readonly string[], what: string) {
-  return (key: ComparisonKey, actual: string, expected: unknown): ComparisonOutcome => {
-    if (key !== "equals") return notDeclared(key, "equals");
-    if (typeof expected !== "string" || !vocabulary.includes(expected)) {
-      return {
-        kind: "unusable",
-        message:
-          `"equals" on ${what} wants one of ${vocabulary.join(", ")}; it received ` +
-          `${describe(expected)}.`,
-      };
-    }
-    return { kind: "judged", holds: actual === expected, phrase: `to be ${expected}` };
-  };
-}
 
 const compareInstaller = compareWord(POSIX_EXEC_SOURCES, "who installed a package");
 const compareServiceStatus = compareWord(POSIX_SERVICE_STATUSES, "a service status");

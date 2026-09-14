@@ -2,6 +2,7 @@ import { DefinitionError, loadDocument, resolveSibling } from "../goal/load.ts";
 import type { GoalDocument, GoalLimits, SourceRef } from "../goal/types.ts";
 import type { ReadonlyIoPort } from "../io.ts";
 import { SCHEMA_URIS, type SchemaSet } from "../schema/index.ts";
+import { OS_FAMILIES, PRIVILEGED_OS_ACCOUNTS } from "./os-observation.ts";
 import {
   RESET_STRATEGIES,
   type BoundaryPolicy,
@@ -9,6 +10,7 @@ import {
   type ClusterPlan,
   type EnvironmentPlan,
   type HealthPolicy,
+  type OsPlan,
   type PosixPlan,
   type ResetStrategy,
 } from "./types.ts";
@@ -226,6 +228,74 @@ function readPosix(raw: unknown, appPath: string): PosixPlan | null {
   return { distribution, user, root: resolveSibling({ dir: appPath, path: "", text: "" }, root) };
 }
 
+/**
+ * The operating system declaration, resolved.
+ *
+ * The same rule as {@link readCluster} and {@link readPosix}, one kind of world further out: absent
+ * means not this world, and present-but-incomplete is **refused** rather than defaulted. It is the
+ * third time this rule is written out, and the third time is the one where a reader is entitled to
+ * ask why it is not factored into one helper. It is not, because the four facts each world refuses to
+ * default are *different facts* with different sentences, and a helper taking the list as an argument
+ * would move the sentence that explains the refusal - the part an operator actually reads - away from
+ * the field it is about.
+ *
+ * The reference to `OS_FAMILIES` rather than a literal pair here is the one place this loader imports
+ * from the reading vocabulary, and it is worth the edge: the family decides how a path is spelled in
+ * every subsequent reading, so a plan naming a family the vocabulary does not know would be a plan
+ * whose criteria all resolve to refusals. One list, read in both places.
+ */
+function readOs(raw: unknown, appPath: string): OsPlan | null {
+  if (raw === undefined || raw === null) return null;
+  if (!isPlainObject(raw)) {
+    throw defect(
+      "$.os",
+      "os must be an object naming a family, a system release, a user and a sandbox root",
+    );
+  }
+  const family = asString(raw["family"]).trim();
+  const system = asString(raw["system"]).trim();
+  const user = asString(raw["user"]).trim();
+  const root = asString(raw["root"]).trim();
+  const missing = [
+    family === "" ? "family" : null,
+    system === "" ? "system" : null,
+    user === "" ? "user" : null,
+    root === "" ? "root" : null,
+  ].filter((entry): entry is string => entry !== null);
+  if (missing.length > 0) {
+    throw defect(
+      `$.os.${missing[0] ?? "family"}`,
+      `the os declaration is missing ${missing.join(", ")}. The family decides how a path is spelled ` +
+        "and how the configuration store is addressed, the release is what every reading names, and " +
+        "the account is what every access question is decided as - defaulting any of them would " +
+        "produce a verdict about a system nobody described.",
+    );
+  }
+  if (!(OS_FAMILIES as readonly string[]).includes(family)) {
+    throw defect(
+      "$.os.family",
+      `os.family must be one of ${OS_FAMILIES.join(", ")}; it received ${JSON.stringify(family)}. ` +
+        "There is no third answer, because a family is not a label on the readings - it is what " +
+        "decides whether a path separates with a backslash and whether the store is a hive.",
+    );
+  }
+  const privileged = PRIVILEGED_OS_ACCOUNTS[family as keyof typeof PRIVILEGED_OS_ACCOUNTS];
+  if (privileged.includes(user.toLowerCase())) {
+    throw defect(
+      "$.os.user",
+      `the criteria would act as ${JSON.stringify(user)}, which holds every permission on this ` +
+        "system - so a hardening contract judged as that account would report a pass for a machine " +
+        "no ordinary account can log into. Name the unprivileged account the criteria should act as.",
+    );
+  }
+  return {
+    family: family as OsPlan["family"],
+    system,
+    user,
+    root: resolveSibling({ dir: appPath, path: "", text: "" }, root),
+  };
+}
+
 function readBoundary(limits: GoalLimits): BoundaryPolicy {
   return {
     network: limits.networkPolicy,
@@ -305,6 +375,7 @@ export function finalizeEnvironment(
     databasePath: database === "" ? null : resolveSibling(source, database),
     cluster: readCluster(raw["cluster"], appPath),
     posix: readPosix(raw["posix"], appPath),
+    os: readOs(raw["os"], appPath),
     health: readHealth(raw["health"], url !== "", readyPattern),
     reset: { strategy: strategy as ResetStrategy, command: resetCommand },
     browser: readBrowser(raw["browser"], url !== ""),

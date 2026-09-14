@@ -30,6 +30,7 @@ import { LocalWebEnvironment } from "../adapters/local-web/index.ts";
 import type { BrowserPort } from "../adapters/local-web/index.ts";
 import { LocalDbEnvironment } from "../adapters/local-db/index.ts";
 import { SimK8sEnvironment } from "../adapters/sim-k8s/index.ts";
+import { SimOsEnvironment } from "../adapters/sim-os/index.ts";
 import { SimPosixEnvironment } from "../adapters/sim-posix/index.ts";
 import type { AdapterDescriptor, AdapterRequirement } from "../core/clarification/detect.ts";
 import type { Logger } from "../core/clarification/types.ts";
@@ -193,6 +194,72 @@ const WORLDS: readonly World[] = [
     ],
     build: ({ environment, io, logger, processes, stateDir }) =>
       new SimPosixEnvironment(environment, {
+        io,
+        clock: systemClock,
+        logger,
+        processes,
+        stateDir,
+      }),
+  },
+  {
+    kind: "sim-os",
+    summary:
+      "a simulated Windows or macOS system the application provisions itself, with no VM and no guest",
+    // Four fields, and the fourth is what makes this world different from `sim-posix` rather than a
+    // second copy of it. A *family* is not a label on a reading: it decides whether a path separates
+    // with a backslash, whether the configuration store is a registry hive or a preference domain, and
+    // how an access decision is reached at all - so it is the one field this world cannot derive.
+    // A *release* is what "this is the build we certified" is a claim about, and there is no default
+    // for it for the same reason there is none for a distribution. The *account* is what every access
+    // question is decided as, and `sim-os` refuses a privileged account for exactly the reason
+    // `sim-posix` refuses `root`: `SYSTEM` and `wheel` hold every permission, so a hardening contract
+    // judged as one of them reports a pass for a machine no ordinary account can log into. And the
+    // *root* is the host path the machine opens the world from; a root that drifted from the directory
+    // the adapter wrote to would make every reading describe a different tree than the one the criteria
+    // acted on.
+    requires: [
+      {
+        field: "os.family",
+        question: "Which family is this world standing in for?",
+        why:
+          "The family decides how a path is spelled, how the configuration store is addressed, and " +
+          "whether the world folds the case of a path - so a plan that defaulted it would resolve " +
+          "every criterion's target by the wrong rules and report the operator's own spelling as a " +
+          "refusal. There is no third answer: this world stands in for Windows or for macOS, and a " +
+          "substituted system that will not say which one cannot be judged against anything.",
+      },
+      {
+        field: "os.system",
+        question: "Which release is this world standing in for?",
+        why:
+          "Every reading records it, because a criterion of the form \"this is the build we certified\" " +
+          "is a claim about a named release and not about a family in general - and the two families " +
+          "differ between their own releases in ways a contract can care about. Defaulting it would " +
+          "put a version into the evidence that nobody chose.",
+      },
+      {
+        field: "os.user",
+        question: "Which account do the criteria act as?",
+        why:
+          "A file's access control list decides whether the account running the criterion may read it, " +
+          "so the substituted world keeps its own security record and answers the access question the " +
+          "way the system would. Without a named account there is no \"as whom\". A privileged account " +
+          "- `SYSTEM`, `Administrator`, `root` or `wheel` - is refused rather than defaulted, because " +
+          "it holds every permission and would pass a contract no ordinary account can satisfy.",
+      },
+      {
+        field: "os.root",
+        question: "Where should the system's sandbox tree live?",
+        why:
+          "This is the host path the machine opens the world from, and it is resolved against the " +
+          "application directory the way every other path in this document is. There is no default: " +
+          "a sandbox root that drifted from the directory the adapter wrote to would make every " +
+          "reading describe a different tree than the one the criteria acted on, and the failure " +
+          "would look like a missing file rather than a misdescribed world.",
+      },
+    ],
+    build: ({ environment, io, logger, processes, stateDir }) =>
+      new SimOsEnvironment(environment, {
         io,
         clock: systemClock,
         logger,

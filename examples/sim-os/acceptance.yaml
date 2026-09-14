@@ -1,0 +1,248 @@
+# The acceptance contract: what the world must hold when the application is right.
+#
+# Seventeen criteria over all twelve validators, judged against a *simulated* Windows system. Two of
+# them act inside the world through a `run` step - the world is handed an argument vector and executes it
+# against its own register - and one of those expects the world to **refuse** it.
+#
+# Every one of the twelve names in `validators/os/os-validators.ts` is used by at least one criterion
+# here, and that is a property a test holds rather than a claim: a family of twelve whose contract
+# exercised ten would have two names nothing had ever run.
+#
+# ## How to read the targets
+#
+# Every target is spelled the way the *world* spells it, never this machine's path to the sandbox: a
+# drive letter and backslashes. `core/environment/os-observation.ts` resolves each target through
+# `resolveOsPath`, which refuses the other family's spelling by name, and the world's readings are keyed
+# on the same canonical form - so a criterion and the world agree about a path or the criterion is told
+# why they do not, rather than getting an empty reading.
+#
+# ## The three questions that are deliberately different
+#
+#   - `os.file` asks whether something is there; `os.contents` asks what it says. They are different
+#     questions, and the second is `INCONCLUSIVE` for a file that is not: a validator may not open a
+#     file, so a body it was never handed is a body it did not read.
+#   - `os.acl` asks what governs a path; `os.access` asks what one account may do there. The second is
+#     decided by the world's own ordered rule - explicit over inherited, deny over allow, then groups,
+#     then `Everyone` - and is the question a hardening contract actually cares about.
+#   - `os.owner` asks who owns a file; `os.permission` does not exist in this family because `os.access`
+#     is the family's answer to the same question stated per account. Ownership and permission are
+#     separate on purpose: the auditing account owns the secrets file and may not read it.
+#
+# ## What no criterion here may do
+#
+# Compare the secrets file's contents. The file is written so that a contract *can* ask whether this
+# world refuses it, and every criterion that touches it judges presence, ownership, an entry list or an
+# access decision instead. A criterion that read the body would put the secret in the evidence bundle,
+# and the bundle is meant to be readable.
+
+version: 1
+
+criteria:
+  - id: AC-001
+    description: >-
+      The account the service runs as was really created. Judged from the world's own account table by
+      the criterion, and credited only because the world recorded executing the application's own
+      `net user ... /add` - so a program that declared the account without creating it fails this and
+      `os.ran` together, from two independent readings.
+    expect:
+      - validator: os.account
+        target: svc-cart
+        equals: true
+    evidence: [json]
+
+  - id: AC-002
+    description: >-
+      The application's account command reached the world and the world completed it. Read from the
+      execution record the world wrote when the command arrived rather than from anything the
+      application printed, which is the difference between issuing a command and claiming to have.
+    expect:
+      - validator: os.ran
+        target: net
+        equals: completed
+    evidence: [json]
+
+  - id: AC-003
+    description: >-
+      The application observed the system's own loopback ports after starting the service. The command
+      is in the application's list because a provisioner that cannot see what it brought up cannot
+      report having brought it up - and this criterion is the one that says the world really executed
+      that observation rather than the run assuming it.
+    expect:
+      - validator: os.ran
+        target: netstat
+        equals: completed
+    evidence: [json]
+
+  - id: AC-004
+    description: >-
+      The hardening baseline was installed at the path the policy names.
+    expect:
+      - validator: os.file
+        target: 'C:\ProgramData\Veridian\policy.conf'
+        equals: true
+    evidence: [json]
+
+  - id: AC-005
+    description: >-
+      The baseline states the bind address. This is the only place the binding decision is written down:
+      nothing about a file's existence or its access control entries distinguishes a service told to
+      bind loopback from one told to listen on every interface.
+    expect:
+      - validator: os.contents
+        target: 'C:\ProgramData\Veridian\policy.conf'
+        contains: 'CartWebBind=127.0.0.1'
+    evidence: [json]
+
+  - id: AC-006
+    description: >-
+      The machine-wide store holds the bind address under the policy key. Judged in the store rather
+      than in the file, because a baseline file is a description of an intention and a store value is
+      what the system was actually told.
+    expect:
+      - validator: os.setting
+        target: 'HKLM\SOFTWARE\Veridian\Policy'
+        contains: 'CartWebBind=127.0.0.1'
+    evidence: [json]
+
+  - id: AC-007
+    description: >-
+      The store holds the log level under the same key. A second value rather than a second criterion's
+      worth of assertions, because a single value in the right container would pass for a store that was
+      written once by accident.
+    expect:
+      - validator: os.setting
+        target: 'HKLM\SOFTWARE\Veridian\Policy'
+        contains: 'CartWebLogLevel=warn'
+    evidence: [json]
+
+  - id: AC-008
+    description: >-
+      The service is defined. Existence only - what it is defined to run as, and whether it is running,
+      are separate questions asked below, and collapsing them would let a service that exists and is
+      stopped read as a service that was never created.
+    expect:
+      - validator: os.service
+        target: cart-web
+        equals: true
+    evidence: [json]
+
+  - id: AC-009
+    description: >-
+      The service is running. The world reports `running` only after a **real** loopback connection to
+      the port the service's command declares succeeds, so this is not the world reading back its own
+      bookkeeping - a service whose socket could not be bound is reported `failed`, and one that was
+      never started is reported `stopped`.
+    expect:
+      - validator: os.running
+        target: cart-web
+        equals: running
+    evidence: [json]
+
+  - id: AC-010
+    description: >-
+      The service is defined to run as the account that was created for it. The account exists and the
+      service exists, and neither fact says the service names it - which is what a service that will not
+      start under the account it was hardened for looks like from the outside.
+    expect:
+      - validator: os.principal
+        target: cart-web
+        equals: svc-cart
+    evidence: [json]
+
+  - id: AC-011
+    description: >-
+      The service's own image declares the port the service manager was told to bind. Read from the file
+      the service would run, so the declaration and the socket are tied to the same number by two
+      independent readings rather than by one constant appearing twice in this contract.
+    expect:
+      - validator: os.contents
+        target: 'C:\Program Files\Veridian\cart-web.cmd'
+        contains: '--port 18443'
+    evidence: [json]
+
+  - id: AC-012
+    description: >-
+      The service account may read the secrets file. The permission is decided by the world's own rule
+      over the entries that actually govern the path, so an entry list that grants a different
+      permission fails here even though the file itself is untouched.
+    expect:
+      - validator: os.access
+        target: 'svc-cart:C:\ProgramData\Veridian\secrets.env'
+        equals: read
+    evidence: [json]
+
+  - id: AC-013
+    description: >-
+      Exactly one entry governs the secrets file and it names the service account for read. Stated as
+      the whole rendering rather than as a containment, because a containment passes for an entry list
+      that also still names the installing account - which is precisely the defect a hardening step that
+      removed nothing would leave behind.
+    expect:
+      - validator: os.acl
+        target: 'C:\ProgramData\Veridian\secrets.env'
+        equals: 'svc-cart:read:allow'
+    evidence: [json]
+
+  - id: AC-014
+    description: >-
+      The account the criteria act as may do nothing at all to the secrets file. `none` is a fact the
+      world decided and not a gap in the reading: `null`, which is what a path the world holds no record
+      for produces, is judged `INCONCLUSIVE` instead, because "ungoverned" and "unmeasured" are
+      different answers and only one of them is about the application.
+    expect:
+      - validator: os.access
+        target: 'svc-audit:C:\ProgramData\Veridian\secrets.env'
+        equals: none
+    evidence: [json]
+
+  - id: AC-015
+    description: >-
+      The auditing account still owns the secrets file, and it still may not read it. Ownership and
+      permission are different facts and this pair is what says so: the hardening posture is that the
+      account which installed a secret keeps the file and loses the access, rather than handing the file
+      to the service that reads it.
+
+      This is one of the criteria no injected defect moves, and that is deliberate rather than
+      incidental. Nine of the seventeen stay green through every iteration, because the four defects are
+      about an account, a store key, a service state and a permission - and a run in which *every*
+      criterion moved would be a run whose readings are not independent, which is the one thing a
+      contract built out of separate validators is supposed to rule out.
+    expect:
+      - validator: os.owner
+        target: 'C:\ProgramData\Veridian\secrets.env'
+        equals: svc-audit
+    evidence: [json]
+
+  - id: AC-016
+    description: >-
+      The auditing account cannot read the secrets file. A `run` step, so this is the world's own
+      register answering a real command: the world resolves the path, asks its access rule, and refuses
+      `type` with the reason the decision gives. The criterion judges the outcome and not the wording,
+      because a world that refused the right command for a reason a reader would distrust is still a
+      world that refused it.
+    steps:
+      - run: ['type', 'C:\ProgramData\Veridian\secrets.env']
+    expect:
+      - validator: os.probe
+        target: type
+        equals: nonzero
+    evidence: [json]
+
+  - id: AC-017
+    description: >-
+      The world refuses a command naming a path outside the sandbox. The argument is a drive the world
+      does not hold, and a world that resolved it would be reading the developer's own machine while
+      calling it the sandbox's.
+
+      The limitation is stated rather than hidden: this criterion reads the world's *result* and not its
+      stated *reason*, so it cannot distinguish a path that escapes from a command the world does not
+      implement. It is the operator's own probe of the guard, and the guard's authority over the
+      *application* is held by the boundary crossing the adapter records when the application - not a
+      criterion - attempts one.
+    steps:
+      - run: ['where', 'D:\archive\cart-web\policy.conf']
+    expect:
+      - validator: os.probe
+        target: where
+        equals: refused
+    evidence: [json]

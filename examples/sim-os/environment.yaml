@@ -1,0 +1,88 @@
+# The world this application is judged in: a *simulated* Windows system.
+#
+# `adapter: sim-os` is the fifth adapter and the second simulated one. There is no VM, no image, no
+# hypervisor, no boot and no container runtime anywhere in this run. The world is a directory on this
+# machine, a table of accounts, files, access control entries, store values and services that the
+# adapter maintains, and a small register of programs it answers in process - with one exception that is
+# real: a service that declares a port gets a **real loopback socket** bound for it, and the port
+# criterion is decided by really connecting to it.
+#
+# That exception is the whole difference between this and a stub, so it is worth being precise about
+# what is *not* simulated either. The application's program really runs as a child process. The files it
+# writes have real bytes and a real `sha256`. The world's answers to its commands are computed by
+# `decide()` - one ordered rule, five steps - rather than looked up, and each reading records itself as
+# `simulated` so a PASS can be traced to a named substitute instead of to unexamined reality.
+#
+# Read this next to `goal.yaml`, which states the three obligations a simulated world has to meet and
+# what is never simulated, and next to `acceptance.yaml`, which is phrased entirely in the world's own
+# spelling: `C:\ProgramData\Veridian\policy.conf`, never this machine's path to the sandbox.
+
+adapter: sim-os
+
+# The application directory, relative to this file. The provisioning program, the two TypeScript
+# programs the demo and the repair agent use, and the documents are all here; the sandbox is created
+# inside it by the world and is excluded by `.gitignore`.
+app: app
+
+# This world has no HTTP surface at all - no page, no socket to probe, no status to expect. Both of these
+# are `null` rather than omitted, because "declared absent" and "forgotten" are different documents, and
+# `core/environment/load.ts` reads the first as a fact and would treat the second as a gap.
+url: null
+dependencyInstall: null
+
+os:
+  # Which system this world stands in for. It is the field that decides a path's spelling, the section
+  # separator, whether the tree folds case, and how the configuration store is addressed - none of which
+  # the reading can supply on its own, because a reading that supplied them could not be contradicted by
+  # the plan that promised them.
+  family: windows
+
+  # The release the readings name. A record and not an installed image: this world has no kernel and no
+  # ABI, and saying which release it stood in for is how a verdict stays traceable to a named substitute.
+  system: Windows Server 2022
+
+  # The account the criteria act as.
+  #
+  # Never `SYSTEM`, `LocalSystem` or `Administrator`. `core/environment/load.ts` refuses those names by
+  # name and says why: an account that holds every permission answers every access question the same
+  # way, so a hardening contract judged as one would pass for a machine no ordinary account can log into.
+  # This is the account `os.access` and the `run` steps are decided as, and the account the application
+  # is expected to remove its own entries for.
+  user: svc-audit
+
+  # The sandbox directory, relative to `app`. Resolved against the application directory, so the tree the
+  # world creates and the tree `.gitignore` excludes are the same one by construction.
+  #
+  # A directory of the world's own rather than the application directory, because every run rebuilds it
+  # from nothing: rooting the world at `app` would delete the code under test on the first reset.
+  root: sandbox
+
+start:
+  # The application's own provisioning program. A real Node program, run as a child process with this
+  # operator's own privileges, which is the first obligation a simulated world has to meet - the
+  # application executes for real and only the *system* is substituted.
+  command: node
+  args:
+    - provision.mjs
+
+  # The application's own signal that it finished. The count is `\d+` rather than a digit on purpose:
+  # the program prints how many files it actually wrote and how many commands it actually issued, and a
+  # pattern pinning a number would pass for a run that provisioned a different set.
+  readyPattern: 'cart-web provisioned: \d+ files installed'
+
+health:
+  # No `path` and no `expectStatus`. Both are HTTP concepts and this world has no HTTP surface to probe;
+  # the readiness of the system is the readiness pattern above plus the readings taken afterwards.
+  timeoutMs: 30000
+  intervalMs: 100
+
+reset:
+  # The reset is the event that makes the demo's progression meaningful: iteration two must start from a
+  # world in which the previous iteration's writes are gone. `restart` rebuilds the sandbox tree, the
+  # account table, the access control records, the store and the service definitions, and then lets the
+  # application provision it again.
+  #
+  # `snapshot-restore` is deliberately not asked for: `sim-os` cannot restore a snapshot of a *system*
+  # it maintains in tables, and it refuses that strategy by name rather than quietly running a restart
+  # and reporting a restore that never happened.
+  strategy: restart

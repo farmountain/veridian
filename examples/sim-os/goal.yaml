@@ -1,0 +1,112 @@
+# The goal. One sentence describing an observable end state, and the two documents that decide whether
+# it holds.
+#
+# Read `context` below before changing anything here. A simulated world can be mistaken for a real one,
+# and that mistake is the only failure this adapter has that a criterion cannot detect - so the
+# obligations it meets and the things that are never simulated are written down where the goal is, rather
+# than left in a comment in the adapter where a reader of a *result* would never find them.
+
+version: 1
+
+id: sim-os
+
+# An observable end state, not an activity. "The application provisions a Windows machine" would be an
+# activity and would be satisfied by a program that did nothing; this says what a machine holds when the
+# program is right, and every clause of it is read by at least one criterion in `acceptance.yaml`.
+statement: >-
+  After the application provisions the machine it was handed, that machine holds a service account named
+  svc-cart, a cart-web service defined to run as it, that service running with a real loopback socket
+  listening on the port its command declares, a hardening baseline and a secrets file whose access is
+  governed by entries naming svc-cart, and machine-wide store values that name the bind address and the
+  log level - and the account the criteria act as can neither read the secrets file nor name a path
+  outside the sandbox.
+
+acceptance: acceptance.yaml
+environment: environment.yaml
+
+context: |-
+  ## This world is simulated, and what that obliges it to do
+
+  There is no VM, no image, no hypervisor, no boot and no container runtime anywhere in this run. The
+  system under test is a substitute: a directory this machine can open, and tables of accounts, files,
+  access control entries, store values and services that the world maintains in process. The equivalent
+  of an interaction is a `run` step - the world is handed an argument vector, executes it against its
+  own register of programs, and a criterion is judged on what it did in answer.
+
+  A substitute is only worth anything if it is held to the same three obligations a real system would
+  impose. Where this run meets them:
+
+    1. The application executes for real. `start.command` is a real Node program run as a child process
+       with this operator's own privileges. It reads its environment, decides for itself, writes real
+       files with real bytes into the sandbox through the host path it was given, and prints one real
+       command line per line for the world to execute. Nothing about the application is simulated -
+       not its decisions, not its file writes, not its output.
+
+    2. The interfaces are real. The sandbox root is a directory on this machine; every file has real
+       bytes and a real `sha256`. Every access decision is computed by one ordered rule - an explicit
+       entry beats an inherited one, a deny beats an allow, then groups, then `Everyone`, then refusal -
+       rather than looked up from a table of answers. A service that declares a port gets a **real
+       loopback socket** bound for it, so the port criterion is decided by really connecting rather than
+       by reading the world's own bookkeeping, and a service whose socket could not be bound is reported
+       `failed` rather than `running`.
+
+    3. The substitution is declared. Every reading carries `simulated`, naming what stood in for what:
+       the kernel, the release, the service manager, the configuration store, the permission decisions,
+       egress and the provisioning channel. A result therefore says which parts of the system were
+       replaced instead of leaving a reader to infer it, and the world's own identity document inside
+       the sandbox records the same three facts.
+
+  ## What is never simulated
+
+  Whether the application's code ran. Which files it wrote and with what bytes and hashes. What the
+  world did in answer to each command, with the exit code and the wording. The reading taken afterwards.
+  The verdict each criterion reaches, including the authority to report `FAIL`. The reset between
+  iterations, and the fact that it happened. None of these is substituted, and no criterion in this
+  contract could be satisfied by a world that faked one of them without the others disagreeing.
+
+  ## The one limit this world states rather than hides
+
+  The account the criteria act as reads *this world's* permission table, which the world maintains - not
+  the kernel's. `os.access` therefore judges the world's decision, and the world's decision is computed
+  by the same rule on every run. What that rule cannot do is reproduce the parts of a real system that
+  are inherited from a parent object in ways this world does not model: it records `inherited` as a
+  property an entry carries, and it resolves inheritance by consulting the entry list in a fixed order,
+  which is a model of inheritance rather than inheritance itself. A contract that needed the real thing
+  would be asking about a machine this world is not.
+
+  ## Why the boundary is reported as `unsupported` and not as `enforced`
+
+  The application is an ordinary child process of this run, so it can open any socket and any file this
+  operator can: `networkPolicy` and `filesystemWrite` are **declared** here and the adapter reports them
+  `unsupported` rather than claiming to hold them. One part of the boundary *is* held, and it is held by
+  the world rather than by a sandbox: a command naming a path outside the world's root is refused, and an
+  escape attempted by the *application* - as opposed to by a criterion - is recorded as a boundary
+  crossing and fails the run. The asymmetry is deliberate: the operator's own criteria may probe the
+  guard, because the operator already has these privileges, while the untrusted party is the generated
+  code.
+
+tags:
+  - os-world
+  - simulated
+  - fifth-adapter
+  - windows
+  - hardening
+
+limits:
+  # The demo needs five iterations: the first pass fails five criteria and cannot judge a sixth, and each
+  # iteration repairs exactly one defect. Ten is the schema's ceiling and the honest ceiling for a loop
+  # that must not be able to run forever.
+  maxIterations: 10
+  maxRuntimeMs: 300000
+  maxCriterionMs: 30000
+
+  # Declared, and reported as `unsupported` - see the context above. Writing `allow` here would be a
+  # claim about a boundary nothing holds: the provisioning program is a real child process and can reach
+  # the network this operator can reach.
+  networkPolicy: deny
+
+  # The application writes inside the sandbox tree through the host path it is handed, and a command
+  # naming a path that climbs out of that tree is refused by the world and recorded as a crossing. So
+  # this is the one boundary policy that is partly real, and it is still not enforcement of the *process*
+  # - which is why the adapter says so rather than quoting this value back as a guarantee.
+  filesystemWrite: sandbox

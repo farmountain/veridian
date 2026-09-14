@@ -1,67 +1,72 @@
 /**
- * The fourth world: a POSIX-like system. And the second one that is explicitly *simulated*.
+ * The fifth world: a Windows or macOS system. The third one that is explicitly *simulated*.
  *
  * ## What is real here, and what is substituted
  *
  * Three things are real and stay real, which is what makes a verdict from this world mean anything:
  *
- * - **The sandbox is a real tree.** A world rooted at `<app>/.sandbox` is a directory with real
- *   files, real contents, real lengths and real SHA-256 hashes. `read()` walks it with `readdir` and
- *   `lstat`; nothing in the reading is invented.
+ * - **The sandbox is a real tree.** A world rooted at `<app>/.sandbox` is a directory with real files,
+ *   real contents, real lengths and real SHA-256 hashes. The reading walks it with `readdir` and
+ *   `lstat`; nothing in it is invented.
  * - **The listeners are real sockets.** A service started in this world binds a real TCP port on
- *   `127.0.0.1`, and `verified` is the answer a real `connect(2)` gave, not a replay of the fact that
- *   `systemctl start` ran. Stopping the service really closes the socket.
+ *   `127.0.0.1`, and `running` is the answer a real `connect(2)` gave, not a replay of the fact that
+ *   `sc start` or `launchctl start` ran. Stopping the service really closes the socket.
  * - **The application process is real.** `start.command` is an ordinary child process with the
  *   operator's own privileges, run through the same `ProcessRunner` the rest of Veridian uses.
  *
- * What is substituted is named in {@link POSIX_SIMULATED_SURFACES} and written into every reading: the
- * kernel, the distribution identity, the package manager and its catalog, the permission decision and
- * egress. The permission decision is the one worth dwelling on, because it is the substitute doing the
- * most work: `0600` on a Windows file is not a fact the host filesystem holds, so this world keeps its
- * own inode record and decides `readable?` from the mode, the owner and the group exactly as
- * `open(2)` would. The reading reports the decision *and* says that the decider was the world.
+ * What is substituted is named in {@link OS_SIMULATED_SURFACES} and written into every reading: the
+ * kernel, the system identity, path semantics, the access decision, the configuration store, the
+ * service manager, egress and the provisioning channel - with `registry` and `preferences` as the
+ * per-family pair. The **access decision** is the substitute doing the most work, and it is worth
+ * dwelling on: Windows has no mode at all, and a macOS mode is not a fact this host's filesystem holds
+ * either, so the world keeps its own security record and reaches a decision from it - one rule written
+ * once for both families. The reading reports the decision *and* the entry that fired, so a criterion
+ * can say *why* a file was refused rather than only that it was.
  *
  * ## The provisioning channel, and why the application is not handed a shell
  *
- * An application cannot make syscalls in a world that has no kernel, so it needs a way to have its
- * work performed. The way here is an argument vector on stdout: `start.command` is a real program
- * that runs, decides, prints one command per line as a JSON array, and the world executes each one
- * through the same register a criterion's `run` step uses. That is the `provisioning` surface, and it
- * is on the substituted list precisely because it is not the real interface between a program and a
- * kernel.
+ * An application cannot make syscalls in a world that has no kernel, so it needs a way to have its work
+ * performed. The way here is an argument vector on stdout: `start.command` is a real program that runs,
+ * decides, prints one command per line as a JSON array, and the world executes each one through the
+ * same register a criterion's `run` step uses. That is the `provisioning` surface, and it is on the
+ * substituted list precisely because it is not the real interface between a program and a kernel.
  *
  * The alternative - handing the application a shell over a socket - was rejected for the reason the
  * cluster adapter refuses to answer anything but its own route list: a shell is a *second*
  * substitution, and every criterion about "was this command run" would then be a question about the
- * shell rather than about the world. The reflective part of the rejection is that a shell would also
- * take away the property this design keeps: the commands are argument vectors, so what the world
- * executes is what the program said, with no word-splitting layer in between to disagree about it.
+ * shell rather than about the world. The commands are argument vectors, so what the world executes is
+ * what the program said, with no word-splitting layer in between to disagree about it.
  *
  * ## What this world may not do
  *
- * It may not report a verdict it cannot justify. There is no syscall interposition, so it can never
- * say "the application could not have touched that file"; it can only say "this file, as this account,
- * with this mode, was readable" - and it says which account and which mode, because those are the two
+ * It may not report a verdict it cannot justify. There is no syscall interposition, so it can never say
+ * "the application could not have touched that file"; it can only say "this file, as this account, with
+ * this entry, was readable" - and it says which account and which entry, because those are the two
  * facts that turn the answer into a claim about a system rather than about this laptop. Every reading
- * carries the distribution the document declared and the account the criteria acted as.
+ * carries the family and the system the document declared, and the account the criteria acted as.
+ *
+ * It also may not let a simulated system be mistaken for an installed one. The world's own identity
+ * file carries `simulated`, every reading carries `simulated`, and the identity is only ever *reported*
+ * as a record - `ver` and `sw_vers` print a line saying so. A criterion may therefore assert on the
+ * declared system, and nothing may assert that a Windows image was installed.
  *
  * ## Why the four refusals are refusals
  *
- * A `posix` world with no declaration has no distribution to report, no account to decide permissions
- * *as*, and no root to build - so every criterion over it would be judged against a system nobody
- * described. The loader already refuses a half-stated declaration; this adapter refuses its absence in
- * `create()`, before anything runs. A world with no `start.command` has no application, and the
- * interesting question ("did the software harden this system?") would be answered by whatever the
- * sandbox happened to hold. A world whose criteria attempted a `run` step the register does not answer
- * gets a `refused` record rather than a thrown error, because a refusal is an observation a criterion
- * may be built on. And `restore()` without a snapshot is refused in `reset()`, naming the alternative,
- * exactly as `local-db` and `sim-k8s` refuse it.
+ * An `os` world with no declaration has no family to report, no account to decide access *as*, and no
+ * root to build - so every criterion over it would be judged against a system nobody described. The
+ * loader already refuses a half-stated declaration; this adapter refuses its absence in `create()`,
+ * before anything runs. A world with no `start.command` has no application, and the interesting question
+ * ("did the software harden this system?") would be answered by whatever the sandbox happened to hold.
+ * A world whose criteria attempted a `run` step the register does not answer gets a `refused` record
+ * rather than a thrown error, because a refusal is an observation a criterion may be built on. And
+ * `restore()` without a snapshot is refused in `reset()`, naming the alternative, exactly as
+ * `local-db`, `sim-k8s` and `sim-posix` refuse it.
  */
 
 import { decodeStep } from "../../core/acceptance/plan.ts";
 import type { Clock, Logger } from "../../core/clarification/types.ts";
-import { POSIX_OBSERVATION_KIND } from "../../core/environment/posix-observation.ts";
-import type { PosixObservationData } from "../../core/environment/posix-observation.ts";
+import { OS_OBSERVATION_KIND } from "../../core/environment/os-observation.ts";
+import type { OsObservationData } from "../../core/environment/os-observation.ts";
 import type {
   ArtifactKind,
   BoundaryCrossing,
@@ -78,10 +83,10 @@ import { EnvironmentError, failure } from "../../core/failure.ts";
 import type { IoPort } from "../../core/io.ts";
 import type { ProcessRunner } from "../../core/process.ts";
 import { runToCompletion } from "../../core/process.ts";
-import { posixPort } from "./posix-port.ts";
-import type { PosixPort } from "./posix-port.ts";
+import { OS_IDENTITY_PATHS, osEscapes, osPort } from "./os-port.ts";
+import type { OsPort } from "./os-port.ts";
 
-export interface SimPosixEnvironmentOptions {
+export interface SimOsEnvironmentOptions {
   readonly io: IoPort;
   readonly clock: Clock;
   readonly logger: Logger;
@@ -89,30 +94,33 @@ export interface SimPosixEnvironmentOptions {
   /** Veridian's state directory, relative to the io root - `.veridian`. Evidence is written under it. */
   readonly stateDir: string;
   /** The substitute host. Injected so the adapter's own behaviour can be tested without a real tree. */
-  readonly port?: PosixPort;
+  readonly port?: OsPort;
   /** How long the application's provisioning program may take. Generous: it is a one-off, not a retry. */
   readonly provisionTimeoutMs?: number;
 }
 
 /**
- * The environment variables a POSIX world hands its application.
+ * The environment variables an operating-system world hands its application.
  *
  * `HOST` is a host path this machine can be opened from, and `ROOT` is the same place as the *world*
- * spells it - because those are genuinely two different names for one directory and the application
- * has to be told both. A program that wrote to `VERIDIAN_POSIX_ROOT` believing it was a sandbox path
- * would create `/etc/veridian` on the C: drive; a program that passed the host path to `chmod` in a
- * `run` step would be refused, because the world's spelling is the only one a criterion may use.
+ * spells it - because those are genuinely two different names for one directory and the application has
+ * to be told both. A program that wrote to `VERIDIAN_OS_ROOT` believing it was a sandbox path would
+ * create `C:\` on the drive Veridian happens to be running from; a program that passed the host path to
+ * `icacls` in a `run` step would be refused, because the world's spelling is the only one a criterion
+ * may use.
  *
- * They are named `VERIDIAN_POSIX_*` rather than `HOME`, `SHELL` or `PATH` on purpose. This world does
- * not have a login environment, and borrowing the real ecosystem's variable names would invite the
- * application to behave as though it had been logged in - which is the one thing a simulated world
- * must not do.
+ * They are named `VERIDIAN_OS_*` rather than `COMPUTERNAME`, `SystemRoot`, `USER`, `HOME`, `PATH` or
+ * `SHELL` on purpose. This world has no login environment, and borrowing the real ecosystem's variable
+ * names would invite the application to behave as though it had been logged in - which is the one thing
+ * a simulated world must not do. The same rule the POSIX world paid for, one family out: a world's
+ * environment is the world's to name.
  */
-export const POSIX_ENV = {
-  host: "VERIDIAN_POSIX_HOST",
-  root: "VERIDIAN_POSIX_ROOT",
-  distribution: "VERIDIAN_POSIX_DISTRIBUTION",
-  user: "VERIDIAN_POSIX_USER",
+export const OS_ENV = {
+  host: "VERIDIAN_OS_HOST",
+  root: "VERIDIAN_OS_ROOT",
+  family: "VERIDIAN_OS_FAMILY",
+  system: "VERIDIAN_OS_SYSTEM",
+  user: "VERIDIAN_OS_USER",
 } as const;
 
 const tail = (text: string, limit = 600): string => {
@@ -122,29 +130,29 @@ const tail = (text: string, limit = 600): string => {
 
 const describe = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const MISSING_POSIX =
-  "this world has no `posix` declaration, and the sim-posix adapter stands in for a POSIX-like " +
-  "system - add `posix: { distribution, user, root }` to the environment document, or use an " +
-  "adapter whose world is a process on a port";
+const MISSING_OS =
+  "this world has no `os` declaration, and the sim-os adapter stands in for a Windows or macOS " +
+  "system - add `os: { family, system, user, root }` to the environment document, or use an adapter " +
+  "whose world is a process on a port, a database file, a cluster or a POSIX system";
 
 const MISSING_START_COMMAND =
-  "this world declares no `start.command`, and the sim-posix adapter will not judge a system it did " +
-  "not let the application provision - a sandbox holding whatever an earlier run left in it is not " +
-  "the world this contract describes";
+  "this world declares no `start.command`, and the sim-os adapter will not judge a system it did not " +
+  "let the application provision - a sandbox holding whatever an earlier run left in it is not the " +
+  "world this contract describes";
 
-export class SimPosixEnvironment implements EnvironmentAdapter {
-  readonly kind = "sim-posix";
+export class SimOsEnvironment implements EnvironmentAdapter {
+  readonly kind = "sim-os";
 
   readonly #plan: EnvironmentPlan;
   readonly #io: IoPort;
   readonly #clock: Clock;
   readonly #logger: Logger;
   readonly #processes: ProcessRunner;
-  readonly #injected: PosixPort | undefined;
+  readonly #injected: OsPort | undefined;
   readonly #provisionTimeoutMs: number;
   readonly #stateDir: string;
 
-  #port: PosixPort | null = null;
+  #port: OsPort | null = null;
   #id: string | null = null;
   /** Whether this world's application has provisioned it in *this* environment's lifetime. */
   #provisioned = false;
@@ -158,7 +166,7 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
    */
   readonly #crossings: BoundaryCrossing[] = [];
 
-  constructor(plan: EnvironmentPlan, options: SimPosixEnvironmentOptions) {
+  constructor(plan: EnvironmentPlan, options: SimOsEnvironmentOptions) {
     this.#plan = plan;
     this.#io = options.io;
     this.#clock = options.clock;
@@ -172,20 +180,23 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
   // ---- lifecycle ------------------------------------------------------------------------------
 
   async create(): Promise<{ readonly id: string }> {
-    const posix = this.#plan.posix;
-    if (posix === null || posix.distribution === "" || posix.user === "" || posix.root === "") {
-      throw new EnvironmentError(MISSING_POSIX);
-    }
+    const os = this.#plan.os;
+    // Only the absence is checked here, and that is not a weaker check - it is the same one stated
+    // once. `OsPlan`'s fields are non-empty by type, and `core/environment/load.ts` refuses a
+    // half-stated block before a plan ever exists, so re-testing emptiness here would be a guard no
+    // code path can trip: a check that cannot fail, written as though it could.
+    if (os === null) throw new EnvironmentError(MISSING_OS);
     if (this.#plan.start.command === "") throw new EnvironmentError(MISSING_START_COMMAND);
 
-    if (this.#id === null) this.#id = `sim-posix:${posix.user}`;
+    if (this.#id === null) this.#id = `sim-os:${os.family}:${os.user}`;
     this.#port =
       this.#injected ??
-      posixPort({ root: this.#hostRoot(), distribution: posix.distribution, user: posix.user });
+      osPort({ root: this.#hostRoot(), family: os.family, system: os.system, user: os.user });
     this.#logger.debug("environment.create", {
       id: this.#id,
-      distribution: posix.distribution,
-      user: posix.user,
+      family: os.family,
+      system: os.system,
+      user: os.user,
       root: this.#hostRoot(),
     });
     return { id: this.#id };
@@ -202,7 +213,7 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
     this.#requireId(id);
     const port = this.#requirePort();
     await port.prepare();
-    this.#logger.debug("environment.start", { id, root: this.#plan.posix?.root ?? "" });
+    this.#logger.debug("environment.start", { id, root: this.#plan.os?.root ?? "" });
     await this.#provisionApplication();
     this.#provisioned = true;
   }
@@ -212,7 +223,7 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
    *
    * Recorded as an explicit no-op rather than an empty body, so a reader can tell "nothing to do" from
    * "not done" - and so the note can name which command did the provisioning, which is what a reader of
-   * `environment.json` wants when a criterion about a missing user fails.
+   * `environment.json` wants when a criterion about a missing account fails.
    */
   async deploy(id: string): Promise<void> {
     this.#requireId(id);
@@ -236,33 +247,52 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
   /**
    * Readiness is a verdict this world reached by looking, not a status code it invented.
    *
-   * Three facts, all of them observed: the sandbox root exists, the world's own `/etc/os-release`
-   * names the distribution the document declared, and - when the document declared one - the
-   * application's own output matched its readiness pattern. `statusCode` is `null` throughout, because
-   * a system has no status to return and inventing `200` here would be the substitution claiming an
-   * HTTP surface it does not have.
+   * Three facts, all of them observed: the world's own identity file exists, it names the family and
+   * the system the document declared, and - when the document declared one - the application's own
+   * output matched its readiness pattern. `statusCode` is `null` throughout, because an operating
+   * system has no status to return and inventing `200` here would be the substitution claiming an HTTP
+   * surface it does not have.
+   *
+   * The identity file is found in the **reading** rather than re-opened by path, and that is deliberate.
+   * The path is a sandbox path - `C:\ProgramData\Veridian\identity.json` - and the io port resolves
+   * against the operator's working directory, so reading it directly would look for
+   * `<cwd>/C:\ProgramData\...` and report the world unbuilt while it was sitting right there. The port
+   * is the thing that knows how to spell a sandbox path to the host, so the port is what is asked.
    */
   async probe(id: string): Promise<HealthProbe> {
     this.#requireId(id);
-    const posix = this.#plan.posix;
-    if (posix === null) return { ok: false, statusCode: null, message: MISSING_POSIX, patternSeen: null };
+    const os = this.#plan.os;
+    if (os === null) return { ok: false, statusCode: null, message: MISSING_OS, patternSeen: null };
 
-    const release = await this.#io.readTextFile(`${posix.root}/etc/os-release`);
-    if (release === null) {
-      return {
-        ok: false,
-        statusCode: null,
-        message: `the sandbox at ${posix.root} holds no /etc/os-release, so the world was never built`,
-        patternSeen: null,
-      };
-    }
-    if (!release.includes(`ID=${posix.distribution}`)) {
+    const identityPath = OS_IDENTITY_PATHS[os.family];
+    const data = await this.#requirePort().read();
+    const identity = data.files.find((file) => file.path === identityPath);
+    if (identity === undefined) {
       return {
         ok: false,
         statusCode: null,
         message:
-          `${posix.root}/etc/os-release does not name ${posix.distribution}, so the sandbox holds a ` +
-          "different system's identity than the one this document declares",
+          `the sandbox at ${os.root} holds no ${identityPath}, so the world was never built`,
+        patternSeen: null,
+      };
+    }
+    let recorded: unknown = null;
+    try {
+      recorded = identity.text === null ? null : JSON.parse(identity.text);
+    } catch {
+      recorded = null;
+    }
+    const named = (field: string): unknown =>
+      typeof recorded === "object" && recorded !== null
+        ? (recorded as Record<string, unknown>)[field]
+        : undefined;
+    if (named("family") !== os.family || named("system") !== os.system) {
+      return {
+        ok: false,
+        statusCode: null,
+        message:
+          `${identityPath} does not name the ${os.family} system \`${os.system}\`, so the sandbox ` +
+          "holds a different system's identity than the one this document declares",
         patternSeen: null,
       };
     }
@@ -282,20 +312,20 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
   }
 
   /**
-   * Photograph the system: the tree copied, the world's bookkeeping beside it, the modes and accounts
-   * included.
+   * Photograph the system: the tree copied, the world's bookkeeping beside it, the security records and
+   * the accounts included.
    *
    * A snapshot of the files alone would not be a snapshot of this world, and the port says why at
-   * length. `0600`, an owner, an installed package and a running service are facts the reading reports
-   * and the world holds; a copy that restored contents while losing the modes would hand back a system
-   * in which every hardening criterion fails for a reason the application never caused.
+   * length. An access record, an owner, a setting and a running service are facts the reading reports
+   * and the world holds; a copy that restored contents while losing the records would hand back a
+   * system in which every hardening criterion fails for a reason the application never caused.
    */
   async snapshot(id: string): Promise<string> {
     this.#requireId(id);
     if (!this.#provisioned) {
       throw new EnvironmentError("this environment has not been started; there is nothing to snapshot");
     }
-    const name = `${id.replace(/[^A-Za-z0-9._-]/g, "-")}-${String(Date.now())}.posix`;
+    const name = `${id.replace(/[^A-Za-z0-9._-]/g, "-")}-${String(Date.now())}.os`;
     const dir = `${this.#snapshotsDir()}/${name}`;
     await this.#io.mkdirp(dir);
     await this.#requirePort().snapshot(dir);
@@ -318,10 +348,10 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
    * the application provision it again.
    *
    * Rebuilding without re-provisioning would leave a world that is clean and a run that reports every
-   * user missing and every service stopped - which reads like an application defect and is an artifact
-   * of the reset. The world's own exec record is deliberately *not* cleared: `posix.ran` is a criterion
-   * about what the run did, and a reset that erased it would destroy the evidence of a violation by
-   * repairing it.
+   * account missing and every service stopped - which reads like an application defect and is an
+   * artifact of the reset. The world's own exec record is deliberately *not* cleared: `os.ran` is a
+   * criterion about what the run did, and a reset that erased it would destroy the evidence of a
+   * violation by repairing it. The boundary crossings are not cleared for the same reason.
    */
   async reset(id: string): Promise<void> {
     this.#requireId(id);
@@ -342,7 +372,7 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
           command,
           args: [],
           cwd: this.#plan.appPath,
-          env: this.#posixEnv(),
+          env: this.#osEnv(),
           onStdout: (chunk) => this.#logger.debug("reset.stdout", { chunk: chunk.trimEnd() }),
           onStderr: (chunk) => this.#logger.warn("reset.stderr", { chunk: chunk.trimEnd() }),
         },
@@ -375,10 +405,10 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
   /**
    * Release the listeners and leave the tree in place.
    *
-   * The root is deliberately not removed. Every artifact a bundle names lives under it - a
-   * `posix.file` reading quotes a path inside it - so deleting it on stop would leave a bundle
-   * describing files that cannot be inspected afterwards. Removal is `destroy()`'s job, and even there
-   * it is the *next* `reset()` that clears it.
+   * The root is deliberately not removed. Every artifact a bundle names lives under it - an `os.file`
+   * reading quotes a path inside it - so deleting it on stop would leave a bundle describing files that
+   * cannot be inspected afterwards. Removal is `destroy()`'s job, and even there it is the *next*
+   * `reset()` that clears it.
    */
   async stop(id: string): Promise<void> {
     this.#requireId(id);
@@ -402,7 +432,7 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
       throw new EnvironmentError("this environment has not been started; call start() before observing it");
     }
     const base = {
-      kind: POSIX_OBSERVATION_KIND,
+      kind: OS_OBSERVATION_KIND,
       capturedAt: this.#clock.iso(),
       environmentId: id,
       runId: request.runId,
@@ -422,7 +452,7 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
           artifacts: [],
           error: failure(
             "VALIDATOR_ERROR",
-            `the sim-posix adapter performs \`run\` steps, and step ${String(unsupported + 1)} of ` +
+            `the sim-os adapter performs \`run\` steps, and step ${String(unsupported + 1)} of ` +
               `${request.criterionId} is \`${step === undefined ? "unknown" : step.kind}\` - the criterion ` +
               "would be judged in a system it never acted on",
           ),
@@ -437,8 +467,8 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
           if (record.result === "refused") {
             // Recorded, not thrown. A refusal is a fact about this world that a criterion is allowed to
             // be built on - and it is warned about as well, because a contract that runs a command this
-            // world does not answer and never reads the refusal would otherwise pass on a system
-            // nothing touched, with nothing in the run to explain it.
+            // world does not answer and never reads the refusal would otherwise pass on a system nothing
+            // touched, with nothing in the run to explain it.
             this.#logger.warn("environment.run", {
               criterionId: request.criterionId,
               argv: step.argv,
@@ -449,7 +479,7 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
         }
       }
 
-      const data: PosixObservationData = await this.#requirePort().read();
+      const data: OsObservationData = await this.#requirePort().read();
       const relativeRunDir = bundleLayout(this.#stateDir, request.runId).runDir;
       const artifacts = await this.#captureEvidence(request, data, relativeRunDir);
       return { ...base, data, artifacts, error: null };
@@ -461,12 +491,12 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
   /**
    * What this world did about the plan's boundaries.
    *
-   * `unsupported` for both, and not silently - the same report `sim-k8s` gives, for the same reason.
-   * This world substitutes the kernel and the package manager, but it does not enforce the *operator's*
-   * network or filesystem policy over the application, because the application is an ordinary child
-   * process with the operator's own privileges: it can open whatever socket and write wherever the
-   * operator can, and a report of `enforced` on the strength of a guard over argument vectors would be
-   * exactly the overclaim the boundary path exists to remove.
+   * `unsupported` for both, and not silently - the same report `sim-k8s` and `sim-posix` give, for the
+   * same reason. This world substitutes the kernel, the configuration store and the access decision,
+   * but it does not enforce the *operator's* network or filesystem policy over the application, because
+   * the application is an ordinary child process with the operator's own privileges: it can open
+   * whatever socket and write wherever the operator can, and a report of `enforced` on the strength of
+   * a guard over argument vectors would be exactly the overclaim the boundary path exists to remove.
    *
    * The crossings list is reported even when empty, because here its emptiness means one specific
    * thing - the sandbox root was never climbed out of - and a reader has to be able to pair it with the
@@ -491,7 +521,7 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
    */
   async #captureEvidence(
     request: ObservationRequest,
-    data: PosixObservationData,
+    data: OsObservationData,
     relativeRunDir: string,
   ): Promise<readonly EvidenceArtifact[]> {
     const id = request.criterionId;
@@ -509,7 +539,7 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
 
     if (data.execs.length > 0) {
       // The transcript, on its own, because this is the artifact a human reads when a criterion about a
-      // missing user fails: the reading says the account is absent, and the transcript says which
+      // missing account fails: the reading says the account is absent, and the transcript says which
       // commands the run issued and which of them this world refused to answer.
       await write(
         `${BUNDLE_FILES.artifacts}/${id}.execs.json`,
@@ -530,7 +560,7 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
         criterionId: id,
         kind,
         note:
-          `the sim-posix adapter writes ${produces} artifacts for a criterion and cannot produce ` +
+          `the sim-os adapter writes ${produces} artifacts for a criterion and cannot produce ` +
           `\`${kind}\`; the criterion will report the artifact as missing rather than being handed a substitute`,
       });
     }
@@ -559,7 +589,7 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
       command,
       args,
       cwd: this.#plan.appPath,
-      root: this.#plan.posix?.root ?? "",
+      root: this.#plan.os?.root ?? "",
     });
 
     const result = await runToCompletion(
@@ -568,7 +598,7 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
         command,
         args,
         cwd: this.#plan.appPath,
-        env: this.#posixEnv(),
+        env: this.#osEnv(),
         onStdout: (chunk) => this.#logger.debug("provision.stdout", { chunk: chunk.trimEnd() }),
         onStderr: (chunk) => this.#logger.warn("provision.stderr", { chunk: chunk.trimEnd() }),
       },
@@ -602,7 +632,7 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
           `${String(result.code)}: ${tail(result.stderr)}`,
       );
     }
-    // A declared readiness pattern is honoured here as it is in the other three adapters: it is the
+    // A declared readiness pattern is honoured here as it is in the other four adapters: it is the
     // application's own signal that it finished. Checked against the *combined* output, because a
     // provisioning program that narrates to stderr is ordinary and a pattern is not a channel.
     if (readyPattern !== null && !new RegExp(readyPattern).test(`${result.stdout}\n${result.stderr}`)) {
@@ -640,18 +670,18 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
           note: "the provisioning program asked for a command this world does not answer",
         });
       }
-      if (record.result === "refused" && argv.some((token) => token.split("/").includes(".."))) {
+      if (record.result === "refused" && argv.slice(1).some((token) => this.#escapes(token))) {
         // The one boundary this world holds, and one the application can cross.
         //
         // `filesystemWrite` is the choice of two members the boundary vocabulary offers: it is the
         // operator's (`network`, `filesystemWrite`), and a path that climbs out of the sandbox root is
         // the filesystem one. The verdict does not depend on that name being a perfect fit, because the
-        // `subject` carries the whole argument vector, so a reader sees `cat` from `chmod` and knows
+        // `subject` carries the whole argument vector, so a reader sees `type` from `icacls` and knows
         // which it was.
         //
-        // Only the *application's* escapes are crossings. A criterion is the operator's own document
-        // and the operator already has these privileges, so a criterion's escape is a reading - it is
-        // filed as a `refused` exec and a contract is free to assert that this world held - whereas the
+        // Only the *application's* escapes are crossings. A criterion is the operator's own document and
+        // the operator already has these privileges, so a criterion's escape is a reading - it is filed
+        // as a `refused` exec and a contract is free to assert that this world held - whereas the
         // application is the untrusted party this whole layer exists to contain, and generated code
         // reaching for the host's filesystem is a safety event, not a reading. That asymmetry is the
         // point: `safetyState` fails the run on a crossing, and a run whose criterion probes the guard
@@ -667,39 +697,58 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
   }
 
   /**
+   * Whether one argument climbs out of the sandbox - asked of the port, never decided here.
+   *
+   * The port refuses the command and this adapter records the crossing, and both have to agree on what
+   * "out" means. Written twice, the two would agree on `..` and disagree the first time a token named
+   * another drive, so the rule is imported. A second implementation of one rule is a claim about
+   * agreement that nothing checks.
+   */
+  #escapes(token: string): boolean {
+    const os = this.#plan.os;
+    return os !== null && osEscapes(os.family, token);
+  }
+
+  /**
    * The sandbox as a path *this machine* opens it by, resolved once, for the port and the application.
    *
    * Two readers reach the sandbox by two different routes and only one of them is a directory the
    * process happens to be standing in. The port resolves a relative `root` against **the io root**,
    * because that is what every `node:fs` call behind it does; the application is a *separate* process
    * spawned with `cwd` set to the application's own directory, so the same relative string handed to it
-   * resolves against **that**. One document, one string, two trees - the world rebuilt one while the
-   * application provisioned another beside it, and the criteria reported a system the application's
-   * files were missing from. `HOST` says "a path this machine can open", and a path with no root is not
-   * that. `ROOT` is the world's own spelling and stays exactly what it is.
+   * resolves against **that**. One document, one string, two directories - so the world rebuilt one tree
+   * while the application provisioned another beside it, and the criteria reported a system the
+   * application's files were missing from. The application was not at fault and neither was the port: a
+   * path handed to a second process is only ever absolute or ambiguous, and `HOST` promises a place this
+   * machine can be opened from. `ROOT` is the world's own spelling and stays exactly what it is, because
+   * a criterion may only name that one.
    *
    * Resolved through the io port and not against `appPath`: `core/environment/load.ts` has already
    * turned a document's `root` into a path relative to the io root, so resolving it a second time would
-   * build `app/app/.sandbox` - a world in the wrong place that still passes every criterion, because
-   * the port and the application would agree on where the wrong place is. `IoPort#resolve` is used
-   * rather than `node:path` because it is the port's own spelling of a path in its filesystem, absolute
-   * whenever its root is - which is the property `HOST` promises and the only one that matters here.
+   * build `app/examples/sim-os/app/sandbox` - a world in the wrong place that still passes every
+   * criterion, because the port and the application agree on where the wrong place is. Nothing in a
+   * contract says where its world lives, so only the derivation can be wrong, and this is the one.
+   * `IoPort#resolve` rather than `node:path`: it is the port's own spelling of a path in its filesystem,
+   * absolute whenever its root is, which is the property `HOST` promises.
    */
   #hostRoot(): string {
-    const posix = this.#plan.posix;
-    if (posix === null) throw new EnvironmentError(MISSING_POSIX);
-    return this.#io.resolve(posix.root);
+    const os = this.#plan.os;
+    if (os === null) throw new EnvironmentError(MISSING_OS);
+    return this.#io.resolve(os.root);
   }
 
-  #posixEnv(): Readonly<Record<string, string>> {
-    const posix = this.#plan.posix;
-    if (posix === null) throw new EnvironmentError(MISSING_POSIX);
+  #osEnv(): Readonly<Record<string, string>> {
+    const os = this.#plan.os;
+    if (os === null) throw new EnvironmentError(MISSING_OS);
     return {
       ...this.#plan.env,
-      [POSIX_ENV.host]: this.#hostRoot(),
-      [POSIX_ENV.root]: "/",
-      [POSIX_ENV.distribution]: posix.distribution,
-      [POSIX_ENV.user]: posix.user,
+      [OS_ENV.host]: this.#hostRoot(),
+      // The world's own spelling of its own root, which is not the host path above. This is the value a
+      // `run` step may name and the one a criterion's expectation may quote.
+      [OS_ENV.root]: os.family === "windows" ? "C:\\" : "/",
+      [OS_ENV.family]: os.family,
+      [OS_ENV.system]: os.system,
+      [OS_ENV.user]: os.user,
     };
   }
 
@@ -712,8 +761,8 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
    * The output of the most recent provisioning run.
    *
    * Held rather than read back out of the port, because the port's record is a *reading* of what
-   * happened and `probe()` needs the text a readiness pattern is matched against. It is assigned at
-   * the end of `#provisionApplication()` and nowhere else, so it can never describe a run that did not
+   * happened and `probe()` needs the text a readiness pattern is matched against. It is assigned at the
+   * end of `#provisionApplication()` and nowhere else, so it can never describe a run that did not
    * happen.
    */
   #lastProvisioning: readonly string[] = [];
@@ -722,7 +771,7 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
     return `${this.#stateDir}/snapshots`;
   }
 
-  #requirePort(): PosixPort {
+  #requirePort(): OsPort {
     const port = this.#port;
     if (port === null) {
       throw new EnvironmentError("this environment has not been created; call create() first");
@@ -743,10 +792,10 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
 /**
  * One line of the provisioning program's output, as an argument vector - or `null` when it is not one.
  *
- * `null` rather than a throw, and an empty vector rather than a `[""]`: a command with no program in
- * it is not a command, and executing it would file a record nobody could read. The caller turns both
- * into a warning naming the line, because "the program printed something else" is a fact about the
- * program that a human should see rather than an exception the run should die on.
+ * `null` rather than a throw, and an empty vector rather than a `[""]`: a command with no program in it
+ * is not a command, and executing it would file a record nobody could read. The caller turns both into a
+ * warning naming the line, because "the program printed something else" is a fact about the program that
+ * a human should see rather than an exception the run should die on.
  */
 function parseCommandLine(line: string): readonly string[] | null {
   let parsed: unknown;

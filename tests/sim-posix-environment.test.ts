@@ -49,6 +49,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => ({
   databasePath: null,
   cluster: null,
   posix: { distribution: "veridian-simulated-linux", user: "app", root: "app/.sandbox" },
+  os: null,
   health: { path: null, expectStatus: null, timeoutMs: 5_000, intervalMs: 10, readyPattern: null },
   reset: { strategy: "restart", command: null },
   browser: { enabled: false, viewport: { width: 1280, height: 720 }, locale: null, timezoneId: null },
@@ -437,7 +438,17 @@ describe("the application provisions the world through vectors the world really 
   it("hands the application both spellings of the sandbox root and no borrowed variable names", async () => {
     const { processes } = await ready();
     const env = processes.calls[0]?.env ?? {};
-    assert.equal(env[POSIX_ENV.host], "app/.sandbox", "the host path is how this machine opens the tree");
+    // Absolute, and this is the assertion that matters rather than a formatting preference. The
+    // application is a *separate* process spawned with `cwd` set to its own directory, so a relative
+    // `HOST` resolves against that directory while every `node:fs` call inside the port resolves the
+    // same string against the io root - one string, two trees, and the world's reading holds a system
+    // the application did not write. The declared `root` is relative (`app/.sandbox`) and the host
+    // path is the io root's answer for it.
+    assert.equal(
+      env[POSIX_ENV.host],
+      "/virtual/app/.sandbox",
+      "the host path has to be one this machine can open from anywhere",
+    );
     assert.equal(env[POSIX_ENV.root], "/", "the world's own spelling of the same place");
     assert.equal(env[POSIX_ENV.distribution], "veridian-simulated-linux");
     assert.equal(env[POSIX_ENV.user], "app");
