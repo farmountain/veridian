@@ -201,6 +201,13 @@ Full protocol: [`.github/skills/hipcortex-memory`](./.github/skills/hipcortex-me
 - **Cross-platform scripts only.** POSIX-only shell in `package.json` scripts (`rm -rf`,
   `export X=1`, `$(...)`) fails here with `NamedParameterNotFound`/`CommandNotFoundException`.
   Use `rimraf`/`cross-env`, or put the logic in a Node/Python script file.
+- **A native command's stderr is rendered as a red `NativeCommandError` block, and the CLI writes to
+  stderr on purpose.** `cli/support.ts` sends every log line there and nothing to stdout, deliberately:
+  the run's result is a file and stdout is the summary a caller reads, so progress chatter in stdout
+  would make the one machine-readable stream on the command line machine-unreadable. PowerShell 5.1
+  does not distinguish that from a crash, so `npm run demo` prints an `At line:1 char:1` frame and a
+  `RemoteException` wrapped around a line that says `veridian info: ...`. It is not a failure - read
+  the **exit code**, not the paragraphs. Do not "fix" this by moving logs to stdout.
 - **No polling.** Run long-lived processes in the background and continue; do not `Start-Sleep`.
 
 ## Layout
