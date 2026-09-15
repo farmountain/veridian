@@ -36,6 +36,7 @@ const plan: EnvironmentPlan = {
   dependencyInstall: null,
   start: { command: "node", args: ["serve.mjs"], readyPattern: null },
   url: "http://127.0.0.1:4173",
+  api: null,
   databasePath: null,
   cluster: null,
   posix: null,

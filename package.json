@@ -45,6 +45,7 @@
     "demo:cloud": "node examples/sim-cloud/demo.ts",
     "demo:container": "node examples/sim-container/demo.ts",
     "demo:vscode": "node examples/sim-vscode/demo.ts",
+    "demo:api": "node examples/local-api/demo.ts",
     "demo:no-browser": "node examples/shopping-cart/demo.ts --browser none",
     "e2e:install": "node scripts/e2e-install.mjs",
     "e2e": "node examples/shopping-cart/demo.ts --browser playwright"

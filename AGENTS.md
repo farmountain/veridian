@@ -38,8 +38,13 @@ instructions file for this workspace — do not add a second one
 > commands, invocations, settings, status items, output channels, messages, subscriptions and the
 > calls it refuses. Judged on those records, with no editor, no window and no installed VS Code
 > anywhere in the loop. Its only evidence kind is `json`, and `snapshot-restore` is refused by name.
-> `npx tsc --noEmit` is silent and `node --test` reports 1615 passing tests -
-> Veridian's own 1551 plus the 64 the VS Code Cockpit contributes, which the root runner discovers
+> `local-api` is the ninth and the first that is **not simulated at all**: a real service is started
+> as a real child process and judged through its own HTTP interface over loopback, with nothing
+> rendered and nothing stood in - so its reading carries no `simulated` field and its contract, rather
+> than the application's own traffic, is what makes the requests. It reuses the `call` step the sixth
+> world introduced, which is why a world with no new capability still needed no core change.
+> `npx tsc --noEmit` is silent and `node --test` reports 1704 passing tests -
+> Veridian's own 1640 plus the 64 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Four distribution routes ship - a clone, an npm package, the Cockpit (as
 > a development install and as a `.vsix`), and a container image - and there is still **no
 > build step between the source tree and the running program**: Node 22 strips types and runs `.ts`
@@ -294,7 +299,11 @@ core/environment/       EnvironmentAdapter interface + Environment Manager (life
                         observation.ts for the extension-host family (the eighth, and the sixth
                         reason that rule holds, and the one that carries the reference grammar, the
                         renderings the validators compare, the seven simulated surfaces and the
-                        vocabulary for a call the world refuses) + the boundary
+                        vocabulary for a call the world refuses) + api-observation.ts for the HTTP
+                        service family (the ninth, and the seventh reason that rule holds, and the
+                        one that carries the exchange record, the pointer reader and the renderings a
+                        non-browser reading needs - so a family whose world is entirely real still
+                        needs no core change) + the boundary
                         vocabulary (BoundaryPolicy/BoundaryReport) that keeps a declared safety limit
                         from being mistaken for an enforced one.
 core/evidence/          Evidence Engine. Writes the run bundle.
@@ -377,6 +386,18 @@ adapters/sim-vscode/    SimVSCodeEnvironment - the sixth SIMULATED world, and th
                         the four `VSCODE_ENV` names the application reads. Its only evidence kind
                         is `json` - there is no page to screenshot - and `snapshot-restore` is
                         refused by name rather than downgraded to a restart.
+adapters/local-api/     LocalApiEnvironment - the ninth world, and the first that is NOT simulated
+                        at all. It starts a real service as a real child process, waits for the
+                        readiness line the service prints on stdout, and then puts the CONTRACT's own
+                        requests to it over loopback - so a criterion asks the service directly rather
+                        than inferring its answer from the application's traffic, and what it reads
+                        back is the real status line, the real headers, the real byte count and a
+                        pointer into the real body. `api-port.ts` is the client (the global `fetch`, a
+                        timeout, and a client that never throws - a timeout is an observation, not a
+                        crash) and `local-api-environment.ts` is the adapter, which refuses a request
+                        aimed outside the service's own origin by name. It reuses the sixth world's
+                        `call` step and adds none of its own, and it is the one world whose reading
+                        carries no `simulated` field at all: nothing is stood in.
 validators/playwright/  Playwright web validators (element, visible, value, text, count, url,
                         console.clean, network.ok).
 validators/database/    Database validators (table, column, count, value). Judge a reading in
@@ -433,6 +454,19 @@ validators/vscode/      Extension-host validators (host, identity, engine, activ
                         are the checks that keep the substitution honest: a manifest whose `main`
                         escapes the extension's own directory is refused, and `engines.vscode` is
                         evaluated against the `apiVersion` the document declares.
+validators/api/         HTTP-service validators (service, exchange, status, header, body, bytes,
+                        json, log). Judge a reading in core/environment/api-observation.ts - the
+                        ninth family, and the seventh reason that rule holds. It has no new step
+                        kind: every criterion in the world makes its requests with `call`, which the
+                        sixth world introduced. Three target grammars live in one family on purpose,
+                        because the subjects are different kinds of thing: a bare 1-based position
+                        addresses one exchange (`api.status`, `api.body`, `api.bytes`,
+                        `api.exchange`), `<position>:<header-name>` addresses one header of one
+                        exchange split at the first colon (`api.header`), and
+                        `<position>/<json-pointer>` addresses one value inside one body (`api.json`),
+                        so a contract can pin `1/WIDGET/unitPriceCents` without a deep comparison of
+                        the whole document. `api.log` reads what the service printed on stdout or
+                        stderr, which is the one part of a service's behaviour no response carries.
 cli/                    The interface that exists today: arguments, support, worlds.ts (the adapter
                         register and the requirements each adapter declares), veridian.ts.
 schemas/                goal/acceptance/environment/run/result/ambiguity .schema.json - the
@@ -480,6 +514,15 @@ examples/sim-vscode/    The eighth demo, and the sixth simulated one: a real ext
                         extension kept, the line it logged, the message it showed and the status
                         item it wrote - and the defects are repaired in criterion order, so the
                         failing count descends `4 -> 3 -> 2 -> 1 -> 0`.
+examples/local-api/     The ninth demo, and the first whose world is entirely REAL: a real service
+                        is started and judged through its own HTTP interface over loopback, with no
+                        page, no substitute and nothing rendered. Four defects, eight criteria, and
+                        the same FAIL -> repair -> PASS loop. D2 and D3 are the controls - each is
+                        read by exactly one criterion, so a reader watches one edit move one reading
+                        before watching D1 move two (`AC-002` and `AC-003`) and D4 move two (`AC-006`
+                        and `AC-007`). `AC-001` and `AC-008` never move at all, which is what says
+                        the other six moved because of the edits rather than because the world is
+                        flaky. Measured progression: `6 -> 4 -> 3 -> 2 -> 0` over five iterations.
 examples/defect-text.ts One implementation of the CRLF rule for a textual overlay on a source file.
                         Two demos injecting defects is two chances to teach the rule differently;
                         a third copy is where the rule gets broken.
@@ -506,12 +549,19 @@ defect as a validator that reports a pass it did not observe.
 
 There is deliberately **no `acceptance/` directory.** `docs/IMPLEMENTATION-PLAN.md` §5 and step 9 of
 its execution order call for `acceptance/veridian-mvp.yaml` - Veridian judged by its own tool. It
-cannot be written inside the MVP, and the finding is recorded rather than the attempt made: the only
-registered adapter is `local-web` and all eight registered validators are browser observations, so a
-contract about a CLI would make every criterion `INCONCLUSIVE` and exit 2 - the same defect as
-`--browser none` on the canonical demo. Dogfooding therefore needs a **non-web** adapter or
-validator, which the scope boundary forbids building speculatively. Veridian's own self-validation is
-its `node --test` suite, which `npm run gate` runs.
+could not be written inside the MVP, and the finding is recorded rather than the attempt quietly
+dropped: at the time, the only registered adapter was `local-web` and all eight registered validators
+were browser observations, so a contract about a CLI would have made every criterion `INCONCLUSIVE`
+and exited 2 - the same defect as `--browser none` on the canonical demo.
+
+**That reason is now spent, and the file has to say so rather than keep quoting it.** Nine adapters
+are registered, eight of them need no browser, and `local-api` is precisely the "non-web adapter" this
+paragraph said the scope boundary forbade building speculatively - it was not built speculatively, it
+was built because a world whose subject is an HTTP contract is inside the boundary, and once it
+existed a non-browser contract about a program became expressible. So the honest statement is no
+longer "it cannot be written" but **"it has not been written"**. Veridian's own self-validation is
+still its `node --test` suite, which `npm run gate` runs, and a `acceptance/veridian-mvp.yaml` remains
+the next piece of dogfooding rather than a blocked one.
 
 `.veridian/` is created at runtime and is not committed.
 
@@ -574,8 +624,8 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 1615 tests, ~5s. No directory argument.
-                           # 1615 = the root's own 1551 + the Cockpit's 64, because the runner walks
+node --test                # the whole suite. 1704 tests, ~5s. No directory argument.
+                           # 1704 = the root's own 1640 + the Cockpit's 64, because the runner walks
                            # the tree and reaches extension/vscode/src/*.test.ts. Neither figure is
                            # the whole story on its own: the root tsconfig EXCLUDES extension/**, so
                            # `npx tsc --noEmit` here does not typecheck the Cockpit and the root gate
@@ -683,6 +733,13 @@ npm run demo:container                      # the seventh demo, and the fifth si
                                             # and is judged on the records it holds. No Docker, no
                                             # daemon and no image anywhere in the loop. Exit 0 when it
                                             # passes: measured, 5 iterations and 27/27 criteria.
+npm run demo:api                            # the ninth demo, and the first whose world is NOT
+                                            # simulated: a real service is started and judged through
+                                            # its own HTTP interface over loopback, with the contract
+                                            # rather than the application making the requests. No
+                                            # page, no substitute, nothing rendered. Exit 0 when it
+                                            # passes: measured, 5 iterations and 8/8 criteria, with
+                                            # the failing count descending 6 -> 4 -> 3 -> 2 -> 0.
 npm run demo:no-browser                     # the same demo with `--browser none`. Every criterion is
                                             # a browser observation, so this must end INCONCLUSIVE
                                             # (exit 2). It shows the refusal, not the aha.
@@ -1558,7 +1615,7 @@ port had none, which is why the defect reached a demo run.
   register.** `README.md` said a step is "one of seven kinds" while `core/acceptance/steps.ts` holds
   **eleven** in `STEP_KINDS` - a figure that had drifted through four new worlds without anything
   reading it. The same pass found `AGENTS.md` quoting `1273` tests and `1213` of the tree's own, where
-  the measured run was `1456` and `1396` - and the count stands at `1615` and `1551` as this is
+  the measured run was `1456` and `1396` - and the count stands at `1704` and `1640` as this is
   written, which is the rule demonstrating itself. *Both are the same defect as a roster printed in a
   document: a number is a claim about the code, and the cheapest way to hold it is to read the code -
   the difference is that a number cannot be pinned by a test the way a name can, so it has to be
@@ -1687,3 +1744,30 @@ auto-attaches to `**/*.ts`. It was written from the flags in `tsconfig.json` and
 tree already holds rather than from a preference, because a style guide invented for a codebase that
 already has a style is a second rulebook rather than a description.
 
+- **A `replace_string_in_file` whose `oldString` and `newString` are identical fails with "Input and
+  output are identical", and that is the tool doing its job.** It happened in this session twice: the
+  new text was a copy of the *result* of a previous insert rather than the intended change, so
+  submitting it would have been a no-op that read as an edit. **A diff that is not a diff is not an
+  edit** - and the failure is the only thing that says so, because both halves of the call looked
+  correct. Copy the `oldString` out of the file and compose the `newString` from the intent, then read
+  the two side by side before submitting.
+
+- **A documentary guard's extension point can be a row that must be *split*, and the row that hides
+  two worlds is the row that hides both.** `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` section 5 carried
+  ``| `local-api` / `local-process` | real child process, real HTTP | - | planned (Phase D) |`` - one
+  row naming two worlds, one of which was about to become **built**. Adding a row would have left a
+  duplicate; editing the status would have claimed `local-process` was built. The row had to be
+  **divided** before either fact could be stated. Its sibling: the guard's second question - *a world
+  the document calls **built** may not print a backticked surface no constant declares* - is only
+  exercised when a **real** world becomes built, and `local-api` is the first such world, so the probe
+  in this session was the first time that branch *could* fail. *A guard with three extension points
+  has three ways to fall behind: the import, the table entry, and the row that was never made.*
+
+- **A `run` step's payload is `argv` in the engine and a bare array of strings in the schema, so a
+  contract author and the code that reads their contract spell the same step two different ways.** The
+  engine declares `{ kind: "run"; argv: readonly string[] }` (`core/acceptance/steps.ts`), while
+  `acceptance.schema.json` expresses the step as `"run": { "type": "array", "items": { "type": "string" } }`.
+  There is no `command` anywhere - not in the schema and not on the parsed step - so reading `.command`
+  yields `undefined` for every provisioner vector, which presents as a world that reports "no command
+  was issued" for a program that issued fifteen. *The schema is the half a contract author reads and the
+  type is the half the engine reads, and neither one can see the other's spelling.*

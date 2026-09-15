@@ -214,6 +214,29 @@ describe("environment gaps: HTTP questions are not asked of a world with no HTTP
     assert.ok(raised.includes("/url"), "a world with no stated address must still be asked for one");
     assert.ok(raised.includes("/health/path"), "a web world's health path is derivable and must be recorded");
     assert.ok(raised.includes("/browser/enabled"), "a web world's browser is derivable and must be recorded");
+
+    // And the same question asked of the **register** rather than of `local-web`, because the two
+    // directions of one predicate are one property: every world whose own declaration names none of
+    // the seven no-HTTP shapes must be asked for an address, and a world that is silently skipped is
+    // the `sim-k8s` abort one family out with its sign flipped. `local-api` is the world that made
+    // this necessary - it is the first world that is *real* and reached over a socket, so the only
+    // thing that distinguishes it from a `local-db` is the shape its requirement names, and a
+    // hand-written list of HTTP worlds would be a second opinion about that.
+    const socketWorlds: string[] = [];
+    for (const descriptor of adapterDescriptors()) {
+      const shapes = new Set(descriptor.requires.map((requirement) => requirement.field.split(".")[0] ?? ""));
+      if (NO_HTTP_KEYS.some((key) => shapes.has(key))) continue;
+      socketWorlds.push(descriptor.kind);
+      assert.ok(
+        paths(skeleton(descriptor.kind)).includes("/url"),
+        `${descriptor.kind} names none of the no-HTTP shapes and was not asked for an address`,
+      );
+    }
+    assert.deepEqual(
+      [...socketWorlds].sort(),
+      ["local-api", "local-web"],
+      "every world reached over a socket, derived from the register rather than listed",
+    );
   });
 
   it("does not treat a stated url as if it were absent", () => {

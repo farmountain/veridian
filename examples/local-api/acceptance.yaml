@@ -1,0 +1,290 @@
+# The contract: eight deterministic acceptance criteria over one HTTP service.
+#
+# Every step below is a `call` - the sixth step kind, and the only one that puts *this criterion's own*
+# request to the world rather than reading a request the application made. That is why the cloud world
+# and this one admit it and the other seven refuse it by name: here the application *is* the interface,
+# so a criterion asks it directly. It also means this contract cannot be re-pointed at a world whose
+# subject is a page or a file, which is the refusal working as intended.
+#
+# Read the targets as a grammar, because there are three of them in one family and each is refused
+# with its own message:
+#
+#   `api.service`                  no target at all - the service identity is the reading's, not a
+#                                  request's
+#   `api.status`, `api.body`,      a 1-based position naming which `call` in this criterion's list is
+#   `api.bytes`, `api.exchange`    meant, written as a string
+#   `api.header`                   `<position>:<header-name>`, split at the first colon
+#   `api.json`                     `<position>/<json-pointer>`, so `1/WIDGET/unitPriceCents` reads the
+#                                  widget's price out of the first request's body
+#
+# `goal_id` is declared and is not optional in practice: it is what the cross-goal contradiction guard
+# reads, and a contract without one leaves that guard dormant - the check that stops one goal's
+# criteria being evaluated against another goal's environment would have nothing to deny.
+
+version: 1
+goal_id: local-api
+
+criteria:
+  # ---------------------------------------------------------------------------------------------
+  # AC-001 - the service identifies itself, and it is the service this goal is about.
+  #
+  # This is the criterion every other one stands on, and it earns that position by being the only one
+  # whose failure means the world itself is wrong rather than the application. Its first expectation
+  # is the whole reason this adapter declares a requirement: a service name is what every reading
+  # carries, and the adapter compares the name the process announced against the name the plan stated,
+  # so "a different server answered on that port" is refused before any criterion is judged.
+  #
+  # The byte count is not decoration. The health body is a fixed literal in the service, so its length
+  # is a fixed fact, and a rendering that grew a field would move the count and the pointer together -
+  # which is two readings of one change, and the reason both are stated.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-001
+    description: the service announces itself as cart-api and answers a health request with 200
+    steps:
+      - call:
+          method: GET
+          path: /health
+    expect:
+      - validator: api.service
+        equals: cart-api
+        message: the service that answered is not the service this goal names
+      - validator: api.status
+        target: "1"
+        equals: 200
+        message: the health route did not answer 200
+      - validator: api.header
+        target: "1:content-type"
+        contains: application/json
+        message: the health response was not declared as JSON
+      - validator: api.json
+        target: "1/service"
+        equals: cart-api
+        message: the health body named a service other than cart-api
+      - validator: api.json
+        target: "1/status"
+        equals: ok
+        message: the health body did not report ok
+      - validator: api.bytes
+        target: "1"
+        equals: 37
+        message: the health body is no longer the fixed rendering this contract was written against
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-002 - money: the catalog's dollar strings, stated as whole cents.
+  #
+  # Two items are read, not one, because the conversion is a single function every price passes
+  # through. An edit to it moves both items here and the cart's total in AC-003, and that is a genuine
+  # consequence of a shared surface rather than a defect the contract arranged.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-002
+    description: an item's price is stated in whole cents, converted from the catalog's dollars
+    steps:
+      - call:
+          method: GET
+          path: /items
+    expect:
+      - validator: api.status
+        target: "1"
+        equals: 200
+        message: the catalog route did not answer 200
+      - validator: api.json
+        target: "1/WIDGET/unitPriceCents"
+        equals: 1000
+        message: the widget's unit price was not the catalog's $10.00 in cents
+      - validator: api.json
+        target: "1/GADGET/unitPriceCents"
+        equals: 2500
+        message: the gadget's unit price was not the catalog's $25.00 in cents
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-003 - the total is answered from the quantities the cart holds.
+  #
+  # 2 x 1000 + 3 x 2500 + 6 x 500 = 12500. The number is derivable from the catalog and the cart, so
+  # this criterion asserts arithmetic rather than a constant somebody typed twice - and it is a
+  # *second* reading of the same conversion AC-002 reads, which is why one defect moves both.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-003
+    description: the cart's total is the sum of its quantities at the catalog's prices, in cents
+    steps:
+      - call:
+          method: GET
+          path: /cart/total
+    expect:
+      - validator: api.status
+        target: "1"
+        equals: 200
+        message: the total route did not answer 200
+      - validator: api.json
+        target: "1/totalCents"
+        equals: 12500
+        message: the cart total was not the sum of its quantities at the catalog's prices
+      - validator: api.json
+        target: "1/currency"
+        equals: USD
+        message: the total did not name the currency it was stated in
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-004 - a creation is answered 201, and the item created is really there afterwards.
+  #
+  # The second request is what makes this a creation rather than a status code: a service that
+  # answered 201 and stored nothing would pass a single-request criterion. It reads the *name* back
+  # rather than the price, and that is a deliberate choice rather than a convenience - the price
+  # travels through the same conversion AC-002 and AC-003 read, so asserting it here would make this
+  # criterion fail whenever the money is wrong, and the defect table's separation between "the
+  # creation status is wrong" and "the money is wrong" would collapse into a single reading. A name is
+  # a fact only this criterion can see.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-004
+    description: creating an item is answered 201 and the item is readable afterwards
+    steps:
+      - call:
+          method: POST
+          path: /items
+          body: '{"sku":"DOODAD2","name":"Doodad 2","unitPriceCents":750,"quantityOnHand":4,"reorderLevel":2}'
+      - call:
+          method: GET
+          path: /items/DOODAD2
+    expect:
+      - validator: api.status
+        target: "1"
+        equals: 201
+        message: creating an item was not answered 201
+      - validator: api.json
+        target: "1/sku"
+        equals: DOODAD2
+        message: the created response did not name the sku that was sent
+      - validator: api.status
+        target: "2"
+        equals: 200
+        message: the item that was just created could not be read back
+      - validator: api.json
+        target: "2/name"
+        equals: Doodad 2
+        message: the item read back did not hold the name it was created with
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-005 - an absence is answered 404, and the refusal names what is absent.
+  #
+  # Two readings of one refusal, and they are not redundant: the status is the API's verdict and the
+  # body is its evidence. A service that answered 404 with an empty body would tell a client that
+  # something was missing and not what - which is the same defect this repository already paid for
+  # once, at the sixth world's substitute, where a refusal with an empty body was an observation
+  # nobody could read.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-005
+    description: an unknown sku is refused with 404 and a body naming the sku that is absent
+    steps:
+      - call:
+          method: GET
+          path: /items/NOPE
+    expect:
+      - validator: api.status
+        target: "1"
+        equals: 404
+        message: an unknown sku was not refused with 404
+      - validator: api.body
+        target: "1"
+        contains: no item with sku NOPE
+        message: the refusal did not name the sku that is absent
+      - validator: api.bytes
+        target: "1"
+        equals: 34
+        message: the refusal body is no longer the fixed rendering this contract was written against
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-006 - every response states the one version the service declares.
+  #
+  # Read on the catalog route, and read again on the created response in AC-007, because the header
+  # comes from a single response helper. That is what makes this pair the second place where one edit
+  # is read twice: the version is a property of the *service*, and a criterion that only ever asked
+  # one route would have described it as a property of a route.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-006
+    description: a catalog response states the service's declared version in a header
+    steps:
+      - call:
+          method: GET
+          path: /items
+    expect:
+      - validator: api.status
+        target: "1"
+        equals: 200
+        message: the catalog route did not answer 200
+      - validator: api.header
+        target: "1:x-cart-version"
+        equals: "2"
+        message: the catalog response did not carry the version the service declares
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-007 - the same header travels on a created response, and on a second route in one criterion.
+  #
+  # Deliberately silent about the status codes, which AC-004 and AC-003 already judge: a criterion
+  # that asserted them too would move with a defect that has nothing to do with headers, and the
+  # defect table's separation between "the creation status is wrong" and "the version is wrong" would
+  # collapse into one reading.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-007
+    description: the declared version travels on a created response and on the total route
+    steps:
+      - call:
+          method: POST
+          path: /items
+          body: '{"sku":"GADGET2","name":"Gadget 2","unitPriceCents":1900,"quantityOnHand":1,"reorderLevel":1}'
+      - call:
+          method: GET
+          path: /cart/total
+    expect:
+      - validator: api.header
+        target: "1:x-cart-version"
+        equals: "2"
+        message: the created response did not carry the version the service declares
+      - validator: api.header
+        target: "2:x-cart-version"
+        equals: "2"
+        message: the total response did not carry the version the service declares
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-008 - the exchange the criterion put, and the line the service logged while it answered.
+  #
+  # The last two members of the family, and the only two readings in this contract that are about the
+  # *traffic* rather than about a response. `api.exchange` renders the request as it was actually
+  # made, so a service that answered a different path than the one asked is a difference this
+  # criterion can see; `api.log` reads the service's own stdout, which is the evidence a status code
+  # cannot carry - a failure that produced 500 diagnoses itself through whatever the service wrote
+  # while it was failing.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-008
+    description: the request the criterion put is the request the service was asked, and it said so
+    steps:
+      - call:
+          method: GET
+          path: /items/WIDGET
+    expect:
+      - validator: api.exchange
+        target: "1"
+        contains: GET /items/WIDGET
+        message: the exchange recorded is not the request this criterion put
+      - validator: api.status
+        target: "1"
+        equals: 200
+        message: reading one item by sku did not answer 200
+      - validator: api.log
+        target: stdout
+        contains: "cart-api request: GET /items/WIDGET"
+        message: the service did not log the request it was asked
+    evidence:
+      - json

@@ -62,6 +62,19 @@ describe("validator registry", () => {
     assert.throws(() => new ValidatorRegistry([vacuous]), ValidatorError);
   });
 
+  it("rejects a comparison outside the acceptance vocabulary, so a typo cannot become a question", () => {
+    // A declaration nothing can satisfy is not a stricter validator, it is a broken one: the
+    // comparison check at judgment time refuses every criterion naming this validator, and no
+    // criterion can close the gap because the vocabulary it must use does not contain the word.
+    const typo: Validator = { ...passing("typo"), comparisons: ["containts"] };
+    assert.throws(() => new ValidatorRegistry([typo]), (error: unknown) => {
+      assert.ok(error instanceof ValidatorError);
+      assert.match(error.message, /`containts`/);
+      assert.match(error.message, /not an acceptance comparison/);
+      return true;
+    });
+  });
+
   it("lists descriptors so the clarification layer can detect an unregistered name", () => {
     const registry = new ValidatorRegistry([passing("alpha"), passing("beta")]);
     assert.deepEqual(registry.names(), ["alpha", "beta"]);
@@ -91,6 +104,50 @@ describe("evaluateCriterion", () => {
     );
     assert.equal(missing.status, "ERROR");
     assert.equal(missing.assertions[0]?.failureKind, "VALIDATOR_ERROR");
+  });
+
+  it("refuses a comparison the validator does not declare, instead of answering it anyway", () => {
+    // `passing` declares `["equals"]` and its `validate` returns PASS for whatever it is handed -
+    // which is exactly the shape of the false PASS this guard exists to refuse. A `contains` reaching
+    // that function would be answered by it, so the refusal has to happen before the call rather than
+    // inside it. The status alone proves that: nothing `stub` can return is an ERROR.
+    const stray = evaluateCriterion(
+      spec({ expect: [{ validator: "stub", target: "#count", contains: "1" }] }),
+      observation(),
+      options(),
+    );
+    assert.equal(stray.status, "ERROR");
+    assert.equal(stray.assertions[0]?.failureKind, "VALIDATOR_ERROR");
+    assert.match(String(stray.assertions[0]?.message), /does not answer/);
+    assert.match(String(stray.assertions[0]?.message), /`equals`/);
+    assert.match(String(stray.assertions[0]?.message), /`contains`/);
+  });
+
+  it("admits every comparison a validator declares, and refuses only the rest", () => {
+    // The negative neighbour. A guard that refused too much would be as wrong as one that refused
+    // nothing, and a test that only ever asserts a refusal cannot see the difference.
+    const multi: Validator = { ...passing("multi"), comparisons: ["equals", "contains", "atLeast"] };
+    const withMulti = () => ({
+      registry: new ValidatorRegistry([passing(), multi]),
+      runId: "run-20260101-000000-abcdef",
+      environmentId: "env-1",
+      timestamp: "2026-01-01T00:00:00.000Z",
+    });
+    for (const key of ["equals", "contains", "atLeast"]) {
+      const admitted = evaluateCriterion(
+        spec({ expect: [{ validator: "multi", target: "#count", [key]: 1 }] }),
+        observation(),
+        withMulti(),
+      );
+      assert.equal(admitted.status, "PASS", `${key} is declared and must be admitted`);
+    }
+    const refused = evaluateCriterion(
+      spec({ expect: [{ validator: "multi", target: "#count", atMost: 1 }] }),
+      observation(),
+      withMulti(),
+    );
+    assert.equal(refused.status, "ERROR");
+    assert.match(String(refused.assertions[0]?.message), /`atMost`/);
   });
 
   it("refuses to let a validator judge an observation kind it cannot read", () => {

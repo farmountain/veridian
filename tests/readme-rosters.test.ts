@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { nodeIo } from "../core/io.ts";
+import { API_VALIDATOR_NAMES } from "../validators/api/api-validators.ts";
 import { CLOUD_VALIDATOR_NAMES } from "../validators/cloud/cloud-validators.ts";
 import { CONTAINER_VALIDATOR_NAMES } from "../validators/container/container-validators.ts";
 import { DB_VALIDATOR_NAMES } from "../validators/database/db-validators.ts";
@@ -70,6 +71,7 @@ const FAMILIES: readonly (readonly [string, Record<string, string>])[] = [
   ["cloud", CLOUD_VALIDATOR_NAMES],
   ["container", CONTAINER_VALIDATOR_NAMES],
   ["vscode", VSCODE_VALIDATOR_NAMES],
+  ["api", API_VALIDATOR_NAMES],
 ];
 
 describe("the README's validator rosters are the ones the code exports", () => {

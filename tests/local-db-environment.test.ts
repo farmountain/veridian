@@ -254,6 +254,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => ({
   dependencyInstall: null,
   start: { command: "node", args: ["build.mjs", "data.db"], readyPattern: "ready:" },
   url: null,
+  api: null,
   databasePath: "data.db",
   cluster: null,
   posix: null,

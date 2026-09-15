@@ -37,8 +37,8 @@ in `extension/vscode/`, if you want the same engine with a UI.
 git clone <this-repository-url> veridian
 cd veridian
 npm ci                    # runtime dependency: yaml. dev: typescript, @types/node.
-npm run gate              # tsc --noEmit, then the whole test suite. 1615 tests, about five seconds
-                          # (this tree's own 1551 plus the Cockpit's 64, which the runner discovers
+npm run gate              # tsc --noEmit, then the whole test suite. 1704 tests, about five seconds
+                          # (this tree's own 1640 plus the Cockpit's 64, which the runner discovers
                           # because it walks the tree; the extension has its own gate as well).
 
 npm run e2e:install       # one-time, ~150 MB: fetch the Playwright browser
@@ -54,13 +54,16 @@ npm run demo:container    # the seventh: the app provisions a SIMULATED containe
                           # judged on the images, containers, mounts and logs that runtime holds
 npm run demo:vscode       # the eighth: a real extension is loaded by a SIMULATED extension host,
                           # and judged on what that host recorded while it ran
+npm run demo:api          # the ninth: a real service judged through its own HTTP interface, with
+                          # nothing simulated and nothing rendered - the contract makes the requests
 ```
 
-Run those ten in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
+Run those eleven in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
 Playwright is installed **outside** the lockfile on purpose, so installing the browser before `npm ci`
 would discard it.
 
-`demo`, `demo:db`, `demo:posix`, `demo:os`, `demo:cloud`, `demo:container` and `demo:vscode` need no
+`demo`, `demo:db`, `demo:api`, `demo:posix`, `demo:os`, `demo:cloud`, `demo:container` and
+`demo:vscode` need no
 extra setup. `demo:k8s` needs neither a cluster nor `kubectl`, `demo:posix` needs neither a virtual
 machine nor a Linux host, `demo:os` needs neither a Windows guest nor a hypervisor, `demo:cloud` needs
 no cloud account, no `aws`/`az`/`gcloud` session and no outbound socket, `demo:container` needs no
@@ -70,6 +73,10 @@ editor anywhere in those runs - which is the point of them: Veridian builds worl
 and a world may be simulated. What a simulated world may never do is pass itself off as a real one, so
 each run records what it stood in for and a verdict a simulation cannot justify is reported
 `INCONCLUSIVE`.
+
+`demo:api` is the one in that list that substitutes **nothing**: it starts a real service and puts
+real requests to it over loopback, so its reading is the service's own status line, headers, bytes and
+JSON - which is why it is also the only demo whose verdict rests on no substitute at all.
 
 Requires **Node 22.18.0 or newer**.
 
@@ -682,6 +689,73 @@ transcript *is* the artifact.
 
 ---
 
+## The ninth world: a real service, judged through its own interface
+
+`local-api` is the first world in this list that is **not** simulated, and it exists to hold the
+seam from the other side. `local-db` proved the adapter is not a browser harness by judging a
+SQLite file; `sim-*` proved a world may stand something in and say so; `local-api` proves that a
+world can be entirely real, have no browser at all, and still be judged by the same loop, the same
+verdict rules, the same bundle and the same repair protocol - with nothing rendered and nothing
+substituted.
+
+It starts the application as a real child process, waits for the readiness line the service prints
+on stdout, and then **puts its own requests to the service over loopback**. That is the same
+`EnvironmentAdapter` and the same `call` step the sixth world introduced, but here the step is the
+whole interface rather than a probe: every criterion in the contract makes between one and two
+requests and reads the answer.
+
+```yaml
+- id: AC-005
+  description: an absent sku is reported absent, not returned empty
+  steps:
+    - kind: call
+      method: GET
+      path: /items/NOPE
+  expect:
+    - validator: api.status
+      target: "1"
+      equals: 404
+    - validator: api.body
+      target: "1"
+      contains: "no item with sku NOPE"
+    - validator: api.bytes
+      target: "1"
+      equals: 34
+  evidence: [json]
+```
+
+Three target grammars live in one family and they are deliberately different, because the subjects
+are different kinds of thing. A bare 1-based position addresses **one request** (`api.status`,
+`api.body`, `api.bytes`, `api.exchange`); `<position>:<header-name>` addresses **one header of one
+request**, split at the first colon (`api.header`); and `<position>/<json-pointer>` addresses **one
+value inside one body** (`api.json`), so a contract can assert `1/WIDGET/unitPriceCents` equals
+`1000` without a deep comparison of the whole document. `api.log` reads what the service printed on
+`stdout` or `stderr`, which is the one part of a service's behaviour no HTTP response carries.
+
+The four defects are all one file, `app/server.mjs`, and they are chosen so the progression is
+readable rather than merely descending. `D2` answers a creation `200` where it should answer `201`,
+and `D3` answers an absent sku `200` where it should answer `404`: each is read by exactly one
+criterion, and each is therefore a **control** - a reader can watch one edit move one reading before
+watching one edit move two. `D1` drops a factor of a hundred from every money value, so `AC-002` and
+`AC-003` fail together and recover together; `D4` states the wrong version in the one header every
+response carries, so `AC-006` and `AC-007` fail together and recover together. `AC-001` and `AC-008`
+are never moved at all, and that is the measurement that says the other six moved *because of the
+edits* rather than because the world is flaky.
+
+`npm run demo:api` drives this: four deliberate defects, eight criteria, and a `FAIL` -> repair ->
+`PASS` descent in five iterations - measured, verbatim: the failing count is `6, 4, 3, 2, 0`, and
+iteration 5 is `PASS` with `8/8 mandatory criteria passed, environment valid, no safety violation,
+evidence complete.` The repair agent walks the defect table in criterion order, so the descent is
+exactly the shape the table predicts, and the run is the evidence for that prediction rather than
+the prediction being the evidence for the run.
+
+Because it is a real world, its reading carries **no** `simulated` field and `environment.json`
+names no substitute. What it does carry is the same boundary report every world carries: the
+service is started under a process runner with no stdin, and a criterion that staked a verdict on
+the process reading from a terminal would be staking it on something no criterion can observe.
+
+---
+
 ## How the code is arranged
 
 ```
@@ -718,6 +792,10 @@ adapters/sim-vscode/    a real extension loaded by a real Node process through a
                         place of `vscode`, recording contributions, commands, invocations,
                         settings, status items, output, messages, subscriptions and refusals as
                         it runs; no editor, no window and no installed VS Code anywhere
+adapters/local-api/     starts a real service and talks to it over loopback through the same fetch
+                        the application serves; every criterion puts its own request and reads the
+                        status, the headers, the bytes and a pointer into the body. Nothing is
+                        substituted and nothing is rendered: the application IS the interface
 validators/playwright/  web.element, web.visible, web.text, web.value, web.count, web.url,
                         web.console.clean, web.network.ok
 validators/database/    db.table, db.column, db.count, db.value
@@ -740,6 +818,8 @@ validators/vscode/      vscode.host, vscode.identity, vscode.engine, vscode.acti
                         vscode.contribution, vscode.command, vscode.invocation, vscode.setting,
                         vscode.status, vscode.output, vscode.message, vscode.state,
                         vscode.subscription, vscode.file, vscode.refusal, vscode.call, vscode.probe
+validators/api/         api.service, api.exchange, api.status, api.header, api.body, api.bytes,
+                        api.json, api.log
 schemas/                goal / acceptance / environment / run / result / ambiguity
 scripts/                bootstrap and build steps that must run before anything is checked
 examples/shopping-cart/ the canonical demo: correct app, defect overlay, goal, contract, world
@@ -757,10 +837,13 @@ examples/sim-container/ the seventh demo: the app provisions a substitute contai
                         judged on the images, containers, mounts, ports and logs it holds
 examples/sim-vscode/    the eighth demo: a real extension is loaded by a substitute extension host
                         and judged on what that host recorded while it ran
+examples/local-api/     the ninth demo: a real service judged through its own HTTP interface, with no
+                        page, no substitute and nothing rendered - four defects, eight criteria, and
+                        the same FAIL -> repair -> PASS loop
 extension/vscode/       the VS Code Cockpit: a thin client, no validation logic. The one directory
                         with a build step, because the extension host is not Node's loader
                         (`npm run package` produces the `.vsix` you can hand to somebody else)
-tests/                  1615 tests in a root `node --test` run: this tree's own 1551 plus the
+tests/                  1704 tests in a root `node --test` run: this tree's own 1640 plus the
                         Cockpit's 64
 
 dist/                   GENERATED by `npm run build`. Never edited, never committed.
@@ -790,8 +873,9 @@ ValidationResult:    criterion_id, status, actual, expected, timestamp, evidence
 Layering is enforced by hand, and `core/*` may not import `adapters/*`, `validators/*` or `cli/*`;
 `validators/*` may not import `adapters/*` (the shared vocabulary lives in
 `core/environment/web-observation.ts`, `db-observation.ts`, `k8s-observation.ts`,
-`posix-observation.ts`, `os-observation.ts`, `cloud-observation.ts` and
-`container-observation.ts` for exactly that reason);
+`posix-observation.ts`, `os-observation.ts`, `cloud-observation.ts`,
+`container-observation.ts`, `vscode-observation.ts` and `api-observation.ts` for exactly that
+reason);
 `cli/*` is the only layer that may import all three.
 
 ---
@@ -799,9 +883,12 @@ Layering is enforced by hand, and `core/*` may not import `adapters/*`, `validat
 ## Scope
 
 **In, for the MVP:** VS Code + Veridian Core + a local application + a browser + Playwright +
-deterministic acceptance criteria + evidence + reset/replay. Eight adapters exist: `local-web` and
-`local-db`, the second being the proof that `EnvironmentAdapter` is a seam rather than a browser
-harness with an interface bolted on - and six *simulated* worlds. `sim-k8s`: a real application
+deterministic acceptance criteria + evidence + reset/replay. Nine adapters exist: `local-web`,
+`local-db` and `local-api`, the second being the proof that `EnvironmentAdapter` is a seam rather
+than a browser
+harness with an interface bolted on, and the third being that proof's mirror - a world that is
+**real** and reached over a socket, where the contract puts its own request rather than observing one
+the application made - and six *simulated* worlds. `sim-k8s`: a real application
 process really deploys itself into a substitute control plane over a real HTTP surface it really
 calls, with no cluster software anywhere in the loop. `sim-posix`: a real application process really
 provisions a substitute Linux system through commands it really issues, with no virtual machine and
@@ -815,8 +902,10 @@ containers, mounts, ports, limits and captured output the substitute holds, with
 daemon, no image and no namespace or cgroup anywhere in the loop. `sim-vscode`: a real extension is
 loaded by a real Node process through a module resolved in place of `vscode`, and judged on the
 contributions, commands, invocations, settings, status, output, messages, subscriptions and refusals
-that process recorded, with no editor, no window and no installed VS Code anywhere in the loop. In all
-six, the substitution is
+that process recorded, with no editor, no window and no installed VS Code anywhere in the loop.
+`local-api`: no substitute at all - a real service, judged through its own HTTP interface on loopback,
+with the contract's own requests as the observation. In all
+six of the simulated ones, the substitution is
 **declared**: `environment.json` names what was stood in for and the reading carries a `simulated`
 field, so a `PASS` is traceable to a named substitute rather than to unexamined reality - and a
 verdict a substitute cannot justify is reported `INCONCLUSIVE`.

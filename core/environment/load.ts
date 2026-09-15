@@ -7,6 +7,7 @@ import { CONTAINER_PLATFORMS } from "./container-observation.ts";
 import { OS_FAMILIES, PRIVILEGED_OS_ACCOUNTS } from "./os-observation.ts";
 import {
   RESET_STRATEGIES,
+  type ApiPlan,
   type BoundaryPolicy,
   type BrowserPolicy,
   type CloudPlan,
@@ -161,6 +162,34 @@ function readBrowser(raw: unknown, hasUrl: boolean): BrowserPolicy {
  * ways is a boundary that will eventually be read the wrong way, and the goal document is itself
  * copied into every run bundle, so nothing is lost by not echoing it in the plan.
  */
+/**
+ * The HTTP service this world is, or `null` when the world is not one.
+ *
+ * Absent means not a service world, and present-but-incomplete is **refused** rather than defaulted,
+ * on the rule `readCluster` set and every block since has followed. The refusal is not symmetry: a
+ * defaulted service name would be a name the plan and every reading agree on by construction and
+ * that nothing in the document ever said, so the one question this field exists to answer - *which
+ * service produced this verdict* - would be answered with a value no operator chose and no reader
+ * could check. A gap the ladder can ask about is strictly better than a value nobody wrote.
+ */
+function readApi(raw: unknown): ApiPlan | null {
+  if (raw === undefined || raw === null) return null;
+  if (!isPlainObject(raw)) {
+    throw defect("$.api", "api must be an object naming the service these readings describe");
+  }
+  const service = asString(raw["service"]).trim();
+  if (service === "") {
+    throw defect(
+      "$.api.service",
+      "the api declaration names no service. A reading has to say which service it is about, and " +
+        "the address is not the answer - the same address serves whichever process happens to hold " +
+        "it, so a verdict whose reading named only a port could not be told apart from a verdict " +
+        "about whatever replaced it.",
+    );
+  }
+  return { service };
+}
+
 /**
  * The cluster this world stands in for, or `null` when the world is not a cluster.
  *
@@ -563,6 +592,7 @@ export function finalizeEnvironment(
     },
     url: url === "" ? null : url,
     databasePath: database === "" ? null : resolveSibling(source, database),
+    api: readApi(raw["api"]),
     cluster: readCluster(raw["cluster"], appPath),
     posix: readPosix(raw["posix"], appPath),
     os: readOs(raw["os"], appPath),

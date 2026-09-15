@@ -1,6 +1,8 @@
 import { ValidatorError, statusForObservationFailure } from "../failure.ts";
 import type { FailureKind } from "../failure.ts";
+import { COMPARISON_KEYS } from "../acceptance/plan.ts";
 import type { Observation } from "../environment/types.ts";
+import { statedComparisons } from "./assertions.ts";
 import type {
   AssertionResult,
   CriterionResult,
@@ -25,6 +27,24 @@ export class ValidatorRegistry {
       throw new ValidatorError(
         `Validator "${validator.name}" declares no comparisons. An expectation that cannot ` +
           "express a comparison can only ever pass, which is a false PASS waiting to happen.",
+      );
+    }
+    // The other half of the same guard, and the one that is silent. A comparison outside the
+    // acceptance vocabulary is a *typo the registry would have kept*: `containts` would be declared,
+    // no criterion could ever state it, and every correct criterion naming the validator would then
+    // be refused at judgment time with no way for an operator to close the gap - a question the
+    // answer cannot close. Reading the vocabulary from one place is the same reason the refusal at
+    // judgment time lives in this loop rather than in whichever family happened to be open.
+    const unknown = validator.comparisons.filter(
+      (key) => !(COMPARISON_KEYS as readonly string[]).includes(key),
+    );
+    if (unknown.length > 0) {
+      const spell = (keys: readonly string[]): string => keys.map((key) => `\`${key}\``).join(", ");
+      throw new ValidatorError(
+        `Validator "${validator.name}" declares ${spell(unknown)}, which ${
+          unknown.length === 1 ? "is" : "are"
+        } not an acceptance comparison. A validator may only publish a question a criterion can ` +
+          `state, and the vocabulary is ${spell(COMPARISON_KEYS as readonly string[])}.`,
       );
     }
     this.#validators.set(validator.name, validator);
@@ -197,6 +217,40 @@ export function evaluateCriterion(
           target,
           `Validator "${name}" reads "${validator.observationKind}" observations but received ` +
             `"${observation.kind}". A validator must never be asked to judge a world it cannot see.`,
+          "VALIDATOR_ERROR",
+        ),
+      );
+      continue;
+    }
+
+    // **A declared comparison is an enforced one.** `Validator.comparisons` is published through
+    // `descriptors()`, so a contract author and the clarification ladder both read it as the list of
+    // questions a validator answers - and until this check existed nothing consulted it at judgment
+    // time. The hole that opened is the shape this product exists to refuse: `api.service` declares
+    // `["equals"]`, and a criterion writing `contains: "cart"` was answered by the text comparator's
+    // substring test and would have **passed** on the name of a service nobody asked to search.
+    //
+    // It lives here, in the loop that already refuses an unregistered name and a mismatched
+    // observation kind, because this is the one seam every family passes through. The first version
+    // was written into the API family alone, which would have left the other eight families - and the
+    // database family, which has the same hole - unguarded; and a guard copied into the family that
+    // happened to be open is a rule written twice, which is the defect this repository has paid for
+    // at a validator name, a step kind, a simulated surface and a requirement's dot-path.
+    //
+    // It is checked **before** the validator runs, on purpose. A criterion stating an unanswerable
+    // comparison is a defect in the criterion, and the world has nothing to say about it.
+    const stray = statedComparisons(expectation).filter((key) => !validator.comparisons.includes(key));
+    if (stray.length > 0) {
+      const spell = (keys: readonly string[]): string => keys.map((key) => `\`${key}\``).join(", ");
+      assertions.push(
+        errorAssertion(
+          name,
+          target,
+          `Validator "${name}" answers ${spell(validator.comparisons)} and this criterion also ` +
+            `states ${spell(stray)}, which it does not answer. \`comparisons\` is what a validator ` +
+            "publishes as the questions it answers, so anything outside it is a question the " +
+            "validator was never written for - and answering one anyway, from whatever the reading " +
+            "happens to be, is how a false PASS is manufactured.",
           "VALIDATOR_ERROR",
         ),
       );

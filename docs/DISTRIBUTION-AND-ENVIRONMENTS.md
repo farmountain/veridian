@@ -447,13 +447,72 @@ state is the one surface genuinely shared.
 descent, and a bundle whose reading names the seven surfaces standing in for something. Measured in
 §7.
 
-### Phase D - the rest of Tier 1
+### Phase D - the ninth adapter: `local-api`, the world that is not simulated
 
-`local-api` and `local-process` (`PLAN.md` §36 Tier 1). Both need only a child process and an HTTP
-client, so both are verifiable here. Each is a repeat of Phase C's procedure, which is the point:
-after the second one, the third is mechanical, and *that* is what confirms the architecture - and
-`sim-k8s` has now supplied the third, with a simulated world rather than a third local one, which is
-the stronger case.
+Every world so far except `local-web` and `local-db` has been a substitute. This one is Tier 1's other
+item (`PLAN.md` §36) and it is the first in the series that substitutes **nothing at all**: a real
+service is started as a real child process, and it is judged through its own HTTP interface over
+loopback. There is no `*_SIMULATED_SURFACES` constant and there should not be one - the reading
+carries no `simulated` field, because no surface is stood in for.
+
+It is worth stating why this is not a contradiction of §2's ordering. `sim-k8s` was built before it
+because a *slower, larger* substitute is the stronger proof that `EnvironmentAdapter` is a seam. But
+`local-api` proves the **other** direction, and that direction is the one that decides what the product
+can be used for: a world whose subject is entirely real still needs no core change. A framework that
+can simulate a cluster but cannot judge a real server is a framework with a simulation-shaped hole in
+it, and the hole would only be discovered by the first user who pointed Veridian at their own service.
+
+**What makes it different from `local-web`, which is also real.** Three things, and each one is a
+capability rather than a detail.
+
+1. **The contract makes the requests, not the application.** This is the only world that performs a
+   `call` step. In every other world a criterion infers the service's answer from traffic the
+   application generated; here the criterion puts its own `GET /health` to the service and reads the
+   status line, the headers, the byte count and a pointer into the body. So a criterion can ask a
+   question the application never asks - a request the application would never make, against a route
+   it never uses - which is what makes an HTTP contract about an interface rather than about a session.
+   `call` is the sixth world's step kind, reused rather than reinvented, and `local-api` adds no kind of
+   its own.
+2. **No page, so no browser.** `browser.enabled` is `false` in the environment document and there is no
+   Playwright anywhere in the loop. The reading is `api.http` and the only evidence kind is `json`.
+3. **Three target grammars in one family.** A bare 1-based position addresses one exchange
+   (`api.status`, `api.body`, `api.bytes`, `api.exchange`); `<position>:<header-name>` addresses one
+   header of one exchange, split at the first colon (`api.header`); `<position>/<json-pointer>`
+   addresses one value inside one body (`api.json`). Three grammars rather than one, because an
+   exchange, a header and a JSON value are three different kinds of thing - and the split is what lets
+   a contract pin `1/WIDGET/unitPriceCents` without deep-comparing a whole document.
+
+- `core/` gains `core/environment/api-observation.ts` and one more plan field (`ApiPlan`), and nothing
+  else a validator could have reached through an adapter. That file carries the exchange record, the
+  pointer reader and the renderings a non-browser reading needs.
+- A ninth validator family - `api.service`, `api.exchange`, `api.status`, `api.header`, `api.body`,
+  `api.bytes`, `api.json`, `api.log` - needs no change to `core/validation` or `core/execution`. That
+  is the **seventh** demonstration of the claim this series exists to make, and the first made by a
+  world that is entirely real.
+- **No new step kind and no new evidence kind.** Every criterion acts with `call`; the only evidence
+  kind is `json`; `snapshot-restore` is unsupported and `reset.strategy` is `restart`.
+- **`api-port.ts` never throws.** The client uses the global `fetch` with an `AbortController` and
+  `redirect: "manual"`, and a timeout comes back as an exchange whose `error` is set - because a
+  timeout is an *observation about the service*, and a client that threw would turn it into a crash in
+  the harness, which is a different fact about a different thing.
+
+**Acceptance:** four deliberate defects, eight criteria, the same `FAIL` -> repair -> `PASS` descent,
+and a reading that names no substitute because there is none. Measured in §7.
+
+### Phase D2 - `local-process`
+
+The other Tier 1 item: a real child process plus a filesystem observation, judged on what it wrote and
+on how it exited. It needs no new step kind (`run` carries argv today) and no new evidence kind beyond
+`json` and `log`, so it is a repeat of the same eight-part procedure rather than a new capability.
+
+**Why it is still worth building despite adding no capability.** Every world in the series so far has
+been *large* - a cluster, an operating system, a runtime, a provider account - and every one of them
+made its point by being hard. `local-process` is the small case, and the small case is where an
+architecture built for the large one is most likely to have acquired a dependency it did not notice.
+`local-api` played that role for HTTP; `local-process` plays it for the process boundary itself,
+where the observable facts are an exit code, a stream, and a file on disk rather than a record in a
+table. It is deliberately last of the three local worlds, so that it is built against a settled seam
+rather than a seam being decided while it is built.
 
 ---
 
@@ -505,7 +564,8 @@ run ids rather than adjectives.
 |-------|---------------------|-----------|--------|
 | `local-web` | real child process + real browser | - | **built** (`v0.1.0`) |
 | `local-db` | real SQLite via `node:sqlite`; the app's own schema and seed code runs | - | **built** |
-| `local-api` / `local-process` | real child process, real HTTP | - | planned (Phase D) |
+| `local-api` | real child process, real HTTP service, and the criterion puts its own request | - | **built**, see §7 |
+| `local-process` | real child process, real filesystem | - | planned (Phase D) |
 | `sim-k8s` | real app process against a real HTTP control plane | `scheduler`, `kubelet`, `cri`, `etcd`, `cni`, `admission`, `ingress` | **built** |
 | `sim-cloud` | real app process against real HTTP endpoints | `regions`, `object-store`, `queue`, `key-management`, `secret-rotation`, `identity`, `metering` | **built**, see §7 |
 | `sim-container` | real app process provisioning images and containers over a real command surface | `namespaces`, `cgroups`, `image-layers`, `registry`, `published-ports`, `volumes`, `user-switching` | **built**, see §7 |
@@ -1026,3 +1086,47 @@ readings are four independent surfaces of one host, so the progression `4 -> 3 -
 loop's own iteration order made visible. A defect table that moved many criteria per entry would be
 unreadable in a world whose whole subject is that four surfaces are recorded separately.
 
+
+### Phase D: the HTTP-service world, and what the ninth adapter proved
+
+| Step | Status | Evidence |
+|------|--------|----------|
+| Client | built | `adapters/local-api/api-port.ts` - the global `fetch` with an `AbortController`, `redirect: "manual"`, and a client that **never throws**: a timeout or a transport failure comes back as an `ApiAnswer` whose `error` is set, because that is an observation about the service rather than a crash in the harness. Falsified rather than assumed: forcing `fetch` to reject reports an exchange with a stated error instead of propagating. |
+| Adapter lifecycle | built | `adapters/local-api/local-api-environment.ts` implements all ten `EnvironmentAdapter` methods, declares `STEP_KINDS_PERFORMED` with **`call: true` and every other kind `false`**, and refuses a request whose path leaves the service's own origin by name. It starts a real child process and waits for the readiness line the service prints on stdout - `cart-api listening on http://127.0.0.1:4327` - so readiness absence fails in `probe()` rather than in the provisioner. **Nothing is stood in**: no substitute, no generated module, no table maintained in process. |
+| Observation vocabulary | built | `core/environment/api-observation.ts`, so no validator imports an adapter. The ninth family needed **no core change** beyond this and the name registration - the seventh sample of that claim, and the first made by a world with no `simulated` field, which is what makes it the strongest one: a family whose world is entirely real still fits the seam. |
+| Validator family | built | `validators/api/` - eight validators (`service`, `exchange`, `status`, `header`, `body`, `bytes`, `json`, `log`), 69 tests, falsified seven ways. It adds **no new step kind**: every criterion acts with `call`, the kind the sixth world introduced. Three target grammars live in one family on purpose - a bare position, `<position>:<header>`, `<position>/<pointer>` - because an exchange, a header and a JSON value are three kinds of thing. |
+| Evidence, honestly bounded | built | The only evidence kind is `json` - there is no page to screenshot and no trace archive - and `snapshot-restore` is unsupported with `reset.strategy: restart`. The capability report is derived from the artifacts actually written. |
+| Demo | built | `examples/local-api/` - four deliberate defects, eight criteria, `npm run demo:api`, exit 0. Measured: iteration 1 `FAIL`s exactly six criteria and passes `AC-001` and `AC-008`; each subsequent iteration removes defects in criterion order, so the failing count descends **`6 -> 4 -> 3 -> 2 -> 0`**; the final run is `PASS (COMPLETED, 5 iteration(s))` with `8/8 mandatory criteria passed, environment valid, no safety violation, evidence complete.` The bundle holds **23 files**. |
+| Regression tests | built | `tests/local-api-demo.test.ts` (17, falsified to 15/2 by moving a JSON pointer off its response and swapping a header target), `validators/api/api-validators.test.ts` (69), plus an `api` case in `tests/environment-gaps.test.ts` and the `api` roster entry in `tests/readme-rosters.test.ts`. |
+
+**What the ninth world settled.** `core/` changed by an observation vocabulary and a name, for the
+seventh time - and this time the world it was changed for is not a simulation. That is the claim the
+series had not yet made: the seam is not "how we bolt on substitutes", it is "how a world is described
+to a validator", and a real world uses the same description. The eighth world could still have been
+read as evidence about simulating things; this one cannot.
+
+**Why the contract makes the requests, and why that is the whole point.** Every earlier world judged a
+service by watching the application talk to it. Here a criterion issues its own request, so the
+reading is about the **interface** rather than about one session with it - a criterion can ask for a
+route the application never touches, and can read the status line, the headers and the byte count of a
+response the application never received. It also means the world can be judged for things no
+application would ever ask about itself: `api.header` on the version header, `api.bytes` on a
+body length, `api.log` on the line the service printed to stdout, which is the one part of a service's
+behaviour no response carries.
+
+**Why two of the four defects had to be controls before there could be a headline.** `D2` (a creation
+answered `200` instead of `201`) and `D3` (an absent sku answered `200` instead of `404`) are each read
+by exactly **one** criterion. `D1` (dollars read as whole units, so `$10.00` becomes 10 cents) moves
+**two** - `AC-002` and `AC-003`, because every price and the cart total are computed from the same
+function. `D4` (the version header stated as `3` where the service declares `2`) moves **two** more -
+`AC-006` and `AC-007`, because AC-007 reads the header on two positions of a response chain. Two
+criteria never move at all: `AC-001` and `AC-008` pass on every iteration. So the reader watches one
+edit move one reading twice before watching one edit move two, and watches two readings sit still
+throughout - which is what makes the movements attributable to the edits rather than to a flaky world.
+
+**Why all four defects are in one file.** `server.mjs` is the single file every defect is an overlay
+on, which is RULE 24 in `AGENTS.md`: a defect table's blocks must all live in one file, so a defect in
+another file has to be moved into the defective file rather than given its own table. `toCents` was
+authored in `catalog.mjs` and moved into `server.mjs` for exactly this reason - a table whose entries
+live in two files is a table whose `correct`-form assertions need two reads and two line-ending
+conversions, and the second one is the one that gets forgotten.

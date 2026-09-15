@@ -38,6 +38,15 @@
       "type": ["string", "null"],
       "description": "Base URL of the running app, e.g. http://127.0.0.1:4317. Null or absent for a world reached by opening a file rather than over a socket - a database world has no address, and spelling that as an empty string would make 'this world has no address' indistinguishable from 'nobody filled the field in'."
     },
+    "api": {
+      "type": ["object", "null"],
+      "description": "The HTTP service this world is, when the world is one, and the smallest block in this document on purpose. Every other world block carries the facts that decide what its readings mean - a namespace, an account, a platform, an API version - because in those worlds a reading cannot supply them. A service is the one world where a reading supplies almost everything: the address comes from `url`, the readiness signal from `start.readyPattern`, the liveness answer from `health`. The one thing a reading cannot supply is its own subject - every request carries the address it was sent to and no statement of what was listening there - so this block holds exactly that and nothing else. It is separate from `url` rather than folded into it because `url` is an address and this is an identity: the same address serves whichever process happens to hold the port, so a bundle read later beside a result from another run would otherwise be unable to say whether the two judged the same service. A world declaring `api` is reached over a socket, exactly as a browser world is, so its `browser.enabled` defaults to true - a document for it states `browser: { enabled: false }`, because this world has an address but no page, and the browser policy follows the page rather than the address.",
+      "properties": {
+        "service": { "type": "string", "minLength": 1, "description": "The service identity every reading names, so a result says which service produced it. A free string rather than an enumeration: a service name decides nothing a criterion can observe, and enumerating it would let a label act as a rule." }
+      },
+      "required": ["service"],
+      "additionalProperties": false
+    },
     "databasePath": {
       "type": ["string", "null"],
       "description": "Path of the database file this world is, relative to this file (or absolute). Present for a file-backed world such as `local-db`, where the application's state IS this file; absent for every other world. Stated here rather than as an adapter-private option so the plan every reader sees names the same file the adapter opens."

@@ -1,0 +1,75 @@
+# How to create, start, observe and reset one environment instance.
+#
+# This is the ninth world Veridian ships, and the third that is not simulated - and it is here to
+# answer the question the first two cannot. `local-web` judges an application through a page, which is
+# a *rendering* of the application; `local-db` judges one through a file it wrote. Neither can ask a
+# question the application's own interface answers directly. This world can: its steps are HTTP
+# requests and its readings are the status, headers and body the service really returned.
+#
+# The distinction that matters when reading this file is that nothing here is substituted. There is a
+# real process, a real loopback socket and a real request. What is absent is the browser, and stating
+# `browser.enabled: false` is how this document says so - because a world with a `url` and no browser
+# clause would have a browser inferred for it, and Playwright would be started to render pages no
+# criterion in this contract reads.
+#
+# Read this next to `schemas/environment.schema.json`: there is no `version` key, and the document is
+# closed to unknown keys, because an environment definition describes a running world rather than
+# being a versioned contract of its own.
+
+# `local-api` starts the service it judges and puts the criterion's own requests to it.
+adapter: local-api
+
+# Relative to this file. The adapter runs `start` with the working directory set here.
+app: app
+
+# Environment variables, merged over the inherited environment. Values are treated as untrusted.
+env:
+  PORT: "4327"
+
+# The service identity every reading of this world carries.
+#
+# It is declared rather than derived, and the resource is real: the adapter compares the name the
+# service announces against this one, so "a different server answered on that port" is a detectable
+# failure instead of a silent one. A port number is not an identity - two services can take turns on
+# one port, and a name inferred from the directory the process ran in would be a name this document
+# never agreed to.
+api:
+  service: cart-api
+
+# Null means "this app has no dependencies to install". The service is `node:http` and nothing else,
+# so the demo runs from a clean checkout with nothing to fetch.
+dependencyInstall: null
+
+start:
+  # Executed verbatim - never a shell string built by pasting configuration into it.
+  command: node
+  args:
+    - server.mjs
+  # Wait for the service to say it is listening. This is a fact about the world; a sleep is a race, and
+  # a race is how run-to-run consistency is lost. A service that printed this and then died would be a
+  # different defect, and the health check below is what catches it.
+  readyPattern: 'cart-api listening on http://127\.0\.0\.1:4327'
+
+url: "http://127.0.0.1:4327"
+
+health:
+  # A route of its own, and one the service implements, so a health check is a real request rather
+  # than a socket that happens to be open.
+  path: /health
+  expectStatus: 200
+  timeoutMs: 10000
+  intervalMs: 100
+
+# Reset is first-class, not test cleanup: a criterion that created an item through `POST` leaves it in
+# the service's memory, and a later criterion must never inherit it. `restart` tears the process down
+# and starts it again, which re-seeds the item map from the frozen catalog - the strongest guarantee
+# this adapter can give, and a genuinely fresh world rather than a second draft of the previous one.
+reset:
+  strategy: restart
+
+# Stated, not omitted. This world has a `url`, so a browser would otherwise be inferred from it and a
+# page would be rendered that no criterion here reads. The refusal is the point of the document: an
+# API is judged through its own routes, and a browser in this world would only be a second renderer
+# standing between the application and the reading.
+browser:
+  enabled: false

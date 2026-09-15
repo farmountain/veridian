@@ -88,6 +88,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => {
     dependencyInstall: null,
     start,
     url: null,
+    api: null,
     databasePath: null,
     cluster: null,
     posix: null,

@@ -206,6 +206,21 @@ export interface EnvironmentDefinitionShape {
   readonly start?: { readonly command?: unknown; readonly args?: unknown; readonly readyPattern?: unknown };
   readonly url?: unknown;
   /**
+   * The HTTP service this world is, when the world is one, as written.
+   *
+   * One field, and the reason it is declared rather than derived is the reason every other block
+   * here exists: `url` says *where* the service is and nothing about *which* service a reading
+   * describes. A bundle holds readings from every iteration of a run, and a failure report is read
+   * beside a result from a different run, so a reading has to name its own subject - and a name the
+   * adapter inferred from the directory it happened to be handed is a name the document never agreed
+   * to. Declaring it is also what makes the name *askable*: a document that omits it is a document
+   * with a gap, which the ladder raises as a question rather than a value guessed on the operator's
+   * behalf.
+   */
+  readonly api?: {
+    readonly service?: unknown;
+  };
+  /**
    * The database file this world is, when the world is a database, as written.
    *
    * A path string rather than a flag, so the same field can name a fixture a criterion is judged
@@ -405,6 +420,17 @@ export interface EnvironmentPlan {
    */
   readonly url: string | null;
   /**
+   * The HTTP service this world is, or `null` when the world is not one.
+   *
+   * Deliberately *not* folded into `url`, even though the two are always present together. `url` is
+   * an address and this is an identity, and they answer different questions: `url` is what a request
+   * is sent to, while this is what the reading that came back says it was about. Folding them would
+   * make "which service is this" unanswerable in the one place it is asked - a bundle read a week
+   * later, beside a result from another run, against a service that has since been restarted on a
+   * different port.
+   */
+  readonly api: ApiPlan | null;
+  /**
    * The database file the world is, or `null` when the world is not a database.
    *
    * Relative paths resolve against `appPath`, on the same rule `core/io.ts` already enforces for a
@@ -502,6 +528,26 @@ export interface EnvironmentPlan {
    * that still promised a browser.
    */
   readonly boundary: BoundaryPolicy;
+}
+
+/**
+ * An HTTP service world's resolved declaration.
+ *
+ * One field, and the size of the block is the interesting part. Every other block in this file
+ * carries the facts that decide what its readings *mean* - a namespace, an account, a platform, an
+ * API version - because in those worlds a reading cannot supply them. An HTTP service is the one
+ * world where the reading can supply almost everything: the address comes from `url`, the readiness
+ * signal from `start.readyPattern`, the liveness answer from `health`. What a reading cannot supply
+ * is its own subject. Every request carries the address it was sent to and no statement of what was
+ * listening there, so a reading of a healthy service and a reading of a proxy in front of a dead one
+ * are the same document - and the name is the only field that tells them apart.
+ *
+ * It is a free string rather than an enumeration, on the same reasoning a provider name and a
+ * runtime name are: a service name decides nothing a criterion can observe, and enumerating it would
+ * let a label act as a rule.
+ */
+export interface ApiPlan {
+  readonly service: string;
 }
 
 /**

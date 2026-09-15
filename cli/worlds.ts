@@ -28,6 +28,7 @@
 
 import { LocalWebEnvironment } from "../adapters/local-web/index.ts";
 import type { BrowserPort } from "../adapters/local-web/index.ts";
+import { LocalApiEnvironment } from "../adapters/local-api/index.ts";
 import { LocalDbEnvironment } from "../adapters/local-db/index.ts";
 import { SimK8sEnvironment } from "../adapters/sim-k8s/index.ts";
 import { SimCloudEnvironment } from "../adapters/sim-cloud/index.ts";
@@ -455,6 +456,54 @@ const WORLDS: readonly World[] = [
     ],
     build: ({ environment, io, logger, processes, stateDir }) =>
       new SimVSCodeEnvironment(environment, {
+        io,
+        clock: systemClock,
+        logger,
+        processes,
+        stateDir,
+      }),
+  },
+  {
+    kind: "local-api",
+    summary:
+      "a local HTTP application asked its own routes directly, with no browser and no page",
+    // One field, and it is the whole reason this world is a *kind of subject* rather than a place to
+    // keep files. A service name is what every reading names, and it is what distinguishes two
+    // readings of the same server: a criterion asserting which service answered is asserting a
+    // declared fact, and a world that inferred the name from a port number would make every such
+    // criterion unfalsifiable. It is also the field that makes this world's refusal honest - the
+    // adapter compares the plan's service against the one the application announced, and a plan that
+    // defaulted it could not tell "the wrong server answered" from "the right one did" (see
+    // `local-api-environment.ts`, which names both in the defect it raises).
+    //
+    // Asked as a pointer rather than as one `api` object for the reason every world after `sim-k8s`
+    // records here: the ladder resolves a requirement against a *place*, so a single `api` field
+    // would report the whole block missing however much of it the document already stated.
+    //
+    // `url` and `start` are deliberately absent, and that is not an oversight - they are asked by the
+    // detector directly, because they are fields every socket world needs rather than one adapter's
+    // private shape (`local-web` records the same reasoning). Declaring `url` here too would raise two
+    // blocking gaps at one pointer and the operator would be asked the same question twice with no way
+    // to tell the two apart.
+    //
+    // There is no `*_SIMULATED_SURFACES` constant for this world and none is wanted: the server is a
+    // real process answering real requests over loopback. The application is judged against itself,
+    // not against a substitute, which is why this entry sits beside `local-web` and `local-db` rather
+    // than beside the six `sim-*` worlds.
+    requires: [
+      {
+        field: "api.service",
+        question: "Which service is the application this world judges?",
+        why:
+          "Every reading of this world names it, and the adapter checks the name the application " +
+          "announces against the name the plan states - so an answer is what makes 'a different " +
+          "server answered on that port' a detectable failure rather than a silent one. There is no " +
+          "default: a plan that invented a service name could neither confirm nor deny that the " +
+          "process it started is the one the criteria were written about.",
+      },
+    ],
+    build: ({ environment, io, logger, processes, stateDir }) =>
+      new LocalApiEnvironment(environment, {
         io,
         clock: systemClock,
         logger,

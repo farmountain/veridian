@@ -70,6 +70,7 @@ import { osValidators } from "../validators/os/index.ts";
 import { cloudValidators } from "../validators/cloud/index.ts";
 import { containerValidators } from "../validators/container/index.ts";
 import { vscodeValidators } from "../validators/vscode/index.ts";
+import { apiValidators } from "../validators/api/index.ts";
 
 import type { CliArguments } from "./arguments.ts";
 import {
@@ -99,7 +100,8 @@ import {
  *
  * Every family, because the registry is what decides whether a criterion is *answerable* and
  * the answer must not depend on which world the run chose. A contract that names `db.value`,
- * `k8s.ready`, `posix.permission`, `os.access`, `cloud.object` or `container.state` is judged by the
+ * `db.value`, `k8s.ready`, `posix.permission`, `os.access`, `cloud.object`, `container.state` or
+ * `vscode.command` is judged by the
  * world that can observe it and refused with `unresolvable_entity` everywhere else - by the plan
  * decoder, at DEFINE, before anything starts. Registering a family only when a world that can answer
  * it was selected would make the *same contract* resolvable in one world and nonsensical in another,
@@ -115,6 +117,7 @@ function allValidators() {
     ...cloudValidators(),
     ...containerValidators(),
     ...vscodeValidators(),
+    ...apiValidators(),
   ];
 }
 
@@ -409,14 +412,25 @@ async function runValidate(parsed: CliArguments, logger: Logger): Promise<number
   // the alternative is a fact found only by whoever reads `environment.json` afterwards, which is not
   // the person who made the choice.
   //
-  // Deliberately narrow. Only the network half is disclosed here, and only for the browserless case,
-  // because it is the one the CLI observed: it built this world, so it knows no guard exists in it.
-  // The adapter's standing capabilities - `filesystemWrite` among them - are the adapter's claim about
-  // itself, and the full policy-by-enforcement pairing is written to the bundle by the layer that owns
-  // both halves. Repeating a capability here would be a second opinion that goes stale the moment an
-  // adapter grows one, and warning about `filesystemWrite` on every run would make the signal deafening
-  // on the default goal.
-  if (!wantsBrowser && runtimeEnvironment.boundary.network !== "allow") {
+  // Deliberately narrow. Only the network half is disclosed here, and only for the case the CLI
+  // observed: it built this world, so it knows whether a guard exists in it. The adapter's standing
+  // capabilities - `filesystemWrite` among them - are the adapter's claim about itself, and the full
+  // policy-by-enforcement pairing is written to the bundle by the layer that owns both halves.
+  // Repeating a capability here would be a second opinion that goes stale the moment an adapter grows
+  // one, and warning about `filesystemWrite` on every run would make the signal deafening on the
+  // default goal.
+  //
+  // The condition is "a browser was *removed*", not "there is no browser". It used to be the second,
+  // and the difference is a sentence that names a cause the CLI did not observe: `network !== "allow"`
+  // with no browser is also the ordinary state of every world that never had one - a database file, a
+  // cluster, a simulated provider account - and there `npm run demo:db --browser none` printed *"the
+  // run was planned without a browser, so nothing can refuse a request on its behalf"* about a world
+  // whose document has no `url` for a browser to open, where the operator planned no such thing and
+  // the reason given describes a component that could never have existed. A component can only be
+  // removed from a world that was going to have it, so the document's own `browser.enabled` is what
+  // decides - and a world whose adapter refuses crossings itself, without a browser, is then left to
+  // report its own enforcement through `boundaries()`, which is where that fact lives.
+  if (environment.browser.enabled && !wantsBrowser && runtimeEnvironment.boundary.network !== "allow") {
     logger.warn("boundary", {
       declared: `networkPolicy: ${runtimeEnvironment.boundary.network}`,
       enforcement: "unsupported",

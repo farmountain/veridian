@@ -1,0 +1,52 @@
+# The goal: an observable end state, not an activity.
+#
+# "Make the API work" is not a goal. "The widget is priced at 1000 cents because the catalog says
+# $10.00, the cart totals 12500 cents, creating an item is answered 201, an absent sku is answered
+# 404, and every response states version 2" is a goal, because a third party can put five requests to
+# the service and decide whether it is true. Veridian never chooses this; it validates against it.
+
+version: 1
+id: local-api
+
+statement: >-
+  The cart service states its catalog correctly in whole cents and answers the cart's total from the
+  quantities it holds, distinguishes the three outcomes a request can have - an answer, a creation and
+  an absence - by status code, and labels every response with the one version it declares.
+
+acceptance: acceptance.yaml
+environment: environment.yaml
+
+context: |-
+  The application under test is a real HTTP service on `node:http`, listening on a loopback port and
+  answering real requests. It is the ninth world Veridian ships and the third that is not simulated:
+  nothing stands in for the service, the socket or the request. What is withheld is the browser,
+  because a page is a rendering of an application and this contract's questions are about the
+  application's own answers - a status code, a header and a body an operator can read directly.
+
+  The two surfaces a defect can hide on are deliberately different in kind. One is the money: a price
+  is declared as dollars in the catalog and stated as whole cents by the API, and that conversion is
+  the single place a rounding decision is made. The other is shared: every response in the service is
+  written by one function, so the version header it sets is a property of the service rather than of a
+  route, and editing it is read by every criterion that asks for the header.
+
+tags:
+  - api-world
+  - ninth-adapter
+
+# Safety boundaries. Every field is required and has a hard ceiling as well as a default, because
+# Veridian executes potentially untrusted AI-generated code (PLAN.md 52).
+limits:
+  # 10 is the MVP ceiling. The demo needs 5: one to observe the defects, and four repairs.
+  maxIterations: 10
+  maxRuntimeMs: 300000
+  maxCriterionMs: 30000
+  # The service listens on loopback and reaches nothing. `deny` is recorded in the run's
+  # reproducibility block, and the adapter reports it as `unsupported` rather than `enforced` - a
+  # boundary an adapter cannot hold is stated as unheld rather than implied to be safe. What the
+  # adapter *can* hold it does hold: a `call` step naming an address outside the service's origin is
+  # refused and recorded as a crossing, because a criterion is a question about this service and not
+  # an address of its own choosing.
+  networkPolicy: deny
+  # `sandbox` rather than `deny`: the service is a Node process in this tree and needs nothing written
+  # at all. A `POST` that created an item writes to memory, not to disk.
+  filesystemWrite: sandbox
