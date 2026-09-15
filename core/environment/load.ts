@@ -17,6 +17,7 @@ import {
   type OsPlan,
   type PosixPlan,
   type ResetStrategy,
+  type VSCodePlan,
 } from "./types.ts";
 
 /**
@@ -60,6 +61,16 @@ function asStringArray(value: unknown): string[] {
 
 /** Strip a trailing slash so `http://host:1/` + `/health` does not become `http://host:1//health`. */
 const trimTrailingSlash = (value: string): string => value.replace(/\/+$/, "");
+
+/**
+ * A three-part version, the form a real host's own version takes.
+ *
+ * Written here rather than reused from a semantic-version helper, because the only thing this world
+ * does with the string is compare a *floor* against it, and a comparison is the one job a permissive
+ * pattern would get wrong silently: `^1.100` would parse, compare, and produce an answer that looks
+ * computed and is not.
+ */
+const VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/;
 
 /**
  * The URL the health check will probe.
@@ -410,6 +421,71 @@ function readContainer(raw: unknown, appPath: string): ContainerPlan | null {
   };
 }
 
+/**
+ * The extension-host declaration, resolved.
+ *
+ * The sixth time the rule of {@link readCluster}, {@link readPosix}, {@link readOs}, {@link readCloud}
+ * and {@link readContainer} is written out, and the second time one of these readers validates a
+ * *rule* rather than accepting a label - the first being `container.platform`.
+ *
+ * `apiVersion` is validated because it is compared. A real extension host refuses to load an extension
+ * whose `engines.vscode` range does not admit the host's own version, so this world computes the same
+ * answer from the same two facts - and a version string this world cannot parse is a version string it
+ * cannot do that with. Accepting it would leave the engine answer unreachable, which is the shape this
+ * repository has paid for twice: a guard whose branch no document can reach is not a guard, and a
+ * requirement that names a value must be read in the form the reader can read it in. Refusing it here
+ * stops the run before a world exists rather than after a run whose every engine reading is a guess.
+ *
+ * `activationEvent` is nullable and is deliberately *not* defaulted to a sentinel. `null` means "the
+ * manifest decides", which is a third answer beside "this event" and "unset" - and the reading
+ * records the event that was really fired, so a criterion about activation asserts something observed.
+ */
+function readVSCode(raw: unknown, appPath: string): VSCodePlan | null {
+  if (raw === undefined || raw === null) return null;
+  if (!isPlainObject(raw)) {
+    throw defect(
+      "$.vscode",
+      "vscode must be an object naming a host, the API version it answers as, and the sandbox root " +
+        "it holds its workspace and its extension state in",
+    );
+  }
+  const host = asString(raw["host"]).trim();
+  const apiVersion = asString(raw["apiVersion"]).trim();
+  const root = asString(raw["root"]).trim();
+  const missing = [
+    host === "" ? "host" : null,
+    apiVersion === "" ? "apiVersion" : null,
+    root === "" ? "root" : null,
+  ].filter((entry): entry is string => entry !== null);
+  if (missing.length > 0) {
+    throw defect(
+      `$.vscode.${missing[0] ?? "host"}`,
+      `the extension-host declaration is missing ${missing.join(", ")}. The host is what every ` +
+        "reading names, the API version is what a manifest's `engines.vscode` floor is compared " +
+        "against, and the root is the directory on this machine the world's workspace and extension " +
+        "state live in - defaulting any of them would produce a verdict about a host nobody described.",
+    );
+  }
+  if (!VERSION_PATTERN.test(apiVersion)) {
+    throw defect(
+      "$.vscode.apiVersion",
+      `the extension-host declaration names ${JSON.stringify(apiVersion)} as its API version, and ` +
+        "this world compares that version against every manifest's declared `engines.vscode` floor. " +
+        "A version it cannot parse is a version it cannot compare, which would leave the engine " +
+        "answer unreachable - so it is refused here, before a world exists, rather than reported as " +
+        "a reading nobody can act on.",
+    );
+  }
+  const activation = typeof raw["activationEvent"] === "string" ? raw["activationEvent"].trim() : "";
+  return {
+    host,
+    apiVersion,
+    activationEvent: activation === "" ? null : activation,
+    root: resolveSibling({ dir: appPath, path: "", text: "" }, root),
+    settings: readEnv(raw["settings"]),
+  };
+}
+
 function readBoundary(limits: GoalLimits): BoundaryPolicy {
   return {
     network: limits.networkPolicy,
@@ -492,6 +568,7 @@ export function finalizeEnvironment(
     os: readOs(raw["os"], appPath),
     cloud: readCloud(raw["cloud"]),
     container: readContainer(raw["container"], appPath),
+    vscode: readVSCode(raw["vscode"], appPath),
     health: readHealth(raw["health"], url !== "", readyPattern),
     reset: { strategy: strategy as ResetStrategy, command: resetCommand },
     browser: readBrowser(raw["browser"], url !== ""),

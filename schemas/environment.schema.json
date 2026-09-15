@@ -99,6 +99,19 @@
       "required": ["runtime", "platform", "root"],
       "additionalProperties": false
     },
+    "vscode": {
+      "type": ["object", "null"],
+      "description": "The VS Code extension host this world stands in for, when the world is one. Present for a simulated host such as `sim-vscode`; absent for every other world. Same reasoning as `container`: stated here rather than as an adapter-private option, so the plan every reader sees names the same host, API version and sandbox the run measured, and so that 'this world is not an extension host' stays distinguishable from 'nobody filled the field in'. A world declaring `vscode` has no url, no cluster, no posix, no os, no cloud and no container, exactly as a database world has no url. Two fields here earn their place in a way the earlier blocks' fields did not: `apiVersion` is what makes `engines.vscode` checkable at all - without it there is nothing for a manifest's declared floor to be compared against - and it is the one field that turns 'the extension loaded' into a verdict about whether it *should* have.",
+      "properties": {
+        "host": { "type": "string", "minLength": 1, "description": "The host identity the readings name, so a result says which host produced it. A free string rather than an enumeration: a host name decides nothing a criterion can observe, and enumerating it would let a label act as a rule." },
+        "apiVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$", "description": "The VS Code API version this world answers as, e.g. `1.100.0`. A record, not an installation: there is no editor anywhere in the loop. It is the field that makes the engine floor computable - a real host refuses an extension whose `engines.vscode` range does not admit its own version, and this world computes the same answer from the same two facts, so an extension with a floor this host cannot meet is refused and a criterion can observe the refusal rather than wait for a user to report an extension that installs and never starts." },
+        "activationEvent": { "type": ["string", "null"], "description": "The activation event the host fires. Null - the default - means the manifest decides: the host fires the first event `contributes.activationEvents` or `activationEvents` declares, or `*` when it declares none. Declared explicitly only when a criterion is about *which* event activates the extension rather than about what activation does." },
+        "root": { "type": "string", "minLength": 1, "description": "The directory on this machine the world's host, its persisted extension state and its workspace folder live in. A sandbox rather than the application directory, on the same reasoning as `posix.root`: the world is destroyed and rebuilt on every reset, so pointing it at the application would delete the code under test on the first iteration." },
+        "settings": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Configuration values the operator supplies, as the workspace's own settings would. A setting an extension reads is either declared as a default by the manifest or supplied here, and the reading records which - so a criterion can tell 'the extension read the default' from 'the extension read the value it was told to read'. Without this field every setting would read as a default and the distinction would be unobservable, which is the shape of a field that exists and cannot be exercised." }
+      },
+      "required": ["host", "apiVersion", "root"],
+      "additionalProperties": false
+    },
     "health": {
       "type": "object",
       "properties": {

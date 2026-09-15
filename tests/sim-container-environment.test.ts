@@ -94,6 +94,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => {
     os: null,
     cloud: null,
     container: { ...CONTAINER },
+    vscode: null,
     health: {
       path: null,
       expectStatus: null,

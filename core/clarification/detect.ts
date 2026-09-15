@@ -158,6 +158,16 @@ export interface EnvironmentLike {
    * block as a path would be reading the wrong one of the two.
    */
   readonly container?: unknown;
+  /**
+   * Present when the world stands in for a VS Code extension host.
+   *
+   * It has no address at all, and this is the one declaration whose subject is a *host* rather than a
+   * place - the world is the thing that loads the application rather than the thing the application
+   * runs inside. It carries a sandbox root like the four filesystem worlds before it, so a detector
+   * that read "has a directory" as "has an application to reach over a socket" would be reading this
+   * block backwards.
+   */
+  readonly vscode?: unknown;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -171,11 +181,12 @@ const isMissing = (value: unknown): boolean =>
  * Whether the document describes a world with no HTTP surface of its own.
  *
  * Decided from the *document*, not from the adapter name, because `core/clarification` is the lowest
- * layer and may not import an adapter to ask it. Five shapes have no HTTP: a world reached by
+ * layer and may not import an adapter to ask it. Seven shapes have no HTTP: a world reached by
  * opening a file (`databasePath`), one whose address is a substitute control plane (`cluster`), one
- * that is a system rather than a service (`posix`), one that is a machine (`os`), and one whose
- * subject is an account rather than a host or a system (`cloud`). Anything else is a socket world,
- * and is still asked for its URL.
+ * that is a system rather than a service (`posix`), one that is a machine (`os`), one whose subject
+ * is an account rather than a host or a system (`cloud`), one whose subject is a runtime holding
+ * images and containers (`container`), and one whose subject is the editor host that loads an
+ * extension (`vscode`). Anything else is a socket world, and is still asked for its URL.
  *
  * Getting this wrong is not cosmetic, and each new shape is how the cost was measured. Every question
  * gated below is an HTTP question - the address, the health path, the health status, whether to drive
@@ -200,7 +211,8 @@ const hasNoHttp = (environment: EnvironmentLike): boolean =>
     !isMissing(environment.posix) ||
     !isMissing(environment.os) ||
     !isMissing(environment.cloud) ||
-    !isMissing(environment.container));
+    !isMissing(environment.container) ||
+    !isMissing(environment.vscode));
 
 const asArray = <T>(value: readonly T[] | undefined): readonly T[] => value ?? [];
 

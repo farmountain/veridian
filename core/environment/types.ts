@@ -294,6 +294,32 @@ export interface EnvironmentDefinitionShape {
     readonly platform?: unknown;
     readonly root?: unknown;
   };
+  /**
+   * The VS Code extension host this world stands in for, when the world is one.
+   *
+   * Five facts, and the third of them is what makes this block different in kind from the six before
+   * it. `host` and `root` are the runtime-and-sandbox pair every simulated world declares, and they
+   * would be enough to name a world and destroy it. `apiVersion` is not: it is the only field in any
+   * of these blocks that a *rule* is computed from, because a real extension host refuses to load an
+   * extension whose manifest declares an `engines.vscode` range that does not admit the host's own
+   * version - and the computed answer is the whole difference between an extension that was loaded
+   * and an extension that should have been.
+   *
+   * `activationEvent` is nullable on purpose. A real host decides which event to fire from the
+   * manifest; declaring one here overrides that, and `null` means "the manifest decides" rather than
+   * "nobody filled the field in" - two states a single empty string could not tell apart.
+   *
+   * `settings` is here for the reason every other block carries its own overrides: a setting an
+   * extension reads arrives from either the manifest's declared default or from the operator, and a
+   * reading that could not say which would be a reading of a value nobody can trace.
+   */
+  readonly vscode?: {
+    readonly host?: unknown;
+    readonly apiVersion?: unknown;
+    readonly activationEvent?: unknown;
+    readonly root?: unknown;
+    readonly settings?: unknown;
+  };
   readonly health?: {
     readonly path?: unknown;
     readonly expectStatus?: unknown;
@@ -451,6 +477,19 @@ export interface EnvironmentPlan {
    * be able to see which half of a verdict came from where.
    */
   readonly container: ContainerPlan | null;
+  /**
+   * The extension host this world stands in for, or `null` when the world is not one.
+   *
+   * The eighth of the same field, one per kind of world, and read for the same reason as the other
+   * seven: the first question asked of a result is *which world produced it*. An extension-host
+   * reading answers that with four facts - which host the readings name, which API version it
+   * answered as, which event activated the extension, and which directory on this machine its
+   * sandbox lives in - and the answer matters more here than anywhere else, because this is the only
+   * world whose subject is itself a host. A verdict about an extension host reached against a real
+   * one and a verdict reached against a substitute for one are different claims, and a bundle that
+   * did not name which of the two it used would be unable to tell them apart.
+   */
+  readonly vscode: VSCodePlan | null;
   readonly health: HealthPolicy;
   readonly reset: { readonly strategy: ResetStrategy; readonly command: string | null };
   readonly browser: BrowserPolicy;
@@ -580,4 +619,38 @@ export interface ContainerPlan {
   readonly platform: ContainerPlatform;
   /** Absolute, resolved against `appPath` on the same rule `databasePath` follows. */
   readonly root: string;
+}
+
+/**
+ * A VS Code extension host's resolved declaration.
+ *
+ * `apiVersion` is the reason this block exists rather than the world keeping the number to itself.
+ * A real host refuses to load an extension whose `engines.vscode` range does not admit the host's own
+ * version - and that refusal is the exact defect this repository has already paid for once, when the
+ * Cockpit declared a floor six minor releases below the first host that could load its entry point.
+ * The failure mode is quiet: the extension installs, nothing errors, and it never starts. Computing
+ * the answer needs the host's version to be a *declared* fact of the world, because a reading that
+ * reported its own version could not be contradicted by anything.
+ *
+ * `activationEvent` is `null` when the manifest decides. That is not a default in the sense the other
+ * plans use the word - it is a third answer, and the reading records which event was really fired, so
+ * a criterion asserting an activation event asserts something the world observed rather than
+ * something the plan assumed.
+ *
+ * `root` is a *sandbox* directory, on the same reasoning as {@link PosixPlan.root}: the world is
+ * destroyed and rebuilt on every reset, so pointing it at the application would delete the code under
+ * test on the first iteration. It is also where the extension's own persisted state lives, which is
+ * what lets an activation be a fresh process without being an amnesiac one.
+ */
+export interface VSCodePlan {
+  /** The host identity the readings name, e.g. `veridian-vscode-host`. Declared, never inferred. */
+  readonly host: string;
+  /** The API version the world answers as, e.g. `1.100.0`. A record, not an installation. */
+  readonly apiVersion: string;
+  /** The activation event to fire, or `null` to let the extension's own manifest decide. */
+  readonly activationEvent: string | null;
+  /** Absolute, resolved against `appPath` on the same rule `databasePath` follows. */
+  readonly root: string;
+  /** Configuration values supplied in place of the manifest's declared defaults. */
+  readonly settings: Readonly<Record<string, string>>;
 }
