@@ -37,8 +37,8 @@ in `extension/vscode/`, if you want the same engine with a UI.
 git clone <this-repository-url> veridian
 cd veridian
 npm ci                    # runtime dependency: yaml. dev: typescript, @types/node.
-npm run gate              # tsc --noEmit, then the whole test suite. 1273 tests, about three seconds
-                          # (this tree's own 1213 plus the Cockpit's 60, which the runner discovers
+npm run gate              # tsc --noEmit, then the whole test suite. 1456 tests, about four seconds
+                          # (this tree's own 1396 plus the Cockpit's 60, which the runner discovers
                           # because it walks the tree; the extension has its own gate as well).
 
 npm run e2e:install       # one-time, ~150 MB: fetch the Playwright browser
@@ -50,17 +50,20 @@ npm run demo:os           # the fifth: the app provisions a SIMULATED Windows sy
                           # account that is deliberately not an administrator
 npm run demo:cloud        # the sixth: the app provisions a SIMULATED provider account over HTTP,
                           # judged as a service account rather than as the account root
+npm run demo:container    # the seventh: the app provisions a SIMULATED container runtime, and is
+                          # judged on the images, containers, mounts and logs that runtime holds
 ```
 
-Run those eight in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
+Run those nine in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
 Playwright is installed **outside** the lockfile on purpose, so installing the browser before `npm ci`
 would discard it.
 
-`demo`, `demo:db`, `demo:posix`, `demo:os` and `demo:cloud` need no extra setup. `demo:k8s` needs
-neither a cluster nor `kubectl`, `demo:posix` needs neither a virtual machine nor a Linux host,
-`demo:os` needs neither a Windows guest nor a hypervisor, and `demo:cloud` needs no cloud account, no
-`aws`/`az`/`gcloud` session and no outbound socket - there is no cluster software, no guest kernel, no
-image and no provider API anywhere in those runs - which is the point of them: Veridian builds worlds,
+`demo`, `demo:db`, `demo:posix`, `demo:os`, `demo:cloud` and `demo:container` need no extra setup.
+`demo:k8s` needs neither a cluster nor `kubectl`, `demo:posix` needs neither a virtual machine nor a
+Linux host, `demo:os` needs neither a Windows guest nor a hypervisor, `demo:cloud` needs no cloud
+account, no `aws`/`az`/`gcloud` session and no outbound socket, and `demo:container` needs no Docker,
+no container runtime and no daemon - there is no cluster software, no guest kernel, no image and no
+provider API anywhere in those runs - which is the point of them: Veridian builds worlds,
 and a world may be simulated. What a simulated world may never do is pass itself off as a real one, so
 each run records what it stood in for and a verdict a simulation cannot justify is reported
 `INCONCLUSIVE`.
@@ -200,8 +203,8 @@ an external agent reads to learn what failed **without Veridian having to drive 
 The bundle also holds `artifacts/repair-<iteration>.log`: the repair command's own stdout, stderr,
 command line, exit code and working directory, written before the run acts on that answer. It is the
 one file in the bundle that is evidence about the *actor* rather than about the application, and it is
-keyed by iteration because a run can repair more than once - the fourth demo's passing run holds four
-transcripts at 1391, 1678, 1618 and 1718 bytes, so a single name would have left a reader holding one
+keyed by iteration because a run can repair more than once - the seventh demo's passing run holds four
+transcripts at 2284, 2241, 2186 and 2179 bytes, so a single name would have left a reader holding one
 attempt while believing it was the only one. Nothing in the verdict reads it: a repair is believed only
 once the criteria are re-observed from a clean world, which is why it is safe to store verbatim.
 
@@ -428,12 +431,16 @@ indistinguishable from one that is broken.
 
 ### Criteria that act, not only observe
 
-A step is one of seven kinds, and each is the *only* way to act in the world it belongs to: `goto`,
-`fill`, `click` and `waitFor` in a browser; `sql` in a database world, which has no page to click; 
-`apply` in a cluster world, which has no form to fill; and `run` in a system world, which has neither.
-They exist because some questions cannot be answered by looking: whether a service survives a restart,
+A step is one of eleven kinds, and each is the *only* way to act in the world it belongs to: `goto`,
+`click`, `reload`, `fill`, `select`, `press` and `waitFor` in a browser; `sql` in a database world,
+which has no page to click; `apply` in a cluster world, which has no form to fill; `run` in a system
+world, which has neither; and `call` in a provider-account world, which is the one kind that lets a
+*criterion* make its own request rather than read one the application made.
+These exist because some questions cannot be answered by looking: whether a service survives a restart,
 whether a path outside the sandbox is really refused, whether a hardening change actually hardened
-anything.
+anything. A world that does not implement a kind **refuses it by name** rather than reporting a verdict
+it cannot justify, which is how a browser contract that drifted onto a container world is caught instead
+of being judged against nothing.
 
 `run` is an argument vector rather than a shell string, and that is deliberate - a shell string would
 need a shell, and the shell would be a second substitution with its own quoting rules to get wrong,
@@ -565,6 +572,53 @@ world that performs a `call` step, which is how a criterion puts its *own* reque
 judges the answer: the application's traffic cannot tell you what the account does with a request
 nobody made.
 
+The `container` world asks about a *daemon*, and that makes it the furthest thing from a directory yet.
+An application that containerises itself does not write files and declare itself finished: it issues
+commands to a runtime and then reads the runtime back, and nearly everything a container contract cares
+about is a fact the runtime holds rather than a fact on disk. An image is a record with tags, labels, a
+digest and a layer list; a container is a record with a state, an exit code, mounts, published ports and
+limits; a log is what the runtime captured from a process it started. So this world is a store of image
+records, a store of container records and a small register of commands it answers in process, and the
+application is a real program that really issues those commands and really reads the answers.
+
+```yaml
+# environment.yaml, against the sim-container world
+adapter: sim-container
+app: app
+url: null                        # no HTTP surface to probe
+dependencyInstall: null          # the substitute is in process, the app is a program
+container:
+  runtime: docker                # the spelling every reading carries, compared against the document
+  platform: linux                # a WORKDIR carrying a backslash is refused, not quietly accepted
+  root: sandbox                  # resolved against the application directory
+start: { command: node, args: [provision.mjs], readyPattern: 'cart-web provisioned: \d+ files, \d+ commands' }
+health: { timeoutMs: 30000, intervalMs: 100 }
+reset: { strategy: restart }
+```
+
+`npm run demo:container` drives this: four deliberate defects, twenty-seven criteria, and a `FAIL` ->
+repair -> `PASS` descent in five iterations (measured, verbatim: iteration 1 fails `AC-008`, `AC-010`,
+`AC-011`, `AC-012`, `AC-015`, `AC-016`, `AC-017`, `AC-018`, `AC-022` and `AC-026`; iteration 5 is `PASS`
+on all twenty-seven with the reason `27/27 mandatory criteria passed, environment valid, no safety
+violation, evidence complete.`). Three of the four defects are read by exactly one criterion each - and
+`D3`, the one that changes what the service's own stdout says about its catalogue role, is deliberately
+read by one, because nothing in this world derives anything from a program's announcement about itself.
+The fourth is read by **seven**. Its bind mount's source is misspelled by one character, so the world
+refuses to start the container, so the container stays created and never running, so its health is
+unknown, its two output streams are empty, its mount reading says `source absent`, and a criterion's own
+`exec` never reached a process. **One character, seven readings that are each a separate true fact about
+one world** - and `AC-008` says so in its own description, because a criterion that asked only whether
+`cart-web` *exists* would pass for a container that was created and never brought up.
+
+The reading carries a `simulated` field naming each surface that is not real - namespaces, cgroups,
+image layers, the registry, published ports, volumes and user switching - so a `PASS` is traceable to a
+named substitute rather than to unexamined reality. The world also states its own three limits in
+`environment.yaml` rather than leaving them to be inferred, because each is a verdict a reader could
+otherwise mistake for a stronger one: limits are *declared and not enforced*, so `container.limit`
+renders `(declared, not enforced)`; a container's `user` is recorded and never applied, so the user
+criterion judges what the image declares rather than a privilege boundary; and every port is a mapping
+that claims no socket, so `container.port` renders `exposed` and never `reachable`.
+
 ---
 
 ## How the code is arranged
@@ -579,8 +633,8 @@ core/acceptance/        AcceptanceCriterion, and the engine that turns a contrac
 core/execution/         the run controller: state machine, bounded exits, repair gate
 core/validation/        ValidationResult, the validator registry, status semantics, verdict rollup
 core/environment/       EnvironmentAdapter, the environment manager, the shared web, database, k8s,
-                        posix, os and cloud vocabularies that keep validators from importing an
-                        adapter
+                        posix, os, cloud and container vocabularies that keep validators from
+                        importing an adapter
 core/evidence/          the evidence engine and the run bundle
 core/run/               run identity, history, iteration state
 core/metrics/           M1..M5, measured over the bundles on disk
@@ -595,6 +649,10 @@ adapters/sim-os/        the same shape as `sim-posix` one family out: a substitu
 adapters/sim-cloud/     a real HTTP server speaking a provider's own routes over loopback, holding
                         buckets, objects, queues, secrets and principals it decides permissions
                         for itself; no cloud account, no session and no outbound socket
+adapters/sim-container/ a store of image and container records beside a register of runtime commands
+                        it answers in process, holding tags, labels, digests, mounts, ports,
+                        limits, health and captured output; no Docker, no daemon, no image and
+                        no namespace or cgroup that ever existed
 validators/playwright/  web.element, web.visible, web.text, web.value, web.count, web.url,
                         web.console.clean, web.network.ok
 validators/database/    db.table, db.column, db.count, db.value
@@ -626,9 +684,11 @@ examples/sim-os/        the fifth demo: the app provisions a substitute Windows 
                         judged as `svc-audit` - an account the loader refuses to let be SYSTEM
 examples/sim-cloud/     the sixth demo: the app provisions a substitute provider account over HTTP
                         and is judged on the resources that account holds
+examples/sim-container/ the seventh demo: the app provisions a substitute container runtime and is
+                        judged on the images, containers, mounts, ports and logs it holds
 extension/vscode/       the VS Code Cockpit: a thin client, no validation logic. The one directory
                         with a build step, because the extension host is not Node's loader
-tests/                  1273 tests in a root `node --test` run: this tree's own 1213 plus the
+tests/                  1456 tests in a root `node --test` run: this tree's own 1396 plus the
                         Cockpit's 60
 
 dist/                   GENERATED by `npm run build`. Never edited, never committed.
@@ -664,9 +724,9 @@ Layering is enforced by hand, and `core/*` may not import `adapters/*`, `validat
 ## Scope
 
 **In, for the MVP:** VS Code + Veridian Core + a local application + a browser + Playwright +
-deterministic acceptance criteria + evidence + reset/replay. Six adapters exist: `local-web` and
+deterministic acceptance criteria + evidence + reset/replay. Seven adapters exist: `local-web` and
 `local-db`, the second being the proof that `EnvironmentAdapter` is a seam rather than a browser
-harness with an interface bolted on - and four *simulated* worlds. `sim-k8s`: a real application
+harness with an interface bolted on - and five *simulated* worlds. `sim-k8s`: a real application
 process really deploys itself into a substitute control plane over a real HTTP surface it really
 calls, with no cluster software anywhere in the loop. `sim-posix`: a real application process really
 provisions a substitute Linux system through commands it really issues, with no virtual machine and
@@ -674,10 +734,13 @@ no guest kernel anywhere in the loop. `sim-os`: the same shape for a Windows or 
 as a named account rather than as `SYSTEM`, with no guest and no image anywhere in the loop.
 `sim-cloud`: a real application process really provisions a substitute provider account over HTTP
 routes it really calls, and is judged on the resources that account holds, with no cloud account, no
-session and no outbound socket anywhere in the loop. In all four, the substitution is **declared**:
-`environment.json` names what was stood in for and the reading carries a `simulated` field, so a
-`PASS` is traceable to a named substitute rather than to unexamined reality - and a verdict a
-substitute cannot justify is reported `INCONCLUSIVE`.
+session and no outbound socket anywhere in the loop. `sim-container`: a real application process
+really issues runtime commands and really reads the runtime back, and is judged on the images,
+containers, mounts, ports, limits and captured output the substitute holds, with no Docker, no
+daemon, no image and no namespace or cgroup anywhere in the loop. In all five, the substitution is
+**declared**: `environment.json` names what was stood in for and the reading carries a `simulated`
+field, so a `PASS` is traceable to a named substitute rather than to unexamined reality - and a
+verdict a substitute cannot justify is reported `INCONCLUSIVE`.
 
 **Out, deliberately:** Kubernetes, cloud deployment, VM or mobile orchestration, distributed
 execution, data lakes, multi-agent orchestration, LLM training, a plugin marketplace, a SaaS backend.
@@ -685,7 +748,9 @@ Veridian may *integrate with* all of these; it must not *compete with* them. It 
 framework, not an agent orchestrator, not a coding agent, and not a CI system. "Cloud deployment" is
 listed out in that sense - Veridian does not deploy anything to a real provider - and the `cloud`
 world above is not an exception to it: it is a substitute account on loopback, which is why its
-readings say so.
+readings say so. The `container` world is the same argument one more time: Veridian does not build or
+run real containers, and does not claim to - it holds records of images and containers beside a
+register of runtime commands, and every reading says which surfaces are stood in for.
 
 Also built, and named here rather than left for the reader to discover: the **VS Code Cockpit**
 (`extension/vscode/`) - a thin client over the same local Core interface the CLI drives, so CLI, CI

@@ -1,0 +1,125 @@
+# The goal. One sentence describing an observable end state, and the two documents that decide whether
+# it holds.
+#
+# Read `context` below before changing anything here. A simulated world can be mistaken for a real one,
+# and that mistake is the only failure this adapter has that a criterion cannot detect - so the
+# obligations it meets and the things that are never simulated are written down where the goal is, rather
+# than left in a comment in the adapter where a reader of a *result* would never find them.
+
+version: 1
+
+id: sim-container
+
+# An observable end state, not an activity. "The application builds an image and runs a container" would
+# be an activity and would be satisfied by a program that sent the commands and read nothing back; this
+# says what the substitute runtime holds when the program is right, and every clause of it is read by at
+# least one criterion in `acceptance.yaml`.
+statement: >-
+  After the application deploys itself into the runtime it was handed, that runtime holds an image tagged
+  cart-web:1.0.0 and cart-web:latest whose build context really was copied into it, a volume named
+  cart-state, and a running container named cart-web created from that image with the application
+  directory bound at /workspace and the volume at /var/lib/cart, publishing host port 18080 as container
+  port 8080, declaring svc-cart as the account it runs as, carrying an enforced-none memory, cpu and pid
+  limit, and answering a healthcheck that reads the line the service wrote - and a second container from
+  the same image has run to completion with exit code zero, while the runtime itself has refused an
+  image pull it has no registry for and refused a command it does not implement.
+
+acceptance: acceptance.yaml
+environment: environment.yaml
+
+context: |-
+  ## This world is simulated, and what that obliges it to do
+
+  There is no Docker daemon, no Podman, no containerd, no runc, no OCI image, no layer, no namespace, no
+  cgroup, no registry and no outbound socket anywhere in this run. The runtime under test is a
+  substitute: a directory this machine can open, and tables of image records, container records, mount
+  roots, volumes and command results that the world maintains in process. The runtime is reached the way
+  a real one is reached - over commands - and the substitution is in what answers them.
+
+  A substitute is only worth anything if it is held to the same three obligations a real runtime would
+  impose. Where this run meets them:
+
+    1. The application executes for real. `start.command` is a real Node program run as a child process
+       with this operator's own privileges. It reads its environment, refuses a platform it does not
+       provision for, writes a real build context with real bytes, and prints one real command vector per
+       line for the world to execute. Nothing about the application is simulated - not its decisions, not
+       its file writes, not its output.
+
+    2. The interfaces are real. The image is a real directory tree built by really copying the build
+       context, and its identifier is a real `sha256` over what was copied. The bind mount is a real
+       directory on this machine, and the container's command is a **real child process** whose working
+       directory is really resolved to that directory through the mount table - longest destination wins,
+       matched on whole segments, exactly as a real runtime resolves it. Its stdout and stderr are
+       captured from the real process's real streams. The healthcheck is really run, once, by the same
+       path a `container exec` uses. A command naming a path outside the application directory and
+       outside the world's sandbox is refused by name, with the resolution quoted in the refusal.
+
+    3. The substitution is declared. Every reading carries `simulated`, naming the surfaces that stood in
+       for the real thing - namespaces, cgroups, image-layers, registry, published-ports, volumes and
+       user-switching - so a result says which parts of a real runtime were replaced instead of leaving a
+       reader to infer it. Two criteria judge facts whose limits the family states in the same line rather
+       than hides: `container.limit` compares against `(declared, not enforced)` and `container.user`
+       judges the account a container declares while its own subject says the account is recorded and not
+       applied. The `simulated` list itself is asserted by `tests/sim-container-environment.test.ts` and
+       not by a criterion, deliberately: no validator in this family reads that field, and inventing one
+       whose only purpose was to agree with the world would be a criterion that cannot fail.
+
+  ## What is never simulated
+
+  Whether the application's code ran. What it wrote and with what bytes and hash. Whether the container's
+  process really started, and what it really printed. What the world did in answer to each command, with
+  the result and the wording. The reading taken afterwards. The verdict each criterion reaches, including
+  the authority to report `FAIL`. The reset between iterations, and the fact that it happened. None of
+  these is substituted, and no criterion in this contract could be satisfied by a world that faked one of
+  them without the others disagreeing.
+
+  ## The three limits this world states rather than hides
+
+    - **No isolation.** `resources.enforced` is `false` for every container, so `container.limit` renders
+      `(declared, not enforced)`. Memory, CPU and pid limits are declarations, because this world has no
+      cgroup and a reading that implied one had been applied would be a claim it cannot support.
+    - **No user switching.** A container's `user` is recorded and not applied - the process runs as the
+      account this world runs as. `container.user` says so in its own subject line, which is why the user
+      criterion is a criterion about what the image declares rather than about a kernel privilege drop.
+    - **No reachability.** Every port is a mapping, and no mapping claims a socket. `container.port`
+      renders `exposed` and `from the image` and never `reachable`, because nothing here binds a port for
+      a container; a contract that needed a listener would be asking about a runtime this world is not.
+
+  ## Why the boundary is reported as `unsupported` and not as `enforced`
+
+  The application is an ordinary child process of this run, so it can open any socket and any file this
+  operator can: `networkPolicy` and `filesystemWrite` are **declared** here and the adapter reports them
+  `unsupported` rather than claiming to hold them. One part of the boundary *is* held, and it is held by
+  the world rather than by a sandbox: a command naming a host path outside both the application directory
+  and the world's sandbox is refused, and an escape attempted by the *application* - as opposed to by a
+  criterion - is recorded as a boundary crossing and fails the run. The asymmetry is deliberate: the
+  operator's own criteria may probe the guard, because the operator already has these privileges, while
+  the untrusted party is the generated code.
+
+tags:
+  - container-world
+  - simulated
+  - seventh-adapter
+  - linux
+  - docker
+
+limits:
+  # The demo needs five iterations: the first pass fails one criterion per defect and cannot judge the
+  # healthcheck at all until a container is really running, and each iteration repairs exactly one
+  # defect. Ten is the schema's ceiling and the honest ceiling for a loop that must not be able to run
+  # forever.
+  maxIterations: 10
+  maxRuntimeMs: 300000
+  maxCriterionMs: 30000
+
+  # Declared, and reported as `unsupported` - see the context above. Writing `allow` here would be a
+  # claim about a boundary nothing holds: the provisioning program is a real child process and can reach
+  # the network this operator can reach.
+  networkPolicy: deny
+
+  # The application writes its build context beside itself and the world writes its sandbox beneath the
+  # application directory, and a command naming a host path that climbs out of both is refused by the
+  # world and recorded as a crossing. So this is the one boundary policy that is partly real, and it is
+  # still not enforcement of the *process* - which is why the adapter says so rather than quoting this
+  # value back as a guarantee.
+  filesystemWrite: sandbox

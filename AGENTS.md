@@ -4,7 +4,7 @@ Agent instructions for the **Veridian** repository. This is the single always-on
 instructions file for this workspace — do not add a second one
 (`.github/copilot-instructions.md`) alongside it.
 
-> **Status: the MVP is implemented and green, and five more sandbox worlds have landed.** Core, the
+> **Status: the MVP is implemented and green, and six more sandbox worlds have landed.** Core, the
 > `local-web` adapter, the Playwright validators, the CLI, the schemas and the canonical demo all exist.
 > `local-db` - a second adapter and a second validator family, against a SQLite file with no browser -
 > exists beside them, and is the proof that `EnvironmentAdapter` is a seam. `sim-k8s` is the third, and
@@ -23,8 +23,16 @@ instructions file for this workspace — do not add a second one
 > session, no provider API and no outbound socket anywhere in the loop. It is also the only world that
 > performs a `call` step, so a criterion can put its own request to the account rather than infer the
 > account's answer from the application's traffic.
-> `npx tsc --noEmit` is silent and `node --test` reports 1273 passing tests -
-> Veridian's own 1213 plus the 60 the VS Code Cockpit contributes, which the root runner discovers
+> `sim-container` is the seventh and the fifth simulated one, and its subject is a **container
+> runtime**: a real application process really provisioning images and containers through commands it
+> really issues, answered in process by a store of image and container records beside a register of
+> runtime commands, judged on the tags, labels, digests, mounts, published ports, limits, healthchecks
+> and captured output that store holds, with no Docker, no daemon, no image, no namespace and no cgroup
+> anywhere in the loop. It is the world that states its own limits rather than hiding them: limits are
+> declared and never enforced, an account is recorded and never switched to, and a published port is
+> `exposed` and never `reachable`.
+> `npx tsc --noEmit` is silent and `node --test` reports 1456 passing tests -
+> Veridian's own 1396 plus the 60 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Four distribution routes ship - a clone, an npm package, the Cockpit, and
 > a container image - and there is still **no
 > build step between the source tree and the running program**: Node 22 strips types and runs `.ts`
@@ -267,9 +275,12 @@ core/environment/       EnvironmentAdapter interface + Environment Manager (life
                         family that needs no core change to exist) + cloud-observation.ts for the
                         provider family (the sixth, and the fourth reason that rule holds, and the one
                         that carries the action vocabulary, the reference grammar and the refusal
-                        vocabulary the substitute and the validators share) + the boundary vocabulary
-                        (BoundaryPolicy/BoundaryReport) that keeps a declared safety limit from being
-                        mistaken for an enforced one.
+                        vocabulary the substitute and the validators share) + container-observation.ts
+                        for the runtime family (the seventh, and the fifth reason that rule holds, and
+                        the one that carries the reference grammar, the renderings the validators
+                        compare and the vocabulary for a command the world refuses) + the boundary
+                        vocabulary (BoundaryPolicy/BoundaryReport) that keeps a declared safety limit
+                        from being mistaken for an enforced one.
 core/evidence/          Evidence Engine. Writes the run bundle.
 core/run/               Run identity, history, iteration state.
 core/memory/            Optional durable memory client (HipCortex). Never required to run.
@@ -323,7 +334,21 @@ adapters/sim-cloud/     SimCloudEnvironment - the fourth SIMULATED world, and th
                         declares the five `CLOUD_ENV` names the application reads, and the reading
                         carries `simulated` naming each surface that is stood in for. No cloud
                         account, no session, no provider API and no outbound socket. This is the only
-                        adapter that performs a `call` step.
+                        adapter that performs a `call` step, so a criterion can put its own request
+                        to the account rather than infer the account's answer from the application's
+                        traffic.
+adapters/sim-container/ SimContainerEnvironment - the fifth SIMULATED world, and the one whose
+                        subject is a container runtime. The application really provisions, by
+                        printing command vectors the substitute really executes, and the substitute
+                        holds image records (tags, labels, an image id derived from the layer list)
+                        and container records (state, exit code, mounts, published ports, limits,
+                        healthchecks, captured output) beside a register of runtime commands
+                        answered in process. `container-port.ts` is the substitute and
+                        `sim-container-environment.ts` is the adapter, which declares the four
+                        `CONTAINER_ENV` names the application reads. It states its own limits rather
+                        than hiding them: limits are **declared and never enforced**, an account is
+                        **recorded and never switched to**, and a published port is `exposed` and
+                        never `reachable`.
 validators/playwright/  Playwright web validators (element, visible, value, text, count, url,
                         console.clean, network.ok).
 validators/database/    Database validators (table, column, count, value). Judge a reading in
@@ -356,6 +381,18 @@ validators/cloud/       Provider-account validators (bucket, object, tag, policy
                         the product that makes its own request to the world rather than reading one
                         the application made, which is why the cloud plan - and only the cloud plan -
                         admits the `call` step.
+validators/container/   Runtime validators (runtime, image, tag, digest, label, env, state, alive,
+                        exitcode, command, user, mount, port, limit, health, logs, stderr, call,
+                        probe). Judge a reading in core/environment/container-observation.ts - the
+                        seventh family, and the fifth reason that rule holds. It has no new step
+                        kind: the application provisions through command vectors printed on its
+                        stdout and is acted on with `run`, exactly as `sim-posix` and `sim-os` are.
+                        The family prints what an operator reads rather than raw JSON, and the
+                        renderings are part of each comparison: `container.limit` compares
+                        `(declared, not enforced)` and `container.port` compares `(exposed)`,
+                        because a value that omitted them would say a limit held and a port was
+                        reachable when neither is true. `container.exitcode` is all lower case,
+                        like every validator name in this tree.
 cli/                    The interface that exists today: arguments, support, worlds.ts (the adapter
                         register and the requirements each adapter declares), veridian.ts.
 schemas/                goal/acceptance/environment/run/result/ambiguity .schema.json - the
@@ -386,6 +423,15 @@ examples/sim-cloud/     The sixth demo, and the fourth simulated one: the applic
                         which acts in the world through a `call` step. Two identities matter and they
                         are not the same one: `cloud.principal` is who the application runs as, and
                         `svc-reader` is a reader account the program itself creates.
+examples/sim-container/ The seventh demo, and the fifth simulated one: the application provisions
+                        images and containers in a substitute runtime and is judged on the records
+                        that runtime holds. Four defects, twenty-seven criteria, one of which acts
+                        in the world through a `run` step and two of which expect the world to
+                        **refuse** them. Three of the four defects are read by exactly one criterion
+                        each, and are therefore the controls the fourth is read against - the fourth
+                        is a one-character misspelling of a bind mount's source that moves **seven**
+                        readings, which is what makes it the demo that shows one edit to a world is
+                        never one fact.
 examples/defect-text.ts One implementation of the CRLF rule for a textual overlay on a source file.
                         Two demos injecting defects is two chances to teach the rule differently;
                         a third copy is where the rule gets broken.
@@ -480,8 +526,8 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 1273 tests, ~4s. No directory argument.
-                           # 1273 = the root's own 1213 + the Cockpit's 60, because the runner walks
+node --test                # the whole suite. 1456 tests, ~4s. No directory argument.
+                           # 1456 = the root's own 1396 + the Cockpit's 60, because the runner walks
                            # the tree and reaches extension/vscode/src/*.test.ts. Neither figure is
                            # the whole story on its own: the root tsconfig EXCLUDES extension/**, so
                            # `npx tsc --noEmit` here does not typecheck the Cockpit and the root gate
@@ -554,6 +600,11 @@ npm run demo:cloud                          # the sixth demo, and the fourth sim
                                             # provisions a substitute provider account over routes it
                                             # really calls, judged as `svc-cart`, with no cloud account,
                                             # no session and no outbound socket. Exit 0 when it passes.
+npm run demo:container                      # the seventh demo, and the fifth simulated world: the app
+                                            # provisions images and containers in a substitute runtime
+                                            # and is judged on the records it holds. No Docker, no
+                                            # daemon and no image anywhere in the loop. Exit 0 when it
+                                            # passes: measured, 5 iterations and 27/27 criteria.
 npm run demo:no-browser                     # the same demo with `--browser none`. Every criterion is
                                             # a browser observation, so this must end INCONCLUSIVE
                                             # (exit 2). It shows the refusal, not the aha.
@@ -1362,6 +1413,67 @@ port had none, which is why the defect reached a demo run.
   The narration and its comment are one artefact; a change to either has to be read against the other
   in the same pass. *Prose next to code is a claim about the code, and it goes stale at exactly the
   moment the code moves.*
+
+- **A one-character edit is never one fact, and a defect table needs controls before it can have a
+  headline.** The seventh demo's bind mount is misspelled by one character (`./contxt` for `./context`),
+  and that single character moves **seven** readings: the mount criterion reads `source absent`, the
+  container it belongs to stays `created` and never `running`, its healthcheck never runs, both of its
+  captured output streams are empty, and the criterion's own `exec` never reaches a process - because
+  every one of those is a *separate true consequence* of a mount the world could not resolve. That is
+  what makes the other three defects the controls: `D1`, `D2` and `D3` are each read by exactly one
+  criterion, so a reader can see one edit produce one reading before watching one edit produce seven.
+  *A defect table whose entries all move many criteria has no control in it, and a demo with no control
+  cannot show that its readings are caused by the edit rather than by the world being flaky.*
+
+- **A program's completeness line must count the arrays it actually sent.** The seventh demo's
+  provisioner prints `cart-web provisioned: N files, M commands` where both figures are read off the
+  arrays it wrote - which is why no test may assert that the application's source *contains* that
+  sentence. It does not, and could not: a line assembled from a constant and two lengths is not a
+  literal anywhere in the file. Assert it against a reading of the run, or against the pattern the
+  readiness check matches, and nowhere else. Its sibling: **an application may not read stdin**, because
+  `nodeProcessRunner` spawns with `stdio: ["ignore", "pipe", "pipe"]` - so a program that prompts gets
+  an immediate EOF, not a hang, and a criterion that waits for the prompt waits forever.
+
+- **A self-declaration about a program is a legitimate defect target precisely because nothing in the
+  world reads it.** `D3` edits the service-start banner the application prints on stderr. No validator
+  in the family consults it, no other criterion moves with it, and it changes nothing about the world -
+  which is exactly what makes it the control: it is the one defect whose consequence is *only* the
+  criterion that names it, so a run that repaired it can be distinguished from a run that repaired the
+  world around it. *A defect that changes no state is not a weaker defect; it is the measurement that
+  the rest of the table is calibrated against.*
+
+- **A world's stated limits belong in the value the criterion compares, or the comparison asserts
+  something the world does not do.** `container.limit` compares `memory 268435456 bytes, cpus 1, pids 64
+  (declared, not enforced)` and `container.port` compares `18080:8080/tcp (exposed)`. Drop the
+  parenthetical and both comparisons become false claims: the first would say a limit *held*, the second
+  that a port was *reachable*. A substitute that is honest about its own boundary has to carry that
+  honesty into the comparison, not only into its documentation. *A rendering helper's name is not the
+  value its sibling validator compares - read the helper before writing the expectation.*
+
+- **An assertion that every expectation on a criterion is one validator is a claim the contract never
+  made.** The seventh demo's `AC-026` is judged by `container.probe` **and** by `container.logs` - both
+  legitimate, because the criterion asks whether the probe succeeded and what the container said while
+  it ran. A test that asserted every expectation on that criterion was `container.probe` failed on a
+  *correct* contract. It now derives the validator set from the contract and asserts the one property
+  that actually matters: every name in it is a registered validator. *Read the document before
+  narrowing it - "the validator this criterion is about" and "the validators this criterion uses" are
+  two different questions.*
+
+- **A repair agent walks the defect table in criterion order, so a test that walks it backwards is
+  testing its own loop.** `repair.ts` picks the first unrepaired defect whose criterion is failing, so
+  the seventh demo repairs `D1` then `D2` then `D3` then `D4` - and the first version of the demo test
+  asserted the reverse order (`D4` first) and failed against a working agent. The order is a property
+  of `repair.ts`, not of the table, and a test that re-derives it from its own iteration must read the
+  file it is describing. The repair counts it asserts are `[4, 3, 2, 1, 0]`.
+
+- **A correction to a count in prose is a correction to a claim about a register, so read the
+  register.** `README.md` said a step is "one of seven kinds" while `core/acceptance/steps.ts` holds
+  **eleven** in `STEP_KINDS` - a figure that had drifted through four new worlds without anything
+  reading it. The same pass found `AGENTS.md` quoting `1273` tests and `1213` of the tree's own, where
+  the measured run is `1456` and `1396`. *Both are the same defect as a roster printed in a document:
+  a number is a claim about the code, and the cheapest way to hold it is to read the code - the
+  difference is that a number cannot be pinned by a test the way a name can, so it has to be
+  re-measured at the moment the document is touched.*
 
 ## Documentation
 

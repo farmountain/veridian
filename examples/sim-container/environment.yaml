@@ -1,0 +1,104 @@
+# The world this application is judged in: a *simulated* container runtime.
+#
+# `adapter: sim-container` is the seventh adapter and the fifth simulated one. There is no Docker
+# daemon, no Podman, no containerd, no runc, no OCI image, no layer, no namespace, no cgroup, no
+# registry and no outbound socket anywhere in this run. The world is a directory on this machine, a
+# store of image records and mount roots, a table of container records, and a small register of
+# commands it answers in process.
+#
+# The substitution is the point rather than a convenience, and it is declared rather than implied:
+# `container-observation.ts` exports the surfaces this world stands in for - namespaces, cgroups,
+# image-layers, registry, published-ports, volumes and user-switching - and the adapter writes that list
+# into every reading, so a PASS can be traced to a named substitute instead of to unexamined reality.
+#
+# ## What is never simulated
+#
+# The application's program really runs as a child process. The image it builds is a real directory tree
+# with real bytes and a real `sha256` over the build context. The container's command really executes,
+# with its working directory really resolved to the bind mount's host path, and its output is captured
+# from the real process's real streams. The bind mount is a real directory on this machine, and a
+# provisioner command naming a path outside both the application directory and this world's sandbox is
+# **refused by name** rather than quietly resolved - and that refusal is recorded as a boundary
+# crossing that fails the run, because a program that reached outside the sandbox did not get a verdict.
+#
+# ## The three limits this world states rather than hides
+#
+#   - **No isolation.** `resources.enforced` is `false` for every container, so `container.limit` renders
+#     `(declared, not enforced)`. Memory, CPU and pid limits are recorded as declarations, because the
+#     world has no cgroup and a reading that implied one had been applied would be a claim it cannot
+#     support.
+#   - **No user switching.** A container's `user` is recorded and not applied: the process runs as the
+#     account this world runs as. `container.user` says so in its own subject line, and it is why the
+#     user criterion is a criterion about what the image *declares*.
+#   - **No reachability.** Every port is a mapping, and no mapping claims a socket. `container.port`
+#     renders `exposed` and `from the image` and never `reachable`, because nothing in this world binds
+#     a port for a container.
+#
+# Read this next to `goal.yaml`, which states the obligations a simulated world has to meet, and next to
+# `acceptance.yaml`, which is phrased entirely in the world's own spelling: `image/cart-web:1.0.0` and
+# `container/cart-web`, never this machine's path to the sandbox.
+
+adapter: sim-container
+
+# The application directory, relative to this file. The provisioning program and the documents are all
+# here; the build context the program writes and the sandbox the world creates both live inside it and
+# are excluded by `.gitignore`.
+app: app
+
+# This world has no HTTP surface at all - no page, no socket to probe, no status to expect. Both of these
+# are `null` rather than omitted, because "declared absent" and "forgotten" are different documents, and
+# `core/environment/load.ts` reads the first as a fact and would treat the second as a gap.
+url: null
+dependencyInstall: null
+
+container:
+  # The runtime the readings name.
+  #
+  # Free rather than an enumeration, because the world answers one grammar and a contract may legitimately
+  # be run against whichever spelling an operator declares - what is *not* free is the reading: every
+  # observation carries the runtime it was told, and AC-007 compares that against the document rather than
+  # against a constant inside the adapter.
+  runtime: docker
+
+  # The platform this world stands in for. `core/environment/load.ts` checks it against the same family
+  # list the observation vocabulary exports, and the application refuses any other by name.
+  #
+  # A world may substitute a platform only in what it can honour: paths here separate with `/`, and a
+  # `WORKDIR` carrying a backslash is refused by the world rather than quietly accepted.
+  platform: linux
+
+  # The sandbox directory, relative to `app`. Resolved against the application directory, so the store
+  # the world creates and the tree `.gitignore` excludes are the same one by construction.
+  #
+  # A directory of the world's own rather than the application directory, because every run rebuilds it
+  # from nothing: rooting the world at `app` would delete the code under test on the first reset.
+  root: sandbox
+
+start:
+  # The application's own provisioning program. A real Node program, run as a child process with this
+  # operator's own privileges, which is the first obligation a simulated world has to meet - the
+  # application executes for real and only the *runtime* is substituted.
+  command: node
+  args:
+    - provision.mjs
+
+  # The application's own signal that it finished. Both counts are `\d+` rather than digits on purpose:
+  # the program prints how many files it wrote and how many commands it issued, and a pattern pinning
+  # numbers would pass for a run that provisioned a different set of either.
+  readyPattern: 'cart-web provisioned: \d+ files, \d+ commands'
+
+health:
+  # No `path` and no `expectStatus`. Both are HTTP concepts and this world has no HTTP surface to probe;
+  # the readiness of the runtime is the readiness pattern above plus the readings taken afterwards.
+  timeoutMs: 30000
+  intervalMs: 100
+
+reset:
+  # `restart`, and the only strategy this world can honour.
+  #
+  # `sim-container` refuses `snapshot-restore` by name rather than downgrading it to a restart: a
+  # snapshot this world cannot take is one it cannot restore, and a reset that silently did something
+  # else would make every claim of repeatability unearned. `restart` is honest here - the store, the
+  # image roots, the container records and the volume roots are rebuilt from nothing, so the world a run
+  # starts in is a world that run built rather than one it inherited.
+  strategy: restart

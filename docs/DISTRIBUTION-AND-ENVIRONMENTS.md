@@ -21,7 +21,7 @@ the MVP, this one covers what comes after it.
 | 3 | VS Code extension | **Built** (Phase B) | `PLAN.md` §30, this doc, Phase B |
 | 4 | Database environment | Roadmap "Later" | `PLAN.md` §38, this doc, Phase C |
 | 5 | Linux / Kali / Windows / macOS | Roadmap Tier 2-3 | Linux/Kali built as a **simulated** world, `sim-posix` (Phase C3); Windows built as `sim-os` (Phase C4), §7 |
-| 6 | Kubernetes, cloud, data platform | Roadmap Tier 4-5 | Kubernetes built as a **simulated** world, `sim-k8s`; cloud built as `sim-cloud` (Phase C5); data planned (§5) |
+| 6 | Kubernetes, cloud, data platform | Roadmap Tier 4-5 | Kubernetes built as a **simulated** world, `sim-k8s`; cloud built as `sim-cloud` (Phase C5); the container runtime built as `sim-container` (Phase C6); data planned (§5) |
 
 Nothing in this list is forbidden. `PLAN.md` §3 forbids Veridian becoming a *Kubernetes management
 platform*, a *cloud deployment platform*, a *CI/CD platform*; it explicitly permits integrating with
@@ -347,6 +347,41 @@ re-derivation of the ordering rules. That split is the same one `sim-os` makes b
 **Acceptance:** four deliberate defects, twenty-seven criteria, the same `FAIL` -> repair -> `PASS`
 descent, and a bundle whose reading names each surface standing in for something. Measured in §7.
 
+### Phase C6 - the seventh adapter: `sim-container`, the runtime world
+
+Phase C5 proved the subject can be an account. This one attacks the axis the two simulated operating
+systems left standing: a **container runtime**, which is where the application's own filesystem view
+is *produced* rather than merely held. A mount is what decides whether the container has a filesystem
+at all, so a defect in a mount is not a wrong path - it is a container that never runs.
+
+The world is a store of image records and container records beside a register of runtime commands
+answered in process. The application really provisions: it prints one command vector per line on its
+own stdout and the substitute really executes them, exactly as `sim-posix` and `sim-os` are driven.
+
+- `core/` gains `core/environment/container-observation.ts` and one more plan field (`ContainerPlan`),
+  and nothing else a validator could have reached through an adapter. That file carries the reference
+  grammar (`image/...`, `container/...`), the renderings the validators compare, and the vocabulary for
+  a command the world **refuses** - which is what lets a criterion judge a refusal rather than an exit
+  code.
+- A seventh validator family - `container.runtime`, `container.image`, `container.tag`,
+  `container.digest`, `container.label`, `container.env`, `container.state`, `container.alive`,
+  `container.exitcode`, `container.command`, `container.user`, `container.mount`, `container.port`,
+  `container.limit`, `container.health`, `container.logs`, `container.stderr`, `container.call`,
+  `container.probe` - needs no change to `core/validation` or `core/execution`. That is the fifth
+  demonstration, and the family prints what an *operator* reads rather than raw JSON.
+- **This world adds no step kind.** It is acted on with `run`, so the provisioner's vectors are the
+  interface and the register of step kinds does not grow for a seventh time. `container.call` and
+  `container.probe` read the world's own record of a command; they are not another way to issue one.
+- **The world states its own limits rather than hiding them**, and the renderings carry those limits
+  into the value the criterion compares: a limit reads `(declared, not enforced)`, because it is a
+  record of a request and not a cgroup; an account is recorded and never switched to; and a published
+  port is `exposed` and never `reachable`. A substitute that is honest about its boundary has to be
+  honest inside the compared value, not only in its documentation.
+
+**Acceptance:** four deliberate defects, twenty-seven criteria, the same `FAIL` -> repair -> `PASS`
+descent, and a bundle whose reading names the seven surfaces standing in for something. Measured in
+§7.
+
 ### Phase D - the rest of Tier 1
 
 `local-api` and `local-process` (`PLAN.md` §36 Tier 1). Both need only a child process and an HTTP
@@ -408,7 +443,7 @@ run ids rather than adjectives.
 | `local-api` / `local-process` | real child process, real HTTP | - | planned (Phase D) |
 | `sim-k8s` | real app process against a real HTTP control plane | scheduler, kubelet, etcd, CNI, admission | **built** |
 | `sim-cloud` | real app process against real HTTP endpoints | the AWS / Azure / GCP services | **built**, see §7 |
-| `sim-container` | real app process | the runtime, the image store, cgroup semantics | planned |
+| `sim-container` | real app process provisioning images and containers over a real command surface | the runtime, the image store, the namespace and cgroup semantics, the registry | **built**, see §7 |
 | `sim-posix` (linux, kali) | real process runner + real sandboxed filesystem | the kernel, the distro, the package manager; Kali's attack network | **built** (Linux/Debian; Kali is the same world with a different declared distribution) |
 | `sim-os` (windows, macos) | real process runner | the machine accounts, the ACL engine, the registry / plist store, services and ports | **built** (Windows, judged as `svc-audit`; macOS is the same world with a different declared family) |
 | `sim-data` | real app process against real protocol endpoints | the Kafka / Spark / Hadoop / Airflow runtimes | planned |
@@ -422,7 +457,7 @@ statement - each names the world it blocks, and the simulated row that answers i
 |---------|-----|-------------|
 | a real Linux / Windows / macOS / Kali guest | No VM substrate on this machine. Booting a guest nobody can boot is the unverifiable claim this document refuses. | `sim-posix`, `sim-os` - both **built**, see §7 |
 | a real Kubernetes cluster | Same, plus no `kubectl`. | `sim-k8s` - **built**, see §7 |
-| a real container runtime as a *world* | No runtime here. Phase A2's Dockerfile is a *distribution* route and needs none; an adapter that starts and resets containers does. | `sim-container` |
+| a real container runtime as a *world* | No runtime here. Phase A2's Dockerfile is a *distribution* route and needs none; an adapter that starts and resets containers does. | `sim-container` - **built**, see §7 |
 | a real cloud account | Not a runtime question: an unattended run against a metered, credentialed account is a cost model rather than a test. | `sim-cloud` - **built**, see §7 |
 
 **This table used to be an inventory of what is not installed here, and that was the wrong question.**
@@ -830,4 +865,46 @@ failed on a **correct** contract that names two identities: the account the appl
 `svc-reader`, a reader the program itself creates. Both failures were diagnosed by reading the
 failure message rather than by guessing, and both fixes were falsified - one by filing a defect
 against a criterion no defect claims, the other by putting a typo into a `correct` block.
+
+### Phase C6: the runtime world, and what the seventh adapter proved
+
+| Step | Status | Evidence |
+|------|--------|----------|
+| Substitute runtime | built | `adapters/sim-container/container-port.ts` is a store of image records (tags, labels, an image id derived from `sha256` over the layer list) and container records (state, exit code, mounts, published ports, limits, healthchecks, captured output) beside a register of runtime commands answered in process. The bind mount is a **real directory** and a container's command is a **real child process** whose working directory is really resolved through the mount table - longest destination wins, matched on whole segments, as a real runtime resolves it. `container-port.test.ts` is 41 tests over it, falsified rather than trusted. |
+| Adapter lifecycle | built | `adapters/sim-container/sim-container-environment.ts` implements all ten `EnvironmentAdapter` methods and declares the four `CONTAINER_ENV` names the application reads. **No Docker, no daemon, no Podman, no containerd, no runc, no OCI image, no layer, no namespace, no cgroup and no registry**: what answers the commands is a directory this machine can open plus tables maintained in process. |
+| Observation vocabulary | built | `core/environment/container-observation.ts`, so no validator imports an adapter. The seventh family needed **no core change** beyond this and the name registration - the fifth sample of that claim, and the one that carries a *refusal* vocabulary beside its reference grammar. |
+| Validator family | built | `validators/container/` - nineteen validators, 58 tests. It adds **no new step kind**: the application provisions over `run` exactly as `sim-posix` and `sim-os` do, and `container.call` / `container.probe` read the world's record of a command rather than issuing one. |
+| Limits carried into the compared value | built | `container.limit` compares `memory 268435456 bytes, cpus 1, pids 64 (declared, not enforced)` and `container.port` compares `18080:8080/tcp (exposed)`. Without the parenthetical both comparisons would assert something the world does not do - that a limit *held* and that a port was *reachable*. |
+| Demo | built | `examples/sim-container/` - four deliberate defects, twenty-seven criteria, `npm run demo:container`, exit 0. Iteration 1 `FAIL`s ten criteria (`AC-008`, `AC-010`, `AC-011`, `AC-012`, `AC-015`, `AC-016`, `AC-017`, `AC-018`, `AC-022`, `AC-026`); iteration 2 removes one, iteration 3 removes one, iteration 4 removes none, iteration 5 is `PASS` on all twenty-seven with `27/27 mandatory criteria passed, environment valid, no safety violation, evidence complete.` |
+| Regression tests | built | `tests/sim-container-demo.test.ts` (29), `tests/sim-container-environment.test.ts` (55), `adapters/sim-container/container-port.test.ts` (41), `validators/container/container-validators.test.ts` (58), plus a `container` case in `tests/environment-gaps.test.ts` and the `container` roster entry in `tests/readme-rosters.test.ts`. |
+
+**What the seventh world settled.** `core/` changed by an observation vocabulary and a name, for the
+fifth time. The claim this world was built to make is narrower and harder than C5's: a world can be a
+*runtime* - the thing that produces a filesystem view rather than holding one - and still need no step
+kind of its own. It is also the first world whose stated limits are part of the value a criterion
+compares. `(declared, not enforced)` and `(exposed)` are not caveats in a document, they are what the
+comparison asserts, because a rendering that dropped them would report a limit that held and a port
+that was reachable.
+
+**One edit, seven criteria - and the three controls that make it a measurement.** D4 is a
+one-character misspelling of a bind mount's source (`./contxt` for `./context`). Ten criteria fail on
+iteration 1: two are the filed criteria of D1 and D2, and **seven of the remaining eight are
+consequences of that single character** - the container's state (`container.state`: `created`, never
+`running`), the mount itself (`container.mount`: source absent), the healthcheck that never ran
+(`container.health`), both captured streams (`container.logs` and `container.stderr`: empty), the
+criterion's own call (`container.call`, which is D4's filed criterion), and the probe that never
+reached a process (`container.probe`). The eighth is D3's criterion, which D4 had masked as well.
+Every one of those is a *separate true consequence* of a mount the world could not resolve - and the
+finding is only readable because the other three defects are controls: `D1` (`container.label`,
+AC-010), `D2` (`container.port`, AC-011) and `D3` (`container.logs`, AC-018) are each read by exactly
+**one** criterion. `D3` is the purest control, because it moves a line the program printed about
+itself and **no reading in this world is computed from that line** - so its consequence is only the
+criterion that names it.
+
+The measured progression shows a control doing its job rather than merely being asserted. Iteration 3
+`FAIL`s eight criteria and `D3` is repaired after it; **iteration 4's failure set is iteration 3's,
+unchanged**; iteration 5 is `PASS`. So D3's criterion moved only once D4's mount resolved - a
+criterion reading a container's captured output cannot report a repair to a line the container never
+had the chance to print. A loop that reported progress from its own intentions would have shown that
+criterion move on iteration 4, from the repair rather than from the world.
 

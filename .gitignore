@@ -53,6 +53,26 @@ examples/sim-posix/app/sandbox/
 # construction.
 examples/sim-os/app/sandbox/
 
+# The sandbox tree the `sim-container` example's world builds. The reasoning is the `sim-posix` and
+# `sim-os` one, with a third thing in it: this tree is not only a filesystem, it is the image store
+# (each image's record plus a copy of the build context it was built from), the container records, the
+# volume roots and the world's own call log. A committed copy would let a criterion read an image the
+# run never built, a container record the run never created, or a call the run never made - and the
+# bundle would hold a PASS for a runtime this machine did not stand up. It sits under `app/` because
+# `core/environment/load.ts` resolves `container.root` against this document's own `app:` value, so the
+# tree the world creates and the tree this rule excludes are the same one by construction.
+examples/sim-container/app/sandbox/
+
+# The build context the `sim-container` application generates. This one is not the world's state, it is
+# the application's *output*: `provision.mjs` derives the Dockerfile and the four programs from its own
+# arrays on every run, and the world copies this directory into each image it builds. It is excluded
+# for the reason every generated tree in this repository is - `dist/`, `extension/vscode/out/` and
+# `sim-k8s/app/build/` all carry it - and for one more that is particular to this world: a committed
+# context would be a *second* copy of the four programs, and a defect injected into the derived copy
+# instead of the file it is derived from would be erased by the next iteration's own provisioning, so
+# the demo would report a repair the world never observed.
+examples/sim-container/app/context/
+
 # Editors / OS
 .DS_Store
 Thumbs.db

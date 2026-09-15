@@ -1,0 +1,413 @@
+# The acceptance contract: what the world must hold when the application is right.
+#
+# Twenty-seven criteria over all nineteen validators, judged against a *simulated* container runtime.
+# Four of them act inside the world through a `run` step - the world is handed an argument vector and
+# executes it against its own runtime - and one of those expects the world to **refuse** it.
+#
+# Both of those counts are read off *this document* by `tests/sim-container-demo.test.ts`, because a
+# count in prose drifts at exactly the rate at which nothing reads it: the first version of this header
+# said five and two, and both numbers were wrong about the file they were describing.
+#
+# Every one of the nineteen names in `validators/container/container-validators.ts` is used by at least
+# one criterion here, and that is a property a test holds rather than a claim: a family of nineteen whose
+# contract exercised seventeen would have two names nothing had ever run.
+#
+# ## How to read the targets
+#
+# A target is a *reference into the runtime's own inventory*, never a path on this machine:
+# `image/cart-web:1.0.0` and `container/cart-web`. `core/environment/container-observation.ts` resolves
+# each one through `resolveContainerRef`, which requires the kind segment, refuses a name containing a
+# separator, and refuses a name that is not lower case - so a criterion and the world agree about which
+# object is being judged or the criterion is told why they do not, rather than getting an empty reading.
+#
+# The single exception is `container.runtime`, which needs no target: there is exactly one runtime in a
+# reading, the same shape `web.url` uses.
+#
+# ## The three questions that are deliberately different
+#
+#   - `container.limit` asks what a container *declared*; `enforced` is a separate field the world always
+#     sets false, and the rendering says so in the same line. A criterion here judges the declaration,
+#     which is a real contract about a request, and the contract states that this world does not enforce
+#     it rather than letting a reader believe a 256 MB cap was applied to a process that never saw one.
+#   - `container.user` asks which account a container declares it runs as. The world **records** that
+#     answer and never switches to it, because changing accounts on the host doing the judging is the one
+#     thing a substitute must not do to the machine judging it. The validator's own subject line carries
+#     that limitation in every message.
+#   - `container.port` asks what mapping was published. This world binds no socket: a published port is a
+#     table entry, not reachability, and a criterion that read it as reachability would be claiming a
+#     measurement nobody took.
+#
+# ## What no criterion here may do
+#
+# Claim that two containers can reach each other, or that a published port answers. Nothing in this world
+# opens a network listener - the service writes a line and holds itself open - so a criterion phrased
+# around connectivity could only pass by accident or fail for a reason that says nothing about the
+# application. What is judged is what the runtime holds: which image exists under which tags, what the
+# image was built from, what the container was given, what it declared, what it wrote, and what the world
+# answered when it was asked directly.
+
+version: 1
+
+# The goal these criteria belong to, so the loader's own cross-check can run: `core/acceptance/load.ts`
+# compares this against the goal document it is evaluated with and refuses the pairing when they
+# disagree. A contract that does not name its goal is a contract that cannot be paired with the wrong
+# one, which is how the guard's null branch stayed dormant for the fifth world until it was declared
+# there - so it is declared here from the start.
+goal_id: sim-container
+
+criteria:
+  - id: AC-001
+    description: >-
+      The application was run by a substitute for a real runtime, and the world says which one it stood
+      in for. Judged against the identity the *environment document* declared rather than against
+      anything the application printed: a program that asserted its own runtime would be describing the
+      world it believed it was in, and this criterion is about the world it was actually in.
+    expect:
+      - validator: container.runtime
+        equals: docker
+    evidence: [json]
+
+  - id: AC-002
+    description: >-
+      The image the application built is in the runtime's inventory under the tag it chose. Presence
+      only - what it is tagged, what it was built from and what it declares are separate questions asked
+      below, and collapsing them would let an image that exists and is empty read as an image that was
+      built.
+    expect:
+      - validator: container.image
+        target: image/cart-web:1.0.0
+        equals: present
+    evidence: [json]
+
+  - id: AC-003
+    description: >-
+      The second tag points at the same image. This is the release-shaped half of an image build: a
+      version tag that is what a deployment names and a moving tag that is what a person types, and a
+      run in which the second tag was never applied would leave a registry holding one reference where
+      the deployment expects two.
+    expect:
+      - validator: container.tag
+        target: image/cart-web:1.0.0
+        contains: cart-web:latest
+    evidence: [json]
+
+  - id: AC-004
+    description: >-
+      The image carries a digest computed from the bytes of the build context. It is a real hash over
+      each file's path beside its contents, not a constant, and the property it buys is the one a digest
+      exists for: "this tag points at the code that was just built" is checkable rather than decorative.
+      Compared against a shape and not against a value, because the value is a function of the sources
+      and pinning it would make every legitimate edit of the application a failing criterion.
+    expect:
+      - validator: container.digest
+        target: image/cart-web:1.0.0
+        matches: '^[0-9a-f]{64}$'
+    evidence: [json]
+
+  - id: AC-005
+    description: >-
+      The image carries the release its tag claims. A label is the only place an artifact states its own
+      version, and it is what makes "this tag points at 1.0.0" checkable from the inventory alone -
+      without it, an operator reading `cart-web:latest` learns the name and nothing about the release
+      behind it.
+    expect:
+      - validator: container.label
+        target: image/cart-web:1.0.0
+        contains: 'org.opencontainers.image.version=1.0.0'
+    evidence: [json]
+
+  - id: AC-006
+    description: >-
+      The image declares the port its service listens on. The declaration is what the container's
+      published mapping is matched against - a mapping onto a port nothing declared is still a mapping,
+      and the difference is exactly what this pair of criteria separates.
+    expect:
+      - validator: container.env
+        target: image/cart-web:1.0.0
+        contains: 'CART_WEB_PORT=8080'
+    evidence: [json]
+
+  - id: AC-007
+    description: >-
+      The container's command is the service the image was built to run. Judged from what the container
+      would really execute - the image's own `CMD` resolved against the create arguments - rather than
+      from the `CMD` line in the instructions, because those two agree only when the create arguments
+      did not override them, and it is the second one the world would run.
+    expect:
+      - validator: container.command
+        target: container/cart-web
+        equals: node srv/cart/service.mjs
+    evidence: [json]
+
+  - id: AC-008
+    description: >-
+      The container is running. Existence, state and liveness are three separate questions in this
+      family and this is the middle one: the world creates a container without starting it, so a
+      criterion that asked only whether `cart-web` exists would pass for a container that was created and
+      never brought up - which is exactly the state the world reports as `created`.
+    expect:
+      - validator: container.state
+        target: container/cart-web
+        equals: running
+    evidence: [json]
+
+  - id: AC-009
+    description: >-
+      The application's account declaration reached the container and the world applied it to the
+      reading. The account is a record and not a switch - the process really runs as whatever account
+      this world runs as - and the contract says so rather than implying a privilege boundary that was
+      never enforced.
+    expect:
+      - validator: container.user
+        target: container/cart-web
+        equals: svc-cart
+    evidence: [json]
+
+  - id: AC-010
+    description: >-
+      The image names the application it is. A second label rather than a second criterion's worth of
+      assertions on the first, because one label in the right key would pass for an image that was
+      labelled once by accident - and the title is what an operator reads to tell which application an
+      untagged digest belongs to.
+    expect:
+      - validator: container.label
+        target: image/cart-web:1.0.0
+        contains: 'org.opencontainers.image.title=cart-web'
+    evidence: [json]
+
+  - id: AC-011
+    description: >-
+      The published mapping is the one the contract names: host 18080 onto container 8080, over tcp. This
+      is the mapping an operator reaching the service would use, and it is the only place the two ports
+      are both written down - a run that mapped 18080 onto the wrong container port would start cleanly,
+      report healthy and be unreachable at the port it advertises.
+    expect:
+      - validator: container.port
+        target: container/cart-web
+        equals: 18080:8080/tcp (exposed)
+    evidence: [json]
+
+  - id: AC-012
+    description: >-
+      The application directory is mounted at the container's working directory, and the world could
+      really see the source. Judged with the flag that makes a bind mount more than a name: `bind` and
+      not `volume`, and no `source absent` - a container can be created against a source that is not
+      there, and this world refuses to *start* it, so the reading says which of the two happened.
+    expect:
+      - validator: container.mount
+        target: container/cart-web
+        contains: './context:/workspace (bind)'
+    evidence: [json]
+
+  - id: AC-013
+    description: >-
+      The named volume is mounted where the application writes its state. A second mount in the same
+      reading, on purpose: the pair is what distinguishes a container given two mounts from one given
+      two names for the same directory, and `volume` beside a real source is what says the world created
+      storage rather than pointing at a directory the developer happens to have.
+    expect:
+      - validator: container.mount
+        target: container/cart-web
+        contains: 'cart-state:/var/lib/cart (volume)'
+    evidence: [json]
+
+  - id: AC-014
+    description: >-
+      The memory, cpu and pid figures the application asked for are the ones the container declares.
+      Three values in one line - and the same line carries the limitation this world states rather than
+      hides: `enforced` is false, so this is a record of a request and not a cgroup. A contract that read
+      it as enforcement would be describing a boundary that does not exist.
+    expect:
+      - validator: container.limit
+        target: container/cart-web
+        equals: memory 268435456 bytes, cpus 1, pids 64 (declared, not enforced)
+    evidence: [json]
+
+  - id: AC-015
+    description: >-
+      The healthcheck the application declared ran and passed. This world runs it once, at container
+      start, through the same path a criterion's own command takes - so a healthy answer is the world's
+      own observation of the declared command's exit code, not the container's claim about itself. The
+      healthcheck reads a line the service wrote and compares it against the port the container was
+      given, so a service that started on the wrong port is unhealthy here rather than merely wrong
+      somewhere else.
+    expect:
+      - validator: container.health
+        target: container/cart-web
+        equals: healthy
+    evidence: [json]
+
+  - id: AC-016
+    description: >-
+      The service announced itself on its own stdout, and the world captured it. This is the difference
+      between a container that is running and a container whose program reached the point of listening:
+      the line is written by the service after it reads its port, and the reading is the container's own
+      captured output rather than anything the provisioner printed about it.
+    expect:
+      - validator: container.logs
+        target: container/cart-web
+        contains: 'cart-web listening on 8080'
+    evidence: [json]
+
+  - id: AC-017
+    description: >-
+      The service announced its start on stderr, which is where this repository puts every human-readable
+      line. Judged separately from stdout because the two streams are separate facts: a criterion reading
+      only stdout would pass for a program that had lost its diagnostics, and the note is what an
+      operator reads when the service does not come up.
+    expect:
+      - validator: container.stderr
+        target: container/cart-web
+        contains: 'cart-web: service starting'
+    evidence: [json]
+
+  - id: AC-018
+    description: >-
+      The service declared its own catalogue role in the line it printed. Nothing in this world reads
+      that line - which is exactly why `D3` moves it: a program whose stdout says `read-write` where its
+      contract says `read-only` is a program that was not hardened, however healthy, correctly mounted
+      and properly limited it otherwise is.
+
+      It is the only criterion `D3` moves, and that is what makes it the control the other three
+      defects are read against: this is the one defect in the table with no derived consequence at all,
+      because no reading in this world is computed from a program's own announcement of its role. The
+      other three move criteria that never mention them, which is the property a contract built out of
+      separate validators exists to make visible.
+    expect:
+      - validator: container.logs
+        target: container/cart-web
+        contains: 'catalog: read-only for svc-cart'
+    evidence: [json]
+
+  - id: AC-019
+    description: >-
+      The second container from the same image ran to completion and stopped. It exists so that a
+      contract can ask for an exit code at all: a container whose process is still alive has no exit
+      code, and this family reports that question as inconclusive rather than fabricating a zero. Judged
+      on `alive` and `exitcode` as two questions, because a container that never started is not a
+      container that exited zero.
+    expect:
+      - validator: container.alive
+        target: container/cart-check
+        equals: false
+    evidence: [json]
+
+  - id: AC-020
+    description: >-
+      The second container's program exited zero, and the world waited for it. The wait is part of the
+      criterion rather than an optimisation: without it the reading is taken while the process is still
+      running, and the honest answer to "what was the exit code" is then that there is not one yet.
+    expect:
+      - validator: container.exitcode
+        target: container/cart-check
+        equals: 0
+    evidence: [json]
+
+  - id: AC-021
+    description: >-
+      The request the application made to the runtime was answered. Judged from the world's own record of
+      the command it received - not from anything the application printed about it, which is the
+      difference between issuing a command and reporting that one was issued. The target is the action
+      name, because that is how the world keys its own log.
+    expect:
+      - validator: container.call
+        target: container.create
+        equals: answered
+    evidence: [json]
+
+  - id: AC-022
+    description: >-
+      The container the application named was started. The target is the whole command line rather than
+      the action name, because the application starts two containers and `container.start` names both of
+      them: a criterion keyed on the action alone would pass on the strength of the second container's
+      start, which is the false pass a reading of the wrong record produces.
+
+      This is the criterion `D4` moves, and it moves to a refusal rather than to a failure - the world
+      declines to start a container whose bind source it cannot see, which is the difference between a
+      start that was refused and a start that crashed. It is also the defect with the widest consequence
+      set: the same misspelling makes the mount reading say `source absent`, leaves the container created
+      and never running, and takes its healthcheck, its two output streams and a criterion's own `exec`
+      with it - seven readings that are each a separate true fact about one world.
+    expect:
+      - validator: container.call
+        target: container start cart-web
+        equals: answered
+    evidence: [json]
+
+  - id: AC-023
+    description: >-
+      The runtime refused the image pull the application asked for, and the application carried on. This
+      world has no registry and no outbound socket, so a pull is refused by name; the refusal is a
+      *result* travelling back in the reading rather than an exception, which is why the remaining twelve
+      commands still ran and this criterion can be written at all.
+    expect:
+      - validator: container.call
+        target: image.pull
+        equals: refused
+    evidence: [json]
+
+  - id: AC-024
+    description: >-
+      The criterion's own command to the runtime was answered: it listed the runtime's images. This is a
+      `run` step, so the world really executed the vector and the reading is the world's own record of
+      it. Judged through `container.probe` and not `container.call` on purpose, because those two
+      validators separate *who asked*: a contract about what the application did must not pass on the
+      strength of the run's own questions.
+    steps:
+      - run: ['image', 'list']
+    expect:
+      - validator: container.probe
+        target: image.list
+        equals: answered
+    evidence: [json]
+
+  - id: AC-025
+    description: >-
+      The criterion built a second image from the same context, and the world performed the build. A
+      second image and not a second inspection, because this is the operation a criterion can use to
+      prove the build path is *live* rather than replayed: the tag it asks for does not exist before the
+      command, and the command is the only thing that could have created it.
+    steps:
+      - run: ['image', 'build', '-t', 'cart-probe:1.0.0', './context']
+    expect:
+      - validator: container.probe
+        target: image.build
+        equals: answered
+    evidence: [json]
+
+  - id: AC-026
+    description: >-
+      The criterion ran a command *inside the running container* and the world executed it there. The
+      argument vector is handed to the runtime, which resolves the container, resolves the working
+      directory through the mount table and starts the program as a real child process - so the second
+      assertion is the evidence the first one is not a claim: the audit's own line is in the container's
+      captured stdout, which is output no process but one running inside that container could have
+      produced.
+    steps:
+      - run: ['container', 'exec', 'cart-web', 'node', 'srv/cart/audit.mjs']
+    expect:
+      - validator: container.probe
+        target: container.exec
+        equals: answered
+      - validator: container.logs
+        target: container/cart-web
+        contains: 'cart-audit: ok'
+    evidence: [json]
+
+  - id: AC-027
+    description: >-
+      The runtime refused a command it does not implement. The target here is a *command line* and not an
+      action name, because a command this world does not serve has no action to be keyed by - the record
+      carries the words that were sent and nothing else. That is the whole reason the family's target may
+      be either spelling, and this criterion is the one that holds that half of it.
+
+      The refusal is judged as a fact and not as an error: a substitute that answered `answered` to
+      everything would report a pruning operation it never performed, and the contract would have no way
+      to notice.
+    steps:
+      - run: ['image', 'prune', '--all']
+    expect:
+      - validator: container.probe
+        target: image prune --all
+        equals: refused
+    evidence: [json]
