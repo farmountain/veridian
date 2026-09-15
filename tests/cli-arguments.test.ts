@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  COMMANDS,
   DEFAULT_GOAL_PATH,
   DEFAULT_MEMORY_URL,
   DEFAULT_STATE_DIR,
+  SWITCH_FLAGS,
   USAGE,
+  VALUE_FLAGS,
   UsageError,
   applyBrowserChoice,
   parseArguments,
@@ -92,6 +95,7 @@ describe("parseArguments: dispatch and defaults", () => {
         noRepair: parsed.noRepair,
         memoryUrl: parsed.memoryUrl,
         noMemory: parsed.noMemory,
+        noSelfPrompt: parsed.noSelfPrompt,
         headed: parsed.headed,
         force: parsed.force,
         defects: parsed.defects,
@@ -105,6 +109,7 @@ describe("parseArguments: dispatch and defaults", () => {
         noRepair: false,
         memoryUrl: null,
         noMemory: false,
+        noSelfPrompt: false,
         headed: false,
         force: false,
         defects: [],
@@ -245,6 +250,30 @@ describe("parseArguments: the repair command", () => {
   });
 });
 
+describe("parseArguments: the self-prompt rung", () => {
+  it("leaves rung 4 installed by default and records --no-self-prompt", () => {
+    // On by default is the decision, not an accident: the rung is bounded by its own caps, so
+    // leaving it on cannot become a loop, and an operator who wants it off has to say so.
+    assert.equal(parse("validate").noSelfPrompt, false);
+    assert.equal(parse("validate", "--no-self-prompt").noSelfPrompt, true);
+  });
+
+  it("keeps --no-self-prompt independent of the switches it sits beside", () => {
+    // The one conflict the parser enforces is `--no-repair` against `--repair`. Neither this switch
+    // nor `--no-memory` contradicts anything, and asserting the pair here records that - a reader who
+    // assumes every `--no-*` flag participates in a conflict check would be wrong three times.
+    const parsed = parse("validate", "--no-repair", "--no-memory", "--no-self-prompt");
+
+    assert.equal(parsed.noSelfPrompt, true);
+    assert.equal(parsed.noMemory, true);
+    assert.equal(parsed.noRepair, true);
+  });
+
+  it("rejects a value attached to --no-self-prompt", () => {
+    assert.match(rejects("validate", "--no-self-prompt=yes"), /--no-self-prompt does not take a value/);
+  });
+});
+
 describe("parseArguments: rejection of unusable lines", () => {
   it("rejects an unknown long option", () => {
     assert.match(rejects("validate", "--bogus"), /unknown option "--bogus"/);
@@ -345,8 +374,20 @@ describe("usage text", () => {
   });
 
   it("documents every command the parser accepts", () => {
-    for (const command of ["validate", "clarify", "init", "metrics", "help"]) {
+    // Iterated from the register rather than from a copy of it, for the reason the two flag guards
+    // below give: a recalled list cannot notice a member the code has and the document does not.
+    assert.ok(COMMANDS.size > 0, "the command register is empty, so this guard cannot see a missing one");
+    for (const command of COMMANDS) {
       assert.match(USAGE, new RegExp(`veridian ${command}`));
+    }
+  });
+
+  it("names every flag the parser accepts", () => {
+    // The usage text is the only place an operator learns a flag exists: the parser dispatches on
+    // these two sets and the help text is prose, so a flag added to one and not the other is
+    // undiscoverable and unremarkable in either file read on its own.
+    for (const name of [...VALUE_FLAGS, ...SWITCH_FLAGS]) {
+      assert.ok(USAGE.includes(`--${name}`), `usage text never names --${name}`);
     }
   });
 

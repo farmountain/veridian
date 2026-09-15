@@ -331,7 +331,12 @@ rung, and `selfPromptRounds`, how much self-prompt work the run actually did.
 ```
 
 That count is work *done*, never capability *present*: a run planned with no self-prompt port reports
-`0` rather than a `1` that describes a port it could have used. And when no question can be asked at
+`0` rather than a `1` that describes a port it could have used. `--no-self-prompt` is how an operator
+unplugs the rung, and it replaces the port rather than narrowing the material - a narrower port would
+report itself `available: false` for a reason nobody chose. The distinction the replacement preserves
+is the one an auditor needs: **a skipped rung is work the run never attempted; a declined round is work
+it did and reported.** Off is for the operator who wants a transcript that provably contains no reading
+the run made of itself, which is a claim about evidence rather than about speed. And when no question can be asked at
 all - headless, or CI - the run does not hang: DEFER closes the gap, the criteria that depended on it
 report `INCONCLUSIVE`, and the CLI exits 2. *A headless run returns `INCONCLUSIVE`; it does not block
 forever.* That is the anti-hang guarantee at the human boundary.
@@ -359,6 +364,8 @@ The flags that matter most:
 --state-dir <path>    where run bundles are written       (default .veridian)
 --repair <cmd> [args] repair the app between iterations   (must be last)
 --no-repair           observe exactly once
+--no-memory           do not consult or write memory at all
+--no-self-prompt      skip rung 4: never put a gap to the run itself
 --browser <choice>    auto | playwright | none            (default auto)
 --defects <ids>       metrics: criteria a known defect was expected to break
 ```

@@ -32,6 +32,7 @@ import type {
 } from "../core/clarification/index.ts";
 import {
   ClarificationEngine,
+  NullSelfPromptPort,
   createDeriver,
   defaultDeriveRules,
 } from "../core/clarification/index.ts";
@@ -174,6 +175,8 @@ interface Session {
   readonly clarifier: ClarificationEngine;
   /** The same port the clarification ladder and the manual repair gate both ask through. */
   readonly user: UserPromptPort;
+  /** How much material rung 4 can read, or the fact that the rung is unplugged. */
+  readonly selfPromptLabel: string;
   readonly memory: MemoryPort;
   readonly memoryLabel: string;
 }
@@ -197,17 +200,28 @@ async function openSession(parsed: CliArguments, logger: Logger): Promise<Sessio
   // The material the run reads to answer its own gaps: the names it is already holding because it
   // registered them. Deliberately not "everything on disk" — a self-prompt may corroborate a
   // candidate the contract already offered, and a wider reading would be the run inventing one.
-  const selfPrompt = createSelfPromptPort({
-    material: [...registry.names(), ...registeredAdapters()],
-    logger,
-  });
+  //
+  // `--no-self-prompt` replaces the port rather than narrowing the material, because a port holding
+  // no names would report `available: false` for a reason the operator did not choose. The null port
+  // is the ladder's own word for "there is no self to prompt", so the rung is *skipped* rather than
+  // declined, and the two are different: a declined round is work the run did and reported, a skipped
+  // rung is work it never attempted. The label is a fact about which of those happened, reported
+  // beside the memory and prompt facts for the same reason they are - an operator reading a
+  // transcript in which rung 4 never fired cannot otherwise tell it was unplugged.
+  const material = [...registry.names(), ...registeredAdapters()];
+  const selfPrompt = parsed.noSelfPrompt
+    ? { port: NullSelfPromptPort, label: "disabled (--no-self-prompt)" }
+    : {
+        port: createSelfPromptPort({ material, logger }),
+        label: `from ${String(material.length)} registered names`,
+      };
 
   const memory = selectMemory(parsed, logger);
 
   const clarifier = new ClarificationEngine({
     derive: createDeriver(defaultDeriveRules(io)),
     infer: new MemoryInferrer(memory.port),
-    selfPrompt,
+    selfPrompt: selfPrompt.port,
     user,
     clock: systemClock,
     logger,
@@ -219,6 +233,7 @@ async function openSession(parsed: CliArguments, logger: Logger): Promise<Sessio
     registry,
     clarifier,
     user,
+    selfPromptLabel: selfPrompt.label,
     memory: memory.port,
     memoryLabel: memory.label,
   };
@@ -276,6 +291,7 @@ async function runClarify(parsed: CliArguments, logger: Logger): Promise<number>
   logger.info("resolving the definition", {
     goal: parsed.goalPath,
     memory: session.memoryLabel,
+    selfPrompt: session.selfPromptLabel,
     prompt: session.user.available ? "terminal" : "unavailable",
   });
 
@@ -304,6 +320,7 @@ async function runValidate(parsed: CliArguments, logger: Logger): Promise<number
   logger.info("resolving the definition", {
     goal: parsed.goalPath,
     memory: session.memoryLabel,
+    selfPrompt: session.selfPromptLabel,
     prompt: session.user.available ? "terminal" : "unavailable",
   });
 
@@ -413,6 +430,7 @@ async function runValidate(parsed: CliArguments, logger: Logger): Promise<number
     criteria: String(plan.criteria.length),
     repair: repair.reason,
     browser: wantsBrowser ? (parsed.headed ? "chromium (headed)" : "chromium") : "none",
+    selfPrompt: session.selfPromptLabel,
     memory: session.memoryLabel,
   });
 

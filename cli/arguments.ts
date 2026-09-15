@@ -33,6 +33,17 @@ export interface CliArguments {
   /** An explicit memory server URL. `null` means "fall back to the environment, then the default". */
   readonly memoryUrl: string | null;
   readonly noMemory: boolean;
+  /**
+   * Set true to unplug rung 4, so no gap is ever put to the run itself.
+   *
+   * The rung is on by default because it is the one that keeps a run from stopping to ask about
+   * something it can already justify from material in hand, and it is bounded twice over by the
+   * engine's own per-gap attempt cap and per-run round cap plus a wall-clock ceiling - so leaving it
+   * on cannot become an unbounded loop. Off is for the operator who wants a transcript that provably
+   * contains no reading the run made of itself, which is a claim about evidence rather than about
+   * speed, and the only way to make it is to unplug the rung.
+   */
+  readonly noSelfPrompt: boolean;
   /** Set false to watch the run happen. */
   readonly headed: boolean;
   /** Allow `init` to overwrite an existing configuration. */
@@ -56,12 +67,25 @@ export class UsageError extends Error {
   }
 }
 
-const COMMANDS: ReadonlySet<string> = new Set(["validate", "clarify", "init", "metrics", "help"]);
+/** Exported so the usage text can be held to it rather than to a copy of it. */
+export const COMMANDS: ReadonlySet<string> = new Set([
+  "validate",
+  "clarify",
+  "init",
+  "metrics",
+  "help",
+]);
 const BROWSER_CHOICES: ReadonlySet<string> = new Set(["auto", "playwright", "none"]);
 const LOG_LEVELS: ReadonlySet<string> = new Set(["debug", "info", "warn"]);
 
-/** Flags that carry a value. */
-const VALUE_FLAGS: ReadonlySet<string> = new Set([
+/**
+ * Flags that carry a value.
+ *
+ * Exported so `tests/cli-arguments.test.ts` can hold the usage text to it. A flag the parser accepts
+ * and the usage text never names is a flag nobody can discover, and there is no way to notice the
+ * omission by reading either file - the parser dispatches on this set and the help text is prose.
+ */
+export const VALUE_FLAGS: ReadonlySet<string> = new Set([
   "goal",
   "state-dir",
   "browser",
@@ -70,10 +94,11 @@ const VALUE_FLAGS: ReadonlySet<string> = new Set([
   "log-level",
 ]);
 
-/** Flags that are present or absent. */
-const SWITCH_FLAGS: ReadonlySet<string> = new Set([
+/** Flags that are present or absent. Exported for the same reason as `VALUE_FLAGS`. */
+export const SWITCH_FLAGS: ReadonlySet<string> = new Set([
   "no-repair",
   "no-memory",
+  "no-self-prompt",
   "headed",
   "force",
   "verbose",
@@ -111,6 +136,8 @@ Options
   --headed             Show the browser. Default is headless, because that is what a CI run has.
   --memory <url>       Memory server base URL. Default: $HIPCORTEX_URL, then ${DEFAULT_MEMORY_URL}
   --no-memory          Do not consult or write memory at all.
+  --no-self-prompt     Never put a gap to the run itself. Rung 4 is otherwise attempted,
+                       within its own per-gap, per-run and wall-clock caps.
   --log-level <level>  debug | info | warn. Default: info
   --verbose            Same as --log-level debug.
   --quiet              Same as --log-level warn.
@@ -234,6 +261,7 @@ export function parseArguments(argv: readonly string[]): CliArguments {
     noRepair,
     memoryUrl: values.get("memory") ?? null,
     noMemory: switches.has("no-memory"),
+    noSelfPrompt: switches.has("no-self-prompt"),
     headed: switches.has("headed"),
     force: switches.has("force"),
     defects: (values.get("defects") ?? "")
