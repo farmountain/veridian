@@ -27,6 +27,7 @@
  */
 
 import { decodeStep } from "../../core/acceptance/plan.ts";
+import type { StepKind } from "../../core/acceptance/steps.ts";
 import type { Clock, Logger } from "../../core/clarification/types.ts";
 import type {
   ArtifactKind,
@@ -127,6 +128,41 @@ const originOf = (url: string): string => {
 const MISSING_URL =
   "this world has no `url`, and the local-web adapter drives the application over HTTP - " +
   "add `url` to the environment document, or use an adapter whose world is reached another way";
+
+/**
+ * Which step kinds this world can perform, and a compile-time proof that the question was asked of
+ * every kind.
+ *
+ * Typed `Record<StepKind, boolean>` rather than written as the list of seven names the `switch` below
+ * handles, and that is the whole point of it. The `switch` has no `default`, so a step kind this
+ * adapter does not implement falls through it and the criterion is judged in a world it never acted
+ * on - the exact shape of the `--browser none` defect, one layer in: a run that reports a verdict
+ * about a scenario nobody set up. `local-db` refuses such a step **by name**; this adapter silently
+ * skipped it, and nothing failed, because a step that does nothing is invisible in a green run.
+ *
+ * A hand-written list of the seven performed kinds would have the same defect as the `switch`: nine
+ * months from now somebody adds a twelfth kind to `ValidationStep`, the list still says seven, and
+ * the new kind is silently skipped again. Typing the map over the **union** means a kind added to the
+ * register fails to typecheck here until somebody decides, in this file, whether this world performs
+ * it - which is the only moment the answer is cheap to give.
+ */
+const STEP_KINDS_PERFORMED: Record<StepKind, boolean> = {
+  goto: true,
+  click: true,
+  reload: true,
+  fill: true,
+  select: true,
+  press: true,
+  waitFor: true,
+  // A browser drives a page. It has no database, no manifest to apply, no command vector to run and
+  // no request of its own to put to a world - and `apply`, `run` and `call` are step kinds the plan
+  // admits only for the worlds whose adapters declare them, so a *web* contract naming one is a
+  // contract written against the wrong world rather than a step this adapter should try to honour.
+  sql: false,
+  apply: false,
+  run: false,
+  call: false,
+};
 
 export class LocalWebEnvironment implements EnvironmentAdapter {
   readonly kind = "local-web";
@@ -392,6 +428,45 @@ export class LocalWebEnvironment implements EnvironmentAdapter {
       runId: request.runId,
     };
 
+    // Refused before the browser is even looked for, and before any path is resolved, because the
+    // refusal is a fact about the *contract* rather than about this run: it holds whether or not
+    // Playwright is installed. A criterion the steps cannot set up would be judged in a world it
+    // never acted on, so a verdict about it would be a claim the observation cannot support - and
+    // `VALIDATOR_ERROR` is the honest classification, because the defect is in the criterion, not in
+    // the application and not in the sandbox.
+    //
+    // Decoded through `decodeStep` - the same function that produced the wire records - so this reads
+    // the step the *contract layer* emitted rather than a second idea of the format held here. The
+    // decode is inside the same refusal as the kind check, because the two are one question: "can this
+    // criterion be performed in this world?" A record naming two actions and a record naming `sql`
+    // both answer no, and both are defects in the contract rather than in the application or in the
+    // sandbox - which is why `VALIDATOR_ERROR` is the classification for each.
+    //
+    // Before the browser is reached on purpose: a criterion whose steps cannot be read must not have a
+    // page opened for it, and "no page" is what distinguishes a refusal from a skip that fails later.
+    if (act) {
+      try {
+        const steps = request.steps.map((raw, index) => decodeStep(raw, request.criterionId, index));
+        const unsupported = steps.findIndex((step) => !STEP_KINDS_PERFORMED[step.kind]);
+        if (unsupported !== -1) {
+          const step = steps[unsupported];
+          return {
+            ...base,
+            data: null,
+            artifacts: [],
+            error: failure(
+              "VALIDATOR_ERROR",
+              "the local-web adapter performs browser steps, and step " + `${String(unsupported + 1)} of ` +
+                `${request.criterionId} is \`${step === undefined ? "unknown" : step.kind}\` - the ` +
+                "criterion would be judged in a world it never acted on",
+            ),
+          };
+        }
+      } catch (error) {
+        return { ...base, data: null, artifacts: [], error: failure("VALIDATOR_ERROR", describe(error)) };
+      }
+    }
+
     const browser = this.#browser;
     if (browser === null) {
       const reason = this.#plan.browser.enabled
@@ -527,6 +602,21 @@ export class LocalWebEnvironment implements EnvironmentAdapter {
         case "waitFor":
           await page.waitFor(step.target, step.state, timeout);
           break;
+        default:
+          // The second of the two independent reasons an unsupported step cannot become a silent
+          // no-op. `#capture` refuses such a criterion before this function is reached, and this
+          // refuses it again if the map above and this switch ever disagree - which is the one
+          // direction the `Record<StepKind, boolean>` totality check cannot see: a member flipped to
+          // `true` with no case here would pass the pre-check and fall straight through.
+          //
+          // Thrown rather than returned because `#replay` has no observation to return, and a throw
+          // is already how a step that fails in this world is reported: `#capture` turns it into
+          // this criterion's failure. Named here so the message says which kind rather than "Error".
+          throw new EnvironmentError(
+            `the local-web adapter cannot perform a \`${step.kind}\` step, and step ` +
+              `${String(index + 1)} of ${request.criterionId} asks for one - the criterion would be ` +
+              "judged in a world it never acted on",
+          );
       }
     }
   }

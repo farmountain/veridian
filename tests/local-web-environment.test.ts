@@ -300,7 +300,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => ({
   env: { PORT: "4173" },
   dependencyInstall: null,
   start: { command: "node", args: ["serve.mjs"], readyPattern: "Listening on" },
-  url: "http://127.0.0.1:4173",  databasePath: null,  cluster: null,  posix: null,  os: null,  cloud: null,  container: null,  health: { path: "/health", expectStatus: 200, timeoutMs: 5_000, intervalMs: 100, readyPattern: null },
+  url: "http://127.0.0.1:4173",  databasePath: null,  cluster: null,  posix: null,  os: null,  cloud: null,  container: null,  vscode: null,  health: { path: "/health", expectStatus: 200, timeoutMs: 5_000, intervalMs: 100, readyPattern: null },
   reset: { strategy: "restart", command: null },
   browser: { enabled: true, viewport: { width: 1280, height: 720 }, locale: null, timezoneId: null },
   boundary: { network: "deny", allow: [], filesystemWrite: "deny" },
@@ -756,7 +756,14 @@ describe("the local-web environment observes a page", () => {
 
     assert.equal(observation.data, null);
     assert.notEqual(observation.error, null);
-    assert.equal(browser.pages[0]?.closed, true);
+    // A malformed record is a defect in the *contract*, and it is refused before the browser is
+    // reached - so there is no page here at all. This assertion used to read
+    // `browser.pages[0]?.closed === true`, which described the implementation of the day (the decode
+    // happened mid-replay, so a page existed and had to be tidied). "No page was opened" is the
+    // stronger claim and the one that matters: a criterion whose steps cannot be read must not have a
+    // world built for it.
+    assert.equal(browser.pages.length, 0);
+    assert.equal(observation.error?.kind, "VALIDATOR_ERROR");
   });
 
   it("observes without acting when asked to observe", async () => {
@@ -767,6 +774,102 @@ describe("the local-web environment observes a page", () => {
 
     await h.subject.observe(id, request({ steps: [{ goto: "http://x/" }, { click: "#add" }] }));
 
+    assert.deepEqual(browser.pages[0]?.actions, ["read #total"]);
+  });
+});
+
+// ---- a step this world cannot perform -----------------------------------------------------------
+
+describe("the local-web environment refuses a step kind it cannot perform", () => {
+  /**
+   * The defect these hold: `#replay`'s `switch` covers the seven browser kinds and had no `default`,
+   * so a `sql`, `apply`, `run` or `call` step in a web contract did **nothing** - the page was opened,
+   * the criterion's targets were read, and the criterion was judged in a world its steps never set
+   * up. Every run stayed green, because a step that does nothing is invisible in a green run.
+   *
+   * `local-db` had refused such a step by name since it was written; the browser world silently
+   * skipped it. The two are the same question asked of two worlds, and only one of them was answered.
+   */
+  const total = (value: string): RawTarget => ({
+    found: true,
+    count: 1,
+    text: value,
+    value: null,
+    visible: true,
+    error: null,
+  });
+
+  const up = async (h: Harness): Promise<string> => {
+    const { id } = await h.subject.create();
+    await h.subject.start(id);
+    return id;
+  };
+
+  it("names the kind rather than skipping it, and never opens a page", async () => {
+    const browser = fakeBrowser({ readings: { "#total": total("$42.00") } });
+    const h = harness(plan(), { processes: fakeProcesses({ node: running() }).runner, browser: browser.port });
+    const id = await up(h);
+
+    const observation = await h.subject.execute(id, request({ steps: [{ sql: "select 1" }] }));
+
+    assert.equal(observation.data, null);
+    assert.equal(observation.error?.kind, "VALIDATOR_ERROR");
+    assert.match(observation.error?.message ?? "", /`sql`/);
+    assert.match(observation.error?.message ?? "", /step 1 of AC-001/);
+    // The stronger half: the refusal happens *before* the browser is reached, so nothing was set up
+    // for a criterion that was never going to be judged. Reading "no page" is what separates a
+    // refusal from a skip that happens to fail later.
+    assert.equal(browser.launches.length, 0);
+    assert.equal(browser.pages.length, 0);
+  });
+
+  it("refuses every kind outside the browser vocabulary, not just the one that was noticed", async () => {
+    // `run` and `call` are the two the other worlds admit; `apply` belongs to the cluster family. A
+    // guard written against `sql` alone would pass this test's first case and fail here, which is the
+    // difference between a check and a recollection of one defect.
+    const browser = fakeBrowser({ readings: { "#total": total("$42.00") } });
+    const h = harness(plan(), { processes: fakeProcesses({ node: running() }).runner, browser: browser.port });
+    const id = await up(h);
+
+    for (const step of [{ run: ["ls"] }, { call: { method: "GET", path: "/" } }, { apply: "a.yaml" }]) {
+      const observation = await h.subject.execute(id, request({ steps: [step] }));
+      assert.equal(observation.error?.kind, "VALIDATOR_ERROR", JSON.stringify(step));
+      assert.equal(browser.pages.length, 0, JSON.stringify(step));
+    }
+  });
+
+  it("counts the position of the offending step rather than naming the first", async () => {
+    const browser = fakeBrowser({ readings: { "#total": total("$42.00") } });
+    const h = harness(plan(), { processes: fakeProcesses({ node: running() }).runner, browser: browser.port });
+    const id = await up(h);
+
+    const observation = await h.subject.execute(
+      id,
+      request({ steps: [{ goto: "http://x/" }, { click: "#add" }, { run: ["ls"] }] }),
+    );
+
+    assert.match(observation.error?.message ?? "", /step 3 of AC-001/);
+    // The position alone is not enough to hold this: the switch's own `default` branch names the
+    // position too, so a message match would pass whether the refusal happened up front or fell
+    // through the replay. The classification and the absence of a page are what separate the two -
+    // and this assertion was written because the first version of this test passed under the
+    // falsification probe, which is a test that tests nothing.
+    assert.equal(observation.error?.kind, "VALIDATOR_ERROR");
+    assert.equal(browser.pages.length, 0);
+  });
+
+  it("does not refuse the step when the criterion is only being observed", async () => {
+    // The `act` half of the rule. `observe()` reads a world; it does not replay steps, so a contract
+    // that names an action this world cannot perform is still *observable* - and refusing it here
+    // would turn a reading into an error, which is a different claim. `local-db` draws the line in
+    // the same place (`act ? steps.findIndex(...) : -1`).
+    const browser = fakeBrowser({ readings: { "#total": total("$42.00") } });
+    const h = harness(plan(), { processes: fakeProcesses({ node: running() }).runner, browser: browser.port });
+    const id = await up(h);
+
+    const observation = await h.subject.observe(id, request({ steps: [{ sql: "select 1" }] }));
+
+    assert.equal(observation.error, null);
     assert.deepEqual(browser.pages[0]?.actions, ["read #total"]);
   });
 });
