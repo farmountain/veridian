@@ -149,7 +149,10 @@ testable without an editor. The extension has no runtime dependency; `@types/vsc
 **The one clause of the acceptance test that is not met, and why it is written here rather than
 quietly dropped:** *"the activation path is exercised under a VS Code test host"* - **it is not.** There
 is no VS Code test host in this repository, and building one is a separate phase rather than a step.
-What exists instead is the nearest thing that can be run here, and the two are not equivalent:
+What exists instead is the nearest thing that can be run here, and the two are not equivalent.
+It is now two nearest things rather than one - a recording double, and the `sim-vscode` world that
+really loads the compiled extension in a child process - and the difference between them is measured
+rather than asserted, in the note after the gate table below:
 
 | Gate | Command | Result |
 |------|---------|--------|
@@ -157,7 +160,7 @@ What exists instead is the nearest thing that can be run here, and the two are n
 | Decisions, headless | `node --test` | 72 tests, 0 failing |
 | Build | `npm run build` | `out/` - 6 files |
 | **Compiled artifact** | `npm run smoke:out` | 15 checks, exit 0 |
-| Package | `npm run package` | `veridian-cockpit-0.2.1.vsix` - 12 files, 118.70 KB |
+| Package | `npm run package` | `veridian-cockpit-0.2.2.vsix` - 12 files, 119.22 KB |
 | **Packaged archive** | `npm run smoke:vsix` | 34 checks, exit 0 |
 | All of the above | `npm run gate` | exit 0 |
 
@@ -188,12 +191,26 @@ A green `smoke:out` is a **necessary** condition for this extension to work and 
 and `scripts/vscode-stub.mjs` is a recording double rather than a simulation of VS Code - the same
 distinction §5 draws about worlds, applied one layer up to a tool.
 
+**And the double was proved too weak, which is the strongest argument this document has for the
+distinction it just drew.** `smoke:out` activates the compiled entry point twice and asserts the six
+commands are registered; it never invokes a handler, so nothing in it reads the *answer* a handler
+gives back. Putting the real compiled Cockpit inside `sim-vscode` - one of the eleven worlds, whose
+subject is an extension host - and judging it with eleven acceptance criteria reported **two defects,
+both real, both invisible to every check above**: `registerCommand` discarded the promise its handler
+returned (`void handler().catch(...)`, so `registerCommand` answered `undefined` and any caller that
+chained on it failed), and `openPath` called `.then` on the answer of `openTextDocument` with no
+shape check at all. Patching each defect back into the staged *compiled* artifact moved exactly one
+criterion each, and restoring it returned the run to `PASS 11/11` with complete evidence. The list
+above is therefore still accurate about a **real VS Code test host** - neither defect would have been
+invisible to one - and it is now also a list of what a **substitute** host cannot reach even when it
+really loads and really activates the compiled file.
+
 **Also built, and it is the third artifact of this tree:** the `.vsix`. This paragraph used to say the
 opposite - that packaging needs `@vscode/vsce`, that the output had never been produced on this
 machine, and that adding a package script nobody had run would be the same unverified claim this
 document refuses for a Dockerfile. That reasoning was right, and the fix was to run it rather than to
 keep declining: `@vscode/vsce` is now a dev dependency, `npm run package` produces
-`veridian-cockpit-<version>.vsix` (12 files, 118.70 KB) and `npm run smoke:vsix` reads it back as a zip - by
+`veridian-cockpit-<version>.vsix` (12 files, 119.22 KB) and `npm run smoke:vsix` reads it back as a zip - by
 hand, with `node:zlib`, because this tree has no runtime dependency and adding one to read an archive
 would be the tail wagging the dog. The archive is a **fourth** artifact that nothing else here can
 load, so the same discipline `smoke:dist` and `smoke:out` follow one runtime further out applies:
@@ -226,12 +243,19 @@ route to exist at all, and both were recorded before they were fixed rather than
   removed, and the guard that replaced it is narrower on purpose: `prepublishOnly` runs `npm run
 gate`, so a package whose own tests are red cannot leave the machine, where `private: true` would
   also have blocked a local `vsce package` for no reason.
-- **A version is written in two files and reconciled by nothing.** The extension's `package.json`
-  and this repository's root `package.json` carry the same figure by convention and no mechanism, so
-  the marketplace's version and the CLI's reported `veridianVersion` can drift apart silently. They
-  are both `0.2.1` as this is written, and the check is `npm run package` - the archive is named
-  `veridian-cockpit-<manifest version>.vsix` because the `package` script passes no `--out`, so a
-  filename that disagrees with the manifest cannot be produced.
+- **A version is written in four files and reconciled by nothing.** The extension's `package.json`,
+  this repository's root `package.json`, and each of their `package-lock.json` root entries carry the
+  same figure by convention and no mechanism, so the marketplace's version and the CLI's reported
+  `veridianVersion` can drift apart silently. They are all `0.2.2` as this is written. **This entry
+  used to claim the check was `npm run package`, and that was wrong about its own subject** - what
+  `package` proves is narrower: the archive is named `veridian-cockpit-<manifest version>.vsix`
+  because the `package` script passes no `--out`, so the *filename and the manifest it packaged*
+  cannot disagree. It says nothing about the root manifest, and the root manifest is exactly what
+  drifted when the extension's two `package-lock.json` entries were left at `0.2.1` after the bump to
+  `0.2.2` - the same shape as the licence drift this repository already paid for, where the lockfile
+  said `UNLICENSED` while the manifest said `MIT`. `npm install --package-lock-only --ignore-scripts`
+  reconciles a lockfile to its manifest; reconciling the two manifests to each other is still done by
+  hand, and that is the gap this entry now names rather than papering over.
 - **A named route that nothing in the tree can execute is not a route.** This section named
   `vsce publish` and `ovsx publish` while `ovsx` was installed nowhere and declared nowhere, so the
   route existed only as prose a maintainer had to reproduce from memory - the same defect class as a

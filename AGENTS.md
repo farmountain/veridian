@@ -800,7 +800,7 @@ npm run package            # vsce package --no-dependencies
                            # The archive lands at veridian-cockpit-<version>.vsix - `vsce` takes the
                            # name and the version out of the manifest it packages, so the filename
                            # cannot claim a version the extension inside it does not have.
-                           # 12 files, 118.70 KB, at the extension root. Deliberately NOT in `gate`:
+                           # 12 files, 119.22 KB, at the extension root. Deliberately NOT in `gate`:
                            # a packaging tool's output is not part of the source tree's contract,
                            # and making the local gate depend on `vsce` would make every local run
                            # need it. CI runs it, and runs the check below against it.
@@ -1080,7 +1080,7 @@ npx tsc --noEmit    silent (exit 0)
 node --test         72 tests, 0 failing
 npm run build       out/, 6 files
 npm run smoke:out   15 checks, exit 0
-npm run package     veridian-cockpit-0.2.1.vsix, 12 files, 118.70 KB
+npm run package     veridian-cockpit-0.2.2.vsix, 12 files, 119.22 KB
 npm run smoke:vsix  34 checks, exit 0
 npm run gate        exit 0
 ```
@@ -2117,6 +2117,36 @@ port had none, which is why the defect reached a demo run.
   claim that drifts. *Two worlds' worth of proof that `EnvironmentAdapter` is a seam is worth more
   than two worlds' worth of interface; the rule that keeps the proof honest is "say which, and say
   it where the world is registered".*
+
+- **A published artifact is not a repaired artifact, and a version a marketplace already serves can
+  never be replaced - only superseded.** The Cockpit's own 72-test suite was green *before* the
+  repair and green *after* it, which is the point: **a green unit suite and a working artifact are
+  two independent claims**, and only the second one is the product. The claim was settled by putting
+  the real compiled Cockpit inside `sim-vscode` and judging it with eleven acceptance criteria -
+  the world installs the archive's own manifest, activates it in a real child process, invokes its
+  commands and reads what it wrote to a channel. That world reported two defects, both in
+  `extension/vscode/src/host/vscode-port.ts`, both invisible to the suite:
+  `registerCommand` wrapped the handler and then wrote `void handler().catch(...)` - **a discarded
+  promise is not a discarded wrapper**, so `vscode.commands.registerCommand` answered `undefined`
+  and every caller that chained on its answer failed; and `openPath` used the answer of
+  `workspace.openTextDocument` with `.then` on no shape check at all. The falsification is what makes
+  the reading a measurement rather than an impression: patching each defect back into the *staged
+  compiled* artifact moved **exactly one** criterion each (`AC-008`, `AC-010`), and restoring the
+  artifact returned the run to `PASS 11/11` with complete evidence. Note *where* the probe had to
+  reach: `vscode-port.ts` is **not** a member of the world's `MODULE_REGISTER`, so no registry edit
+  could have exercised it - the probe patches the compiled bytes, and it must snapshot its golden copy
+  from a **known-good** state, because a snapshot taken after the artifact was already patched
+  silently converts the control into a second copy of the defect. Then the part that costs money:
+  **the archive attached to `v0.2.1` had been built before the repair.** Read back by expanding the
+  downloaded asset and reading `extension/out/host/vscode-port.js` inside it - the discard defect
+  present, the shape guard absent, and the bytes differing from the build - and the **VS Code
+  Marketplace was serving that same `0.2.1`** (`lastUpdated 2026-09-15T15:36:02.787Z`), so the
+  defective build was public and the version could not be overwritten. `npm run package` succeeding
+  says only that a file was written; it says nothing about whether the file is current. The version
+  moved to `0.2.2`, and the rule this repository now holds is: **after every repackage, read the
+  attached asset back and hash it** - the same discipline `smoke:dist`, `smoke:out` and `smoke:vsix`
+  already apply one runtime out, applied to the one artifact that leaves the machine for a place
+  nobody here can inspect.
 
 ## Documentation
 

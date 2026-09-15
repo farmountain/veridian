@@ -44,15 +44,23 @@ export function createVscodePort(
     },
 
     registerCommand(id: string, handler: () => Promise<void>): CommandRegistration {
-      const disposable = vscode.commands.registerCommand(id, () => {
-        // Never `void handler()`. A rejected promise here would be an unhandled rejection the
-        // extension host reports as a crash, and the message an operator would see would name the
-        // wrapper rather than the command that failed.
-        void handler().catch((error: unknown) => {
+      const disposable = vscode.commands.registerCommand(id, () =>
+        // The promise is **returned**, never discarded with `void`. Two things depend on it and only
+        // the first is about failure.
+        //
+        // The `.catch` is what stops a rejected handler becoming an unhandled rejection that the
+        // extension host reports as a crash - one whose message would name this wrapper rather than
+        // the command that failed.
+        //
+        // The `return` is what tells the caller that the command has not finished yet. A wrapper that
+        // swallowed the promise would let `executeCommand` resolve the moment the handler *started*,
+        // so any host that awaits a command and then tears the extension down abandons the handler
+        // mid-flight - and the operator sees a command that did nothing rather than one that failed.
+        handler().catch((error: unknown) => {
           const detail = error instanceof Error ? error.message : String(error);
           void vscode.window.showErrorMessage(`Veridian ${id} failed: ${detail}`);
-        });
-      });
+        }),
+      );
       return {
         id,
         dispose: (): void => {
@@ -117,7 +125,19 @@ export function createVscodePort(
     },
 
     openPath(absolutePath: string): void {
-      void vscode.workspace.openTextDocument(vscode.Uri.file(absolutePath)).then(
+      // `openTextDocument` is typed as always answering a thenable, and a real editor always does. A
+      // host that does not implement the API may refuse it *by name* and answer `undefined` instead
+      // of a rejected promise - this world's own substitute does exactly that - and calling `.then`
+      // on that throws before either branch below can run, turning a viewer command into a crash the
+      // operator reads as a failure of the command rather than of the host.
+      //
+      // So the answer is checked for the shape this code needs before it is used. A refusal is a
+      // viewer command doing nothing, which is what the rejection branch already documents; a crash
+      // is not.
+      const opened: unknown = vscode.workspace.openTextDocument(vscode.Uri.file(absolutePath));
+      const thenable = opened as { then?: unknown } | null | undefined;
+      if (thenable === null || thenable === undefined || typeof thenable.then !== "function") return;
+      void (opened as PromiseLike<vscode.TextDocument>).then(
         (document) => vscode.window.showTextDocument(document, { preview: false }),
         // The file may not exist - a bundle can be deleted between the read and the reveal. An
         // editor that silently does nothing is the right behaviour for a *viewer* command; a modal

@@ -4,7 +4,7 @@
 
 **The sandbox testing and validation layer for AI coding agents.**
 
-**v0.2.1** - eleven reproducible sandbox worlds, across five distribution routes.
+**v0.2.2** - eleven reproducible sandbox worlds, across five distribution routes.
 
 Coding agents are good at producing code and have an *environmental* problem: they cannot tell
 whether their code actually works. An agent saying "I believe this is fixed" is not a result.
