@@ -1,0 +1,170 @@
+version: 1
+goal_id: veridian-cockpit
+
+# This contract judges the Veridian Cockpit itself, inside an extension host it did not build.
+#
+# ## Why this exists
+#
+# The Cockpit has a unit suite of 72 tests and a compiled-artifact smoke test of 15 checks, and both
+# were green on a build whose two reporter commands did nothing when invoked in this world. That is the
+# whole point of the contract: "the tests passed" and "the thing works" are two different measurements,
+# and only the second one is taken by running the artifact where an operator would run it.
+#
+# ## What each criterion is about
+#
+# AC-001..AC-004 are about the world naming itself and admitting the extension - the conditions under
+# which the rest of the reading means anything. AC-005..AC-009 are about the commands existing and being
+# invocable. AC-010 and AC-011 are the two that a *green unit suite could not have reached*: the result
+# reporter's rendering, which is done after a real awaited filesystem read, and the absence of a crash
+# in the failure reporter when the host refuses the reveal API.
+#
+# ## Reading discipline this world forces
+#
+# Every action that needs the extension running starts a fresh host process, so the output, message and
+# invocation surfaces are a **cumulative transcript across those runs**. Nothing here compares a whole
+# list for `equals` except `vscode.message`, where the whole point is that the list is still empty.
+
+criteria:
+  # --- the world names itself, and admitted what it was handed -------------------------------------
+
+  - id: AC-001
+    description: >-
+      The host this build ran against is the substitute this world declares, so that a PASS is
+      traceable to a named stand-in rather than to unexamined reality.
+    expect:
+      - validator: vscode.host
+        equals: veridian-vscode-sim
+        message: >-
+          The reading names a host other than the one this world declares. Every verdict below was
+          reached inside that host, so a run against a different one describes a different world.
+    evidence: [json]
+
+  - id: AC-002
+    description: >-
+      The extension the world holds is the Cockpit, under the name and at the version its own manifest
+      declares. A criterion below could otherwise pass against a different extension entirely.
+    expect:
+      - validator: vscode.identity
+        contains: veridian-cockpit 0.2.2
+        message: >-
+          The name and version the world recorded are not the ones the Cockpit's manifest declares, so
+          this run judged something other than the artifact it claims to have judged.
+    evidence: [json]
+
+  - id: AC-003
+    description: >-
+      The manifest's engine floor was admitted by the API this host reports, which is the difference
+      between an extension that installs and one that installs and then never runs.
+    expect:
+      - validator: vscode.engine
+        equals: admitted
+        message: >-
+          The engine floor was refused. This is the failure mode that reports nothing at install time
+          and everything at activation time, so it is judged before anything is activated.
+    evidence: [json]
+
+  - id: AC-004
+    description: >-
+      The Cockpit's own activate really ran in a real Node process - not a stub standing in for it -
+      because a command that is registered by a file nobody loaded is a command nobody can invoke.
+    expect:
+      - validator: vscode.activation
+        equals: true
+        message: >-
+          No host process activated the extension, so nothing below describes code that ran.
+    evidence: [json]
+
+  # --- the commands the manifest contributes exist ------------------------------------------------
+
+  - id: AC-005
+    description: >-
+      The result reporter is registered under the id the manifest declares, which is the id a user's
+      keybinding and the palette both address.
+    expect:
+      - validator: vscode.command
+        target: veridian.showResult
+        equals: present
+        message: >-
+          The command the manifest contributes was not registered by the extension that activated, so
+          the palette entry an operator would click does nothing.
+    evidence: [json]
+
+  - id: AC-006
+    description: >-
+      The failure reporter is registered under the id the manifest declares.
+    expect:
+      - validator: vscode.command
+        target: veridian.openFailure
+        equals: present
+    evidence: [json]
+
+  # --- the two viewer commands really doing their work --------------------------------------------
+
+  - id: AC-007
+    description: >-
+      The world answered the harness's invocation of the result reporter, which is the reading that
+      says the command was reached at all.
+    expect:
+      - validator: vscode.invocation
+        target: veridian.showResult
+        equals: answered
+    evidence: [json]
+
+  - id: AC-008
+    description: >-
+      The result reporter rendered the run it was given into the output channel it created. This is the
+      criterion the unit suite could not reach: the rendering happens *after* an awaited filesystem read,
+      so a command wrapper that lets the host believe the command has finished the moment it starts
+      loses every line of it - and every check in the gate stays green while it does.
+    expect:
+      - validator: vscode.output
+        target: Veridian
+        contains: verdict  PASS
+        message: >-
+          The verdict line never reached the output channel. The bundle was there and the command was
+          invoked, so the work was abandoned rather than not started.
+      - validator: vscode.output
+        target: Veridian
+        contains: run-20260101-000000-c0c0c0
+        message: >-
+          The output channel holds no rendering of the seeded run, so the reporter read something other
+          than the bundle the scenario placed.
+    evidence: [json]
+
+  - id: AC-009
+    description: >-
+      The world answered the harness's invocation of the failure reporter.
+    expect:
+      - validator: vscode.invocation
+        target: veridian.openFailure
+        equals: answered
+    evidence: [json]
+
+  - id: AC-010
+    description: >-
+      Revealing a file in a host that refuses the reveal API is a viewer command doing nothing, not a
+      crash. This world's substitute refuses `workspace.openTextDocument` *by name*, so before the
+      repair the reporter threw and said so in an error message - while the invocation itself was
+      still reported as answered. The reading is `equals` on the empty-list spelling because that is
+      this family's honest rendering of "nothing was said", and the only thing that could be said on
+      this path is the crash.
+    expect:
+      - validator: vscode.message
+        equals: (no messages were shown)
+        message: >-
+          The extension told the user something on a path that has no user-facing outcome, which on
+          this path is a message about the extension's own failure rather than about the workspace.
+    evidence: [json]
+
+  - id: AC-011
+    description: >-
+      The world's refusal of the API it does not implement is recorded rather than thrown, which is
+      what makes AC-010 a reading about the host's edge instead of a reading about a silent mock.
+    expect:
+      - validator: vscode.refusal
+        target: workspace.openTextDocument
+        contains: does not implement
+        message: >-
+          No refusal was recorded for the reveal API, so the substitute implemented it - and AC-010
+          would then be asserting that a real reveal produced no message, which is a different claim.
+    evidence: [json]

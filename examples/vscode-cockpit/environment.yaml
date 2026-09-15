@@ -1,0 +1,33 @@
+# The tenth demo's environment, and the third whose subject is Veridian itself.
+#
+# This world is a plain sim-vscode world. What makes it different from `examples/sim-vscode` is only
+# *what is installed into it*: that demo's application is a small extension written for the demo,
+# while this one's application is the Cockpit's own compiled build, copied out of `extension/vscode`
+# and installed under the name and version its own manifest declares.
+#
+# `dependencyInstall` is null and `url` is null: this world has no package manager step and no address,
+# so no browser is started and every criterion below is an extension-host reading.
+adapter: sim-vscode
+app: app
+url: null
+dependencyInstall: null
+
+vscode:
+  host: veridian-vscode-sim
+  apiVersion: "1.100.0"
+  activationEvent: onCommand:veridian.showResult
+  root: sandbox
+  settings: {}
+
+start:
+  command: node
+  args:
+    - provision.mjs
+  readyPattern: 'veridian-cockpit provisioned: \d+ commands'
+
+health:
+  timeoutMs: 30000
+  intervalMs: 100
+
+reset:
+  strategy: restart

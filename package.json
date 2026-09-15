@@ -45,6 +45,7 @@
     "demo:cloud": "node examples/sim-cloud/demo.ts",
     "demo:container": "node examples/sim-container/demo.ts",
     "demo:vscode": "node examples/sim-vscode/demo.ts",
+    "demo:cockpit": "node examples/vscode-cockpit/demo.ts",
     "demo:api": "node examples/local-api/demo.ts",
     "demo:local-process": "node examples/local-process/demo.ts",
     "demo:data": "node examples/sim-data/demo.ts",

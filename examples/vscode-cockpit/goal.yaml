@@ -1,0 +1,16 @@
+version: 1
+id: veridian-cockpit
+statement: >-
+  The Veridian Cockpit is installed into an extension host as the extension it declares itself to be,
+  the engine floor its manifest states is admitted, its own activate really runs, the commands it
+  contributes are registered and invocable, and the two viewer commands it declares really do their
+  work: the result reporter renders the bundle it was given into the output channel it created, and the
+  failure reporter reaches the reveal path without turning a refusal by the host into a crash.
+context: >-
+  This is the twelfth demo and the one whose subject is Veridian's own client rather than a sample
+  application. It exists because "the tests passed" and "the thing works" are two different
+  measurements, and only the second one is taken by running the shipped artifact where an operator
+  would run it. The Cockpit's own suite is 72 tests and its compiled-artifact smoke test is 15 checks,
+  and both were green on a build whose two reporter commands did nothing when invoked in this world.
+acceptance: acceptance.yaml
+environment: environment.yaml

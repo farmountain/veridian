@@ -843,7 +843,7 @@ rather than locally, and the run id is cited below rather than the word "works".
 | `schemas/` carried into `dist/` | **done** | `copy-assets: schemas/ -> dist/schemas/`; all 6 present |
 | Asset root resolved from the module | **done** | `core/assets.ts`; `tests/assets.test.ts` holds both halves |
 | `package.json` packaging | **done** | `files: ["dist"]`, `bin.veridian`, `prepublishOnly`, `prepare` |
-| Gate stays green | **done** | `2190 tests / 356 suites / 0 fail`, exit 0 |
+| Gate stays green | **done** | `2202 tests / 358 suites / 0 fail`, exit 0 |
 | Smoke test exists **and discriminates** | **done** | falsified by reverting the asset root in the built `.js`: `FAIL ... exits 2, not 3`, exit 1 |
 | `npm pack` -> clean install -> run | **done** | 131 files, 554.1 kB; `npx veridian help` exit 0; a browserless validate exit 2 with schemas resolved from `node_modules` |
 | `Dockerfile` + `image` CI job | **done, in CI** | This machine has no container runtime, so the verification is where the runtime is. Run 34845548864 on `41d16f8`: job `container image` succeeded - the image builds, the container runs the CLI, and a browserless validate inside it resolves the schemas the image carries. |
@@ -1462,4 +1462,51 @@ being believed:
 why the counts in this section are the run's own figures rather than figures remembered from the
 plan, and why the two falsifications above are recorded beside the numbers they license rather than
 stated as intentions.
+
+### The twelfth demo: Veridian's own client, and the claim no adapter can make
+
+The first demo in this tree whose application is **Veridian itself** - the compiled VS Code Cockpit -
+and the first that adds no adapter, no validator family and no step kind. It runs the `sim-vscode` world
+unchanged, so the world table above is still the whole of what that world substitutes. What is different
+is *what gets installed into it*: `examples/vscode-cockpit/` stages the real build product -
+`extension/vscode/out/` plus the manifest, the icon and the licence, **read out of the manifest's own
+`files` allowlist rather than restated** - inside the world's own app tree, because `resolveHostPath`
+refuses anything outside it. It is a *copy of another generated tree*, and both trees are ignored
+(`examples/vscode-cockpit/app/extension/`, `examples/vscode-cockpit/app/sandbox/`).
+
+| Step | Status | Evidence |
+|------|--------|----------|
+| The world | reused, unchanged | `sim-vscode`, and this demo is the reason "the tests passed" and "the thing works" are separable claims: the application here is a build product, not a committed sample. |
+| The application | staged, never committed | `npm run demo:cockpit`, eleven criteria, exit 0. Measured: `PASS (COMPLETED, 1 iteration(s))`, `11/11 mandatory criteria passed, environment valid, no safety violation, evidence complete.` |
+| `D1` - `registerCommand` discarded the promise its handler made | found | `void handler().catch(...)` handed `undefined` to every caller that chained on the registration. The Cockpit's 72-test suite and its 15-check compiled-artifact smoke test were green **before and after** it. |
+| `D2` - `openPath` used an answer it never checked the shape of | found | `workspace.openTextDocument` was `.then`-ed with no guard, so a host that refused became `Cannot read properties of undefined (reading 'then')` shown to the user - also green through both suites. |
+| Falsification, not trust | measured | Patching each defect back into the **staged compiled artifact** moved **exactly one** criterion each: `D1` -> `AC-008` `FAIL` / `ABORTED` (10 passed, 1 not passed), `D2` -> `AC-010` likewise; restoring the artifact returned the run to `PASS 11/11` with complete evidence. |
+| Refusal rather than a skip | built | With no `extension/vscode/out` the demo **refuses by name** and names `npm run build`, because a skipped check reports a green suite. |
+
+**The falsification had to reach past the registry.** `vscode-port.ts` is not a member of the world's
+`MODULE_REGISTER`, so no registry edit could have exercised it - the probe patches the bytes of the
+staged compiled file, and its golden copy is taken from a **known-good** state, because a snapshot taken
+after the artifact was already patched turns the control into a second copy of the defect.
+
+**And the artifact a reader would download was the pre-repair one.** The `.vsix` attached to `v0.2.1`
+was built before the repair (`121,551 bytes`, SHA-256 `0F4DC415...`), and expanding it and reading
+`extension/out/host/vscode-port.js` found the discard present and the shape guard absent - and the
+**VS Code Marketplace was serving that same `0.2.1`**. A version a marketplace already serves cannot be
+replaced, so the version moved to `0.2.2` and both repairs are in its compiled bytes. The rule this
+repository now holds is the one `smoke:dist`, `smoke:out` and `smoke:vsix` already applied one runtime
+out, applied to the artifact that leaves this machine: **after every repackage, read the attached asset
+back and hash it.** `v0.2.2` was read four ways - downloaded back byte for byte (`122,078 bytes`,
+SHA-256 `45B8196F...`), its `vscode-port.js` read for both repairs, its manifest read for `0.2.2`, and
+the release API queried for its asset list.
+
+**Regression tests.** `tests/vscode-cockpit-demo.test.ts` (8 tests) holds what a test can hold about a
+demo whose artifact the root gate does not build: the identity it pins, the validators and evidence
+kinds it names, the pointer set the adapter requires, the environment names the adapter declares, a
+readiness count assembled from the array the program wrote, and both ignore rules - each **falsified**
+rather than trusted, since a bumped identity and a renamed ignore rule each failed exactly one subtest
+and were reverted. `vscode.identity` pins the version the staged manifest declares, so a version bump
+moves that expectation in the same pass. And `tests/demo-rosters.test.ts` (4 tests) holds the `demo:*`
+roster a reader is offered against the scripts the manifest declares, after `demo:vscode` and
+`demo:data` were found declared, shipped and documented - and named in neither command block of
+`AGENTS.md`.
 

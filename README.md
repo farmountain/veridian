@@ -52,8 +52,8 @@ and a `Dockerfile` that has never been built is a claim.
 git clone <this-repository-url> veridian
 cd veridian
 npm ci                    # runtime dependency: yaml. dev: typescript, @types/node.
-npm run gate              # tsc --noEmit, then the whole test suite. 2190 tests, about five seconds
-                          # (this tree's own 2118 plus the Cockpit's 72, which the runner discovers
+npm run gate              # tsc --noEmit, then the whole test suite. 2202 tests, about five seconds
+                          # (this tree's own 2130 plus the Cockpit's 72, which the runner discovers
                           # because it walks the tree; the extension has its own gate as well).
 
 npm run e2e:install       # one-time, ~150 MB: fetch the Playwright browser
@@ -75,15 +75,18 @@ npm run demo:local-process # the tenth: a real program run as a real child proce
                           # it printed, what it exited with and the files it wrote - nothing simulated
 npm run demo:data         # the eleventh: the app provisions a SIMULATED message broker it reaches
                           # over a real TCP socket, judged on the topics, records and offsets it holds
+npm run demo:cockpit      # the twelfth: Veridian's OWN client is the application, loaded by a
+                          # SIMULATED extension host and judged on what it really did while loaded
 ```
 
-Run those thirteen in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
+Run those fifteen in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
 Playwright is installed **outside** the lockfile on purpose, so installing the browser before `npm ci`
 would discard it.
 
 `demo`, `demo:db`, `demo:api`, `demo:local-process`, `demo:posix`, `demo:os`, `demo:cloud`,
 `demo:container`, `demo:vscode` and `demo:data` need no
-extra setup. `demo:k8s` needs neither a cluster nor `kubectl`, `demo:posix` needs neither a virtual
+extra setup - while `demo:cockpit` needs the Cockpit built first, because its application is a build
+product. `demo:k8s` needs neither a cluster nor `kubectl`, `demo:posix` needs neither a virtual
 machine nor a Linux host, `demo:os` needs neither a Windows guest nor a hypervisor, `demo:cloud` needs
 no cloud account, no `aws`/`az`/`gcloud` session and no outbound socket, `demo:container` needs no
 Docker, no container runtime and no daemon, `demo:vscode` needs neither VS Code nor any extension
@@ -111,6 +114,16 @@ assignments and consumer-group state, and it answers the twelve APIs it declares
 speaks a wire protocol to something that is not message-broker software, and the criteria are judged on
 what that substitute holds. It carries a `simulated` field naming the seven surfaces it stands in for,
 and `snapshot-restore` is really performed rather than downgraded to a restart.
+
+`demo:cockpit` is the one demo in that list whose application is **Veridian itself**. Where
+`demo:vscode` judges a sample extension written for the purpose, this one installs the real compiled
+Cockpit - the artifact `npm run package` builds and the marketplaces serve - into the substitute
+host, activates it in a real child process, invokes two of its commands and reads back what it wrote
+to a channel and what it told a user. It exists because *"the tests passed"* and *"the thing works"*
+are two different measurements, and only the second one is the product: the Cockpit's own 72-test
+suite was green both before and after the two defects this world found. It is the one demo that needs
+`out/` to exist, so **run `npm run build` inside `extension/vscode` first** - the demo refuses by name
+and names that command rather than skipping, because a skipped check reports a green suite.
 
 Requires **Node 22.18.0 or newer**.
 
@@ -1024,6 +1037,84 @@ group committed asks a party that only records what it was told.
 
 ---
 
+## The twelfth demo: Veridian's own client, judged in an extension host
+
+This one adds no world. `npm run demo:cockpit` runs the same `sim-vscode` substitute the eighth demo
+uses, unchanged, down to the readiness pattern - and it is a separate demo because the *application*
+is different in the one way that matters most here: it is Veridian's own compiled Cockpit, not a
+sample extension written to be judged.
+
+It exists to separate two claims that are easy to conflate. **"The tests passed" and "the thing
+works" are two different measurements, and only the second one is the product.** The Cockpit has its
+own 72-test suite; that suite was green *before* the two defects this run found and green *after*
+them, because both defects were in `extension/vscode/src/host/vscode-port.ts` - the one file whose
+job is to adapt the real editor API, and therefore the one file whose mistakes a double of that API
+cannot reproduce. So the demo installs the artifact instead: the manifest, the compiled `out/` tree,
+the icon and the licence, exactly what `npm run package` puts in the archive, loaded by a real Node
+process through a module this world resolves in place of `vscode`. Every action that needs the
+extension running starts a fresh host process, and every host process activates the extension - which
+is why an activation count here is a count of host processes and is recorded as one.
+
+Eleven criteria judge it, and each is a reading the substitute host actually wrote down: the host it
+believes it is (`vscode.host`), the identity of the thing installed (`vscode.identity`, pinned to the
+`name` and `version` the manifest declares), whether the engine floor admits the module format the
+build emits (`vscode.engine`), whether activation happened (`vscode.activation`), that both of its
+viewer commands are contributed (`vscode.command` twice), that invoking each one was answered
+(`vscode.invocation` twice), what it wrote to its output channel (`vscode.output` twice, once for the
+verdict and once for the run id), that it told the user nothing (`vscode.message`) and that the one
+call this world does not implement was refused by name (`vscode.refusal`). Its only evidence kind is
+`json`, and `snapshot-restore` is refused by name rather than downgraded to a restart.
+
+Two things about the demo itself are worth stating, because both are choices rather than accidents.
+
+**It stages a build product, and it refuses by name when there is none.** `out/` is not committed, and
+the world's `resolveHostPath` refuses any path outside the application's own directory - so the
+artifact cannot be installed from `extension/vscode` and has to sit inside the world's app tree. The
+demo copies the manifest's own `files` allowlist out of the manifest (it does not restate it) into
+`examples/vscode-cockpit/app/extension/` before the run and removes it afterwards unless you pass
+`--keep-staged`. That tree is generated and ignored. On a fresh clone there is nothing to stage, and
+the demo says so and names `npm run build` rather than quietly judging a stale copy or skipping -
+*a skipped check does not fail, it silently reduces coverage while reporting a green suite.*
+
+**Its expectations move with the version, so a version bump moves them.** `vscode.identity` pins
+`veridian-cockpit 0.2.2`, which is the version in the manifest the demo stages. Bumping the extension
+means editing that expectation in the same pass; if you do not, the run will judge the artifact it
+claims to judge only by accident, and `tests/vscode-cockpit-demo.test.ts` fails naming both versions
+rather than letting it through.
+
+What the demo found, measured against the published `0.2.1` build: **two defects, and each one moves
+exactly one criterion.**
+
+```
+D1  `void handler().catch(...)` in registerCommand     FAIL / ABORTED   AC-008   (10 passed, 1 not passed)
+D2  no shape check on the opened document in openPath  FAIL / ABORTED   AC-010   (10 passed, 1 not passed)
+    both repaired                                      PASS / COMPLETED 11/11    evidence complete
+```
+
+The first is one word: a command handler that is asynchronous by contract had its promise discarded
+rather than returned, so `vscode.commands.registerCommand` answered `undefined` and every caller that
+chained on that answer failed. The second is the same class of mistake one layer down - an answer
+whose shape is never checked is used as though it were a thenable. Read back out of the failing run's
+own `result.json`, the two criteria say it plainly:
+
+```
+AC-008  Expected what the channel holds (Veridian (0 lines, never shown)) to contain "verdict  PASS",
+        but it is "(nothing was written to it)".
+AC-010  Expected what the extension told a user, as the host recorded it to equal
+        "(no messages were shown)", but it is "error: Veridian veridian.showResult failed: Cannot read
+        properties of undefined (reading 'then'); error: Veridian veridian.openFailure failed: ...".
+```
+
+Neither defect was plausible to fix by reading the suite, and neither is visible to it: the fixes were
+confirmed by patching each one back into the *staged compiled* artifact and watching the run move
+exactly one criterion, then restoring the golden copy and watching it return to `11/11`. The published
+archive attached to `v0.2.1`, and the copy the VS Code Marketplace was serving, were both built
+*before* those repairs - so `0.2.2` exists to supersede them, and the marketplace cannot be corrected
+in place because it rejects a version it has already published. **A published artifact is not a
+repaired artifact.**
+
+---
+
 ## How the code is arranged
 
 ```
@@ -1130,10 +1221,14 @@ examples/sim-data/      the eleventh demo: the app provisions a substitute messa
                         TCP socket it really writes to. Four defects, twenty criteria, and the failing
                         count descending `5 -> 4 -> 3 -> 1 -> 0` - three of the four defects are read
                         by exactly one criterion each, and the fourth moves two
+examples/vscode-cockpit/ the twelfth demo, and the only one whose application is Veridian itself:
+                        the compiled Cockpit is staged into a substitute extension host, activated
+                        in a real child process, and judged on what it really did while loaded.
+                        Eleven criteria. The staged tree is generated and ignored, never committed
 extension/vscode/       the VS Code Cockpit: a thin client, no validation logic. The one directory
                         with a build step, because the extension host is not Node's loader
                         (`npm run package` produces the `.vsix` you can hand to somebody else)
-tests/                  2190 tests in a root `node --test` run: this tree's own 2118 plus the
+tests/                  2202 tests in a root `node --test` run: this tree's own 2130 plus the
                         Cockpit's 72
 
 dist/                   GENERATED by `npm run build`. Never edited, never committed.

@@ -109,6 +109,24 @@ examples/sim-vscode/app/sandbox/
 # nesting, so a regression cannot commit a second sandbox while its cause is being found.
 examples/local-process/app/**/sandbox/
 
+# The compiled Cockpit the `vscode-cockpit` example stages, and this is the one generated tree in the
+# repository that is a *copy of another generated tree*. `demo.ts` copies `extension/vscode/out/` (plus
+# the manifest, the icon and the licence, which is the manifest's own `files` allowlist) into
+# `app/extension/` before the run and removes it afterwards, because `resolveHostPath` refuses a path
+# outside the application directory - so the artifact has to sit inside the world's own app tree to be
+# installed at all. It is not committed for the reason `extension/vscode/out/` is not: it is a build
+# product, and a committed copy could disagree with the source it was compiled from. `--keep-staged`
+# deliberately leaves it behind for inspection, which is precisely when this rule matters.
+examples/vscode-cockpit/app/extension/
+
+# The sandbox tree the `vscode-cockpit` example's world builds. The reasoning is the `sim-vscode` one
+# exactly - the installed extension directory, the workspace folder and the durable store an extension
+# writes through `globalState` and `workspaceState` - and it is stated separately rather than shared
+# because the two worlds keep separate trees. It sits under `app/` because `core/environment/load.ts`
+# resolves `vscode.root` against this document's own `app:` value, so the tree the world creates and the
+# tree this rule excludes are the same one by construction.
+examples/vscode-cockpit/app/sandbox/
+
 # Editors / OS
 .DS_Store
 Thumbs.db

@@ -70,8 +70,8 @@ instructions file for this workspace — do not add a second one
 > the sixth world's does, and the pair means the same inverted thing there: `data.call` reads the
 > requests the **application** put to the broker, `data.probe` the ones the **criterion** itself
 > issued, so a criterion's own request cannot be mistaken for evidence about the application.
-> `npx tsc --noEmit` is silent and `node --test` reports 2190 passing tests -
-> Veridian's own 2118 plus the 72 the VS Code Cockpit contributes, which the root runner discovers
+> `npx tsc --noEmit` is silent and `node --test` reports 2202 passing tests -
+> Veridian's own 2130 plus the 72 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Five distribution routes ship - a clone, an npm package, the Cockpit (as
 > a development install and as a `.vsix`), the extension marketplaces that `.vsix` is published to,
 > and a container image - and there is still **no
@@ -663,6 +663,25 @@ examples/sim-data/     The eleventh demo, and the seventh simulated one: the app
                         orders and commits `2`, so every record is correct, the log is complete, and
                         the one thing wrong is where the group will resume - a fact no record in the
                         data states, which is why the reading had to be about the request.
+examples/vscode-cockpit/ The twelfth demo, and the only one whose application is Veridian's own
+                        client. It adds NO world: it runs the same `sim-vscode` substitute the eighth
+                        demo uses, unchanged, and is separate because the application is different in
+                        the one way that matters - it stages the real compiled Cockpit (the
+                        manifest's own `files` allowlist, copied out of the manifest rather than
+                        restated) into its app tree and judges that. It exists to separate two claims:
+                        "the tests passed" and "the thing works". The Cockpit's 72-test suite was
+                        green before and after the two defects this world found, because both were in
+                        `vscode-port.ts` - the one file adapting the real editor API, and therefore
+                        the one file a double of that API cannot falsify. Eleven criteria. Measured
+                        against the published `0.2.1`: D1 (a discarded promise in `registerCommand`)
+                        moves **exactly** `AC-008`, D2 (no shape check on an opened document) moves
+                        **exactly** `AC-010`, and both repaired gives `PASS (COMPLETED, 1
+                        iteration(s))` 11/11, exit 0. It is the one demo that needs a build product,
+                        so it **refuses by name** when `extension/vscode/out` is absent, naming
+                        `npm run build`, rather than skipping - a skipped check reports a green
+                        suite. Its staged tree and its sandbox are both generated and ignored, and
+                        `vscode.identity` pins the version in the manifest it stages, so a version
+                        bump moves that expectation in the same pass.
 examples/defect-text.ts One implementation of the CRLF rule for a textual overlay on a source file.
                         Two demos injecting defects is two chances to teach the rule differently;
                         a third copy is where the rule gets broken.
@@ -766,8 +785,8 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 2190 tests, ~7s. No directory argument.
-                           # 2190 = the root's own 2118 + the Cockpit's 72, because the runner walks
+node --test                # the whole suite. 2202 tests, ~5s. No directory argument.
+                           # 2202 = the root's own 2130 + the Cockpit's 72, because the runner walks
                            # the tree and reaches extension/vscode/src/*.test.ts. Neither figure is
                            # the whole story on its own: the root tsconfig EXCLUDES extension/**, so
                            # `npx tsc --noEmit` here does not typecheck the Cockpit and the root gate
@@ -912,6 +931,13 @@ npm run demo:container                      # the seventh demo, and the fifth si
                                             # and is judged on the records it holds. No Docker, no
                                             # daemon and no image anywhere in the loop. Exit 0 when it
                                             # passes: measured, 5 iterations and 27/27 criteria.
+npm run demo:vscode                         # the eighth demo, and the sixth simulated world: a real
+                                            # extension is loaded by a substitute extension host and
+                                            # judged on what that host recorded while it ran. No editor,
+                                            # no window and no installed VS Code anywhere in the loop.
+                                            # Exit 0 when it passes: measured, 5 iterations and
+                                            # 23/23 criteria, the failing count descending
+                                            # 4 -> 3 -> 2 -> 1 -> 0.
 npm run demo:api                            # the ninth demo, and the first whose world is NOT
                                             # simulated: a real service is started and judged through
                                             # its own HTTP interface over loopback, with the contract
@@ -927,6 +953,22 @@ npm run demo:local-process                  # the tenth demo, and the second who
                                             # Exit 0 when it passes: measured, 5 iterations and
                                             # 9/9 criteria, the failing count descending
                                             # 6 -> 3 -> 2 -> 1 -> 0.
+npm run demo:data                           # the eleventh demo, and the seventh simulated world -
+                                            # and the first whose subject is a REQUEST the application
+                                            # made: a real TCP socket, a real broker protocol written
+                                            # into it, and a substitute on the other end. No broker
+                                            # process, no replica follower, no on-disk log and no
+                                            # outbound socket. Exit 0 when it passes: measured, 5
+                                            # iterations and 20/20 criteria, the failing count
+                                            # descending 5 -> 4 -> 3 -> 1 -> 0.
+npm run demo:cockpit                        # the twelfth demo, and the only one whose application
+                                            # is Veridian's OWN client: the compiled Cockpit, staged
+                                            # into a substitute extension host and judged on what it
+                                            # really did while loaded. It adds no world - it reuses
+                                            # `sim-vscode` unchanged. Needs `npm run build` inside
+                                            # `extension/vscode` first, and REFUSES by name when
+                                            # `out/` is absent rather than skipping. Exit 0 when it
+                                            # passes: measured, 1 iteration and 11/11 criteria.
 npm run demo:no-browser                     # the same demo with `--browser none`. Every criterion is
                                             # a browser observation, so this must end INCONCLUSIVE
                                             # (exit 2). It shows the refusal, not the aha.
@@ -1807,7 +1849,7 @@ port had none, which is why the defect reached a demo run.
   register.** `README.md` said a step is "one of seven kinds" while `core/acceptance/steps.ts` holds
   **eleven** in `STEP_KINDS` - a figure that had drifted through four new worlds without anything
   reading it. The same pass found `AGENTS.md` quoting `1273` tests and `1213` of the tree's own, where
-  the measured run was `1456` and `1396` - and the count stands at `2190` and `2118` as this is
+  the measured run was `1456` and `1396` - and the count stands at `2202` and `2130` as this is
   written, which is the rule demonstrating itself. *Both are the same defect as a roster printed in a
   document: a number is a claim about the code, and the cheapest way to hold it is to read the code -
   the difference is that a number cannot be pinned by a test the way a name can, so it has to be
@@ -2147,6 +2189,26 @@ port had none, which is why the defect reached a demo run.
   attached asset back and hash it** - the same discipline `smoke:dist`, `smoke:out` and `smoke:vsix`
   already apply one runtime out, applied to the one artifact that leaves the machine for a place
   nobody here can inspect.
+
+- **A command block is a roster, and a roster that omits a command a reader was promised is the
+  fourth occurrence of one shape.** `package.json` declares thirteen `demo*` scripts; `AGENTS.md`'s
+  `Running things:` block listed eleven and named neither `demo:vscode` nor `demo:data` - both
+  declared, both shipped, both described at length in `README.md`, and both absent from the one block
+  a reader copies from. `README.md`'s own prose roster beneath its quickstart block omitted
+  `demo:cockpit` in the same way. Nothing failed, because a list of names in a document is read by
+  nothing that could disagree with it - the shape this file already records three times (`db.query`,
+  `db.rowCount`, `web.visible`). `tests/demo-rosters.test.ts` now derives the roster from the manifest
+  and compares it against the **fenced code blocks** of both documents rather than against the whole
+  file, because the drift was a missing *block* entry while the same demo was described at length in
+  the layout table. It tolerates exactly one named exemption - `demo:no-browser` is introduced in its
+  own paragraph rather than in the quickstart - and asserts beside it that the exempted name is still
+  printed somewhere on the page, so a named exemption cannot quietly become an omission. Its first run
+  failed on a **correct** document: the header comment stated the reader-versus-roster distinction
+  while the code asserted the stricter claim, and *a comment describing what an implementation does is
+  not the implementation*. It was split into four `it` blocks for the same reason, so that a failure
+  names one property instead of whichever fired first. Falsified 3/3: deleting the `demo:cockpit`
+  fence line from either document, and inventing a demo into `README.md`, each failed the subtest that
+  names it.
 
 ## Documentation
 
