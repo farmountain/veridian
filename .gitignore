@@ -93,6 +93,22 @@ examples/sim-container/app/context/
 # tree the world creates and the tree this rule excludes are the same one by construction.
 examples/sim-vscode/app/sandbox/
 
+# The sandbox tree the `local-process` example's world builds. The reasoning is the `sim-posix`,
+# `sim-os`, `sim-container` and `sim-vscode` one, and what is stored in it is the plainest thing any of
+# them stores: a release the application actually wrote - `dist/`, a manifest and a few files - plus the
+# files an `add` command really created. The difference this world adds is that the program and the tree
+# are on the *same* real filesystem, so a committed copy would let a criterion read the files of a run
+# that is over before this one started. That is exactly the defect the tenth world's own port was fixed
+# for (a run inheriting a tree an earlier run built), and an ignore rule is the cheapest half of holding
+# it. It sits under `app/` because `core/environment/load.ts` resolves `process.root` against this
+# document's own `app:` value, so the tree the world creates and the tree this rule excludes are the
+# same one by construction. The `**` is not decoration: before the adapter resolved its root once, the
+# program was handed a root-relative path while its working directory was the application's own, and a
+# run wrote a whole sandbox at `app/examples/local-process/app/sandbox/` - which `git add -A` staged,
+# because the rule named one spelling of the tree and the defect produced another. The glob covers the
+# nesting, so a regression cannot commit a second sandbox while its cause is being found.
+examples/local-process/app/**/sandbox/
+
 # Editors / OS
 .DS_Store
 Thumbs.db

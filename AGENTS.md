@@ -43,8 +43,19 @@ instructions file for this workspace — do not add a second one
 > rendered and nothing stood in - so its reading carries no `simulated` field and its contract, rather
 > than the application's own traffic, is what makes the requests. It reuses the `call` step the sixth
 > world introduced, which is why a world with no new capability still needed no core change.
-> `npx tsc --noEmit` is silent and `node --test` reports 1704 passing tests -
-> Veridian's own 1640 plus the 64 the VS Code Cockpit contributes, which the root runner discovers
+> `local-process` is the tenth and the second that is **not simulated at all**, and it attacks a
+> subject with no socket in it: a real program is started as a real child process and judged on the
+> text it printed on stdout and stderr, the code it exited with, a probe of whether it is still up and
+> the files it really wrote under a real directory. So its reading carries no `simulated` field either,
+> and - unlike every `sim-*` world - it has no `*_SIMULATED_SURFACES` constant and none is wanted,
+> because nothing is stood in. It adds no step kind: a contract that provisions a tree does so with
+> the `run` steps the second world introduced. Its family is the only one asked two different kinds of
+> question, so it carries two target grammars - `app` or a bare 1-based position names a command, and
+> a world-relative path names a file - and a path that leaves the root is **refused and recorded as a
+> boundary crossing** rather than resolved, because opening the developer's own filesystem while
+> calling it the sandbox's is the one thing this world must not do.
+> `npx tsc --noEmit` is silent and `node --test` reports 1833 passing tests -
+> Veridian's own 1769 plus the 64 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Four distribution routes ship - a clone, an npm package, the Cockpit (as
 > a development install and as a `.vsix`), and a container image - and there is still **no
 > build step between the source tree and the running program**: Node 22 strips types and runs `.ts`
@@ -306,7 +317,12 @@ core/environment/       EnvironmentAdapter interface + Environment Manager (life
                         service family (the ninth, and the seventh reason that rule holds, and the
                         one that carries the exchange record, the pointer reader and the renderings a
                         non-browser reading needs - so a family whose world is entirely real still
-                        needs no core change) + the boundary
+                        needs no core change) + process-observation.ts for the program family (the
+                        tenth, and the eighth reason that rule holds, and the one that carries the
+                        two target grammars that family needs - a selector naming a command, a
+                        world-relative path naming a file - beside the refusal that decides which
+                        spellings of a path leave the world, so a validator family whose world has
+                        no socket and no substitute still needed no core change either) + the boundary
                         vocabulary (BoundaryPolicy/BoundaryReport) that keeps a declared safety limit
                         from being mistaken for an enforced one.
 core/evidence/          Evidence Engine. Writes the run bundle.
@@ -401,6 +417,18 @@ adapters/local-api/     LocalApiEnvironment - the ninth world, and the first tha
                         aimed outside the service's own origin by name. It reuses the sixth world's
                         `call` step and adds none of its own, and it is the one world whose reading
                         carries no `simulated` field at all: nothing is stood in.
+adapters/local-process/ LocalProcessEnvironment - the tenth world, and the second that is NOT
+                        simulated at all, aimed at a subject with no socket in it. It starts a real
+                        program as a real child process, waits for the readiness line the program
+                        prints on stdout, and judges the text it printed on stdout and stderr, the
+                        code it exited with, a probe of whether it is still up and the files it
+                        really wrote under a real directory. `process-port.ts` is the file probe
+                        (the seam takes the ACCESSION, never the declaration - the declaration is
+                        what the reading records) and `local-process-environment.ts` is the adapter,
+                        which declares the three `PROCESS_ENV` names the application reads. It adds
+                        no step kind: a contract provisions a tree with the `run` steps the second
+                        world introduced. There is no `*_SIMULATED_SURFACES` constant for this world
+                        and none is wanted, which is why its reading carries no `simulated` field.
 validators/playwright/  Playwright web validators (element, visible, value, text, count, url,
                         console.clean, network.ok).
 validators/database/    Database validators (table, column, count, value). Judge a reading in
@@ -470,6 +498,26 @@ validators/api/         HTTP-service validators (service, exchange, status, head
                         so a contract can pin `1/WIDGET/unitPriceCents` without a deep comparison of
                         the whole document. `api.log` reads what the service printed on stdout or
                         stderr, which is the one part of a service's behaviour no response carries.
+validators/process/     Program validators (host, probe, argv, state, exitcode, run, stdout,
+                        stderr, file, kind, contents, size). Judge a reading in
+                        core/environment/process-observation.ts - the tenth family, and the eighth
+                        reason that rule holds. It has no new step kind: a criterion acts in the
+                        world with `run`, and a program's own output is read as a stream. It is the
+                        only family asked two different kinds of question, so it carries two target
+                        grammars and the *validator* chooses between them rather than the spelling:
+                        a target naming a command is `app` (the program the world started) or a
+                        bare 1-based position (the criterion's own `run` steps, which is why
+                        `commandAt` is index-free for `app` and index-based for a position - the
+                        program is the same program in every criterion, while "the second command"
+                        is a fact about *this* criterion), and a target naming a file is a
+                        world-relative path. A path that leaves the root is refused by
+                        `processPath` - a leading separator, a drive letter, and a `..` that pops
+                        past the root - and the adapter records the refusal as a boundary crossing
+                        rather than reporting a missing file, because a resource that is absent and
+                        a place that is out of bounds are two different observations. `process.file`
+                        and `process.contents` read their target as a place and `process.exitcode`
+                        reads its target as a selector, so neither can misread the other's
+                        spelling.
 cli/                    The interface that exists today: arguments, support, worlds.ts (the adapter
                         register and the requirements each adapter declares), veridian.ts.
 schemas/                goal/acceptance/environment/run/result/ambiguity .schema.json - the
@@ -526,6 +574,17 @@ examples/local-api/     The ninth demo, and the first whose world is entirely RE
                         and `AC-007`). `AC-001` and `AC-008` never move at all, which is what says
                         the other six moved because of the edits rather than because the world is
                         flaky. Measured progression: `6 -> 4 -> 3 -> 2 -> 0` over five iterations.
+examples/local-process/ The tenth demo, and the second whose world is entirely REAL - and the
+                        first whose subject is a program rather than a page, a file of rows or a
+                        service. Four defects, nine criteria. D2, D3 and D4 are the controls, each
+                        read by exactly one criterion, so a reader watches one edit move one
+                        reading; D1 then moves **three** at once (a release version constant the
+                        program prints in its build summary, again in its verifier's summary and
+                        again inside the manifest it writes - three separate true consequences of
+                        one edited constant), and `AC-002`, `AC-007` and `AC-009` never move at all.
+                        Its repair agent walks the table in array order, so the failing count
+                        descends `6 -> 3 -> 2 -> 1 -> 0` over five iterations - the figures are the
+                        run's own, and the demo's narration asserts them.
 examples/defect-text.ts One implementation of the CRLF rule for a textual overlay on a source file.
                         Two demos injecting defects is two chances to teach the rule differently;
                         a third copy is where the rule gets broken.
@@ -557,11 +616,12 @@ dropped: at the time, the only registered adapter was `local-web` and all eight 
 were browser observations, so a contract about a CLI would have made every criterion `INCONCLUSIVE`
 and exited 2 - the same defect as `--browser none` on the canonical demo.
 
-**That reason is now spent, and the file has to say so rather than keep quoting it.** Nine adapters
-are registered, eight of them need no browser, and `local-api` is precisely the "non-web adapter" this
-paragraph said the scope boundary forbade building speculatively - it was not built speculatively, it
-was built because a world whose subject is an HTTP contract is inside the boundary, and once it
-existed a non-browser contract about a program became expressible. So the honest statement is no
+**That reason is now spent, and the file has to say so rather than keep quoting it.** Ten adapters
+are registered, nine of them need no browser, and `local-api` and `local-process` are precisely the
+"non-web adapter" this paragraph said the scope boundary forbade building speculatively - they were not
+built speculatively, they were built because a world whose subject is an HTTP contract is inside the
+boundary and a world whose subject is a program is too, and once `local-api` existed a non-browser
+contract about a program became expressible. So the honest statement is no
 longer "it cannot be written" but **"it has not been written"**. Veridian's own self-validation is
 still its `node --test` suite, which `npm run gate` runs, and a `acceptance/veridian-mvp.yaml` remains
 the next piece of dogfooding rather than a blocked one.
@@ -627,8 +687,8 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 1704 tests, ~5s. No directory argument.
-                           # 1704 = the root's own 1640 + the Cockpit's 64, because the runner walks
+node --test                # the whole suite. 1833 tests, ~5s. No directory argument.
+                           # 1833 = the root's own 1769 + the Cockpit's 64, because the runner walks
                            # the tree and reaches extension/vscode/src/*.test.ts. Neither figure is
                            # the whole story on its own: the root tsconfig EXCLUDES extension/**, so
                            # `npx tsc --noEmit` here does not typecheck the Cockpit and the root gate
@@ -743,6 +803,14 @@ npm run demo:api                            # the ninth demo, and the first whos
                                             # page, no substitute, nothing rendered. Exit 0 when it
                                             # passes: measured, 5 iterations and 8/8 criteria, with
                                             # the failing count descending 6 -> 4 -> 3 -> 2 -> 0.
+npm run demo:local-process                  # the tenth demo, and the second whose world is NOT
+                                            # simulated - and the first whose subject is a program:
+                                            # a real child process judged on what it printed, what
+                                            # it exited with, whether it is still up and the files
+                                            # it really wrote. No socket, no page, no substitute.
+                                            # Exit 0 when it passes: measured, 5 iterations and
+                                            # 9/9 criteria, the failing count descending
+                                            # 6 -> 3 -> 2 -> 1 -> 0.
 npm run demo:no-browser                     # the same demo with `--browser none`. Every criterion is
                                             # a browser observation, so this must end INCONCLUSIVE
                                             # (exit 2). It shows the refusal, not the aha.
@@ -1618,7 +1686,7 @@ port had none, which is why the defect reached a demo run.
   register.** `README.md` said a step is "one of seven kinds" while `core/acceptance/steps.ts` holds
   **eleven** in `STEP_KINDS` - a figure that had drifted through four new worlds without anything
   reading it. The same pass found `AGENTS.md` quoting `1273` tests and `1213` of the tree's own, where
-  the measured run was `1456` and `1396` - and the count stands at `1704` and `1640` as this is
+  the measured run was `1456` and `1396` - and the count stands at `1833` and `1769` as this is
   written, which is the rule demonstrating itself. *Both are the same defect as a roster printed in a
   document: a number is a claim about the code, and the cheapest way to hold it is to read the code -
   the difference is that a number cannot be pinned by a test the way a name can, so it has to be
@@ -1774,6 +1842,160 @@ port had none, which is why the defect reached a demo run.
   *"Conversion of type `number[] | boolean[] | ...` to type `readonly string[]` may be a mistake"* -
   a cast is a claim, and when the compiler disputes it the type should be declared
   (`readonly (readonly unknown[])[]`) rather than asserted away.
+
+- **The empty string is a value a criterion writes on purpose, and the one guard that read it as a
+  missing field was the one asking the wrong question.** The tenth world's `AC-002` asserts
+  `process.stdout` `equals: ""` - "the program wrote nothing to stdout while refusing" - and
+  `clarify` refused the contract, reporting *"states no comparison"*, because the predicate deciding
+  whether an expectation compares anything was `isMissing`, and `isMissing("")` is `true`.
+  `isMissing` answers *"did the author supply a value"*, which is the right question for every field
+  the ladder fills in and the wrong one here, and the code already said so twice: `core/validation/
+  assertions.ts`'s `statedComparisons` keys on the property being **present**, and
+  `core/acceptance/plan.ts` refuses on the same presence test - so `core/clarification/detect.ts` was
+  the one place that disagreed, and the tenth contract was the first to write the sentence and be
+  refused for it. The failure mode was the worst one available: a **run-blocking** question the
+  operator could not answer, because they had already answered it. The fix is narrow on purpose -
+  `statesComparison(key, value)` accepts `""` for `equals` and keeps `contains: ""` and
+  `matches: ""` refused, because every string contains the empty string and the empty pattern matches
+  everything, and those two genuinely are the always-passing expectation the check exists to refuse.
+  *Widening `isMissing` itself would have been the easier edit and the wrong one: the defect was in
+  the guard's predicate, not in the input, and a guard relaxed at the wrong seam stops guarding.*
+
+- **A path field resolved at one seam and re-resolved at the next is a doubled path, and the marker
+  of the defect is an error naming a path the operator never typed.** The tenth world's plan gets its
+  own copy of a rule the ninth world wrote: `databasePath` and `appPath` are resolved against the io
+  root by the loader, so anything an adapter resolves *again* becomes `…/sandbox/…/sandbox`. Measured
+  rather than reasoned about: the first run reported `ENOENT` for a doubled sandbox root while the
+  directory was sitting there under the single spelling. The accessor is now one function,
+  `#hostRoot(block) = this.#io.resolve(block.root)`, called at every accession site (the file probe,
+  the `PROCESS_ENV` table, both `#spawn` sites and both `hostRoot` readings), so the second
+  resolution cannot be written by hand anywhere. The complementary half is the distinction that makes
+  the fix non-mechanical: **a value handed to a *child process* must be absolute** - the child's cwd
+  is the application's own directory, not the tree root - **while a value the adapter itself opens
+  against the process cwd may stay root-relative.** *A rule paid for at one world and not restated at
+  the next is a rule that has not been learned; the second occurrence is the one that proves it.*
+
+- **A reading's field is not inert: a validator family's rendering helpers are part of its contract
+  surface.** `process.host` is a *targetless* validator - it asks about the world itself - so the
+  string it compares is not read out of the raw observation by the criterion but built by
+  `renderHost(data)`, and `renderHost` reads `data.root`. Which means the observation's `root` field
+  does not merely describe the world: it **is** the value `"cart-builder (root sandbox)"` is compared
+  against, and any edit to how that field is produced silently changes what a targetless criterion
+  asserts. Held by a test that reads the contract's own expectation and the adapter's own reader
+  rather than by a comment. *A field nobody's criterion names directly is a field nothing appears to
+  depend on - and the renderers are where that appearance is wrong.*
+
+- **A contract that pins the byte count of a stream the application composed from a value the world
+  supplies is pinning that value.** `AC-002` originally compared the whole of `process.run`'s
+  rendering, `"exit 2, stdout empty, stderr 2 lines (N bytes)"`, and the refusal quotes the absolute
+  path it could not read - so `N` moved with the length of this machine's checkout, and the assertion
+  was about the operator's directory name rather than about the program's behaviour. It now compares
+  `"exit 2, stdout empty, stderr 2 lines"` and lets the family's `process.size` reading carry the
+  length where a length is the point. The distinction that keeps the rule from over-reaching is in
+  the same file: `AC-005` legitimately pins `42` bytes of a file whose text the program composes from
+  a constant, and legitimately compares the other refusal's rendering *with* its `(36 bytes)`,
+  because nothing in that stream is machine-dependent. *The question is never "is a byte count too
+  strict"; it is "does this length depend on something outside the world". Found by running the
+  contract against the correct program rather than by reading it.*
+
+- **A defect aimed at a criterion must not take down the world.** `D3` was first authored to misspell
+  the word `ready` in the daemon's banner - which is the line the world's `start.readyPattern` waits
+  for - so `probe()` timed out, the run never came up, and the criterion it was filed against never
+  got the chance to move. The demo reported `INCONCLUSIVE` four times and exit 2 for a defect whose
+  *intent* was to be observable. It now misspells `channel` instead: the banner still names the
+  daemon, the pattern still matches, the world starts, and the criterion reads `FAIL` for the reason
+  it was written to catch. Held by a guard that asks the source, with each defect applied in turn,
+  whether the readiness line survives - *and the positive control beside it* (`assert.notEqual(edited,
+  program, …)`) is what keeps that question from being asked of a defect whose block is not in the
+  file at all. *A comment saying "do not aim a defect at the readiness line" is not a guard; the
+  guard is a test that applies the defect and re-reads the line.*
+
+- **A reading must record the world's own spelling of a declaration, and the host path that
+  declaration resolved to must be a second named reader of the same field rather than the same
+  expression read twice.** The tenth world's reading carried the *accession* path - the absolute,
+  machine-specific spelling - so whether `AC-003` passed depended on how the operator had spelled
+  their `--goal`, which is an artefact of the command line and not of the world. Proved by a
+  one-variable experiment rather than argued: the same tree, run twice, with `--goal examples/
+  local-process/goal.yaml` and with the absolute path, gave `exit 0` and `exit 1` respectively, with
+  `AC-001` the only mover. There are now two named readers of one field and they are documented as
+  reading it for opposite purposes: `#hostRoot(block)` is the accession, used wherever this machine
+  must open the directory, and `#declaredRoot(block)` is the declaration, used wherever something is
+  *written down* - so the reading records `"root": "sandbox"`, which is what the environment document
+  says and what a human can check against it. `adapters/local-process/process-port.ts` carries the
+  same distinction at its own seam: `FileProbeRequest.root` takes the **accession, never the
+  declaration**. *A field that is both an input to the agent and an output of the recording is two
+  fields in one slot; name them separately or a future edit will conflate them.*
+
+- **A defect's `criterionId` is a claim that its block sits on that criterion's code path, and the
+  only way to hold that claim is to compile, inject, run and watch.** `D4` was filed against `AC-006`
+  - a criterion about the narration `add` prints on stdout - while its block edited the *stderr*
+  branch inside `verify()`, so the criterion it named could never have moved however many iterations
+  the loop ran. Nothing failed: the demo still descended to zero, because `D4` had *some* effect
+  somewhere else, and a reach table written from the defects' names agreed with the names. It was
+  retargeted to `add()`'s own `say("out", …)` line, and the row probe that caught it - edit the block,
+  run the program, read what the world answers - now stands as the guard, with the reach map derived
+  from the engine's parsed comparisons rather than recalled. *A defect table and the criteria its
+  entries name are two lists of the same thing, and only one of them can be executed.*
+
+- **A scan for which criteria a defect moves is a substring test over serialized text, and one
+  document's serialization of a value can be a substring of another's.** The first version of the
+  tenth world's reach derivation asked whether `JSON.stringify(expectation.raw)` contained
+  `"equals":4` - and `AC-006`'s size expectation serializes as `"equals":42`, so `D2` was credited
+  with a criterion it does not touch and the derivation disagreed with the run. It now reads the
+  values through the keys the engine itself parsed (`expectation.comparisons.map((key) =>
+  expectation.raw[key])`) and compares them **typed** - `value === 4` for a number, `typeof value ===
+  "string" && value.includes(needle)` for a string - so the question is about a value and never about
+  how a document happens to render one. *Serialization is not meaning: a text scan answers "does this
+  string appear", and the question was "is this the value".* Held and falsified (`equalsNumber(4)` →
+  `equalsNumber(404)` fails the row it belongs to).
+
+- **A guard about a *line the world prints* must be asked of the source with the defect applied, not
+  of the defect's block.** The tenth demo's `D3` is safe only for as long as the line it edits is not
+  the line the readiness pattern waits for, and the property is about the *edited* program, so it
+  cannot be read off the defect's own text: the guard composes `program.replace(defect.correct,
+  defect.defective)`, asserts the result differs from the shipped program - which is the positive
+  control that stops a stale anchor from passing vacuously - and only then asserts the readiness
+  literal survives. Both halves are needed and both were measured. The rule is written at the field in
+  `examples/local-process/defects.ts` as well as in the test, because the next author of a defect
+  reads the table and not the suite. *A guard that asks a defect a question about itself answers a
+  question about its spelling; the world only ever sees the edited file.*
+
+- **A test that re-states a predicate rather than iterating the register can only cover the worlds it
+  was written with - and the recurrence is the proof.** `core/clarification/detect.ts`'s `hasNoHttp`
+  grew a clause per world and was **correct** when the tenth landed (`!isMissing(environment.process)`
+  as its eleventh clause); `tests/environment-gaps.test.ts` carried the same vocabulary a second time,
+  by hand, as `NO_HTTP_KEYS` and a derived set naming the worlds it expected - and neither had been
+  extended. Nothing failed, because a stale *test* list is silent by construction: the detector
+  skipped the new world correctly and the test simply did not know it had been. This is the **second**
+  occurrence of exactly this shape, after the `||`-chain that covered a new world with somebody else's
+  block. Fixed by adding the shape and the world, **falsified 2/2** (dropping the detector's clause
+  fails with *"was asked /url, and it has no address"*; dropping the test's key fails with *"one
+  registered world per no-HTTP shape"*). *The fix procedure is: read the code first, then the test -
+  never the other way round, because the code is the thing that was right.*
+
+- **A probe harness must decide the file's line ending from the file it is about to edit, and it must
+  print what it detected.** This is the CRLF rule discharged by construction instead of by
+  remembering, and it exists because remembering had already failed twice at probes. Every harness
+  written since computes `eolOf(path)` per file, composes each anchor and each replacement through it,
+  and reports the detected endings on its own output line
+  (`line endings: detect.ts="\r\n" gaps.test.ts="\r\n"`), so a future EOL mismatch is visible in the
+  transcript rather than in a wrong verdict. *A harness that hard-codes its ending is a harness that
+  silently under-tests on one platform; a harness that prints what it detected is one whose coverage
+  can be read.*
+
+- **A world that stands nothing in gets no simulated-surface constant and no `simulated` field, and
+  the absence is a claim rather than an omission.** `local-process` is the second world in this tree
+  that is entirely real, so there is no `PROCESS_SIMULATED_SURFACES` and none is wanted, its reading
+  carries no `simulated` key, and `cli/worlds.ts` says so where the adapter is registered rather than
+  leaving it to be inferred from the file's silence. The distinction the whole set rests on is that a
+  simulated world must be *recorded* as simulated and a real one must not be decorated: a field
+  reading `simulated: none` would suggest the other answer had been available. And the corollary that
+  has now held eight times: a tenth validator family whose world has no socket, no page and no
+  substitute still needed **no change in `core/`** beyond its own reading vocabulary.
+  `tests/local-process-demo.test.ts` asserts the absence directly, because a claim nobody reads is a
+  claim that drifts. *Two worlds' worth of proof that `EnvironmentAdapter` is a seam is worth more
+  than two worlds' worth of interface; the rule that keeps the proof honest is "say which, and say
+  it where the world is registered".*
 
 ## Documentation
 

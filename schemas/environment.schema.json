@@ -121,6 +121,26 @@
       "required": ["host", "apiVersion", "root"],
       "additionalProperties": false
     },
+    "process": {
+      "type": ["object", "null"],
+      "description": "The process boundary this world is, when the world is one. Present for `local-process`, which runs real child processes on this machine and reads the files they leave behind; absent for every other world. Same reasoning as `container` and `vscode`: stated here rather than as an adapter-private option, so the plan every reader sees names the same host, program and sandbox the run measured, and so that 'this world is not a process boundary' stays distinguishable from 'nobody filled the field in'. A world declaring `process` has no url, no cluster, no posix, no os, no cloud, no container and no vscode, exactly as a database world has no url. Unlike the six `sim-*` blocks, this one describes a world that is entirely real - a command here really runs and a file here really exists - so nothing in this block names a substitute, and its absence of a `simulated` field is a claim rather than an omission.",
+      "properties": {
+        "host": { "type": "string", "minLength": 1, "description": "The host identity the readings name, so a result says which machine produced it. A free string rather than an enumeration: a host name decides nothing a criterion can observe, and enumerating it would let a label act as a rule." },
+        "application": {
+          "type": ["object", "null"],
+          "description": "The program this world starts and keeps running, or null when it starts none. Optional on purpose, and the optionality is the interesting part: every other world block names something the world *is*, while this one names something the world *may do*. A contract that provisions a tree with its own `run` steps and reads the files back has no use for a daemon, and requiring one would make the simplest shape of this world unwritable.",
+          "properties": {
+            "command": { "type": "string", "minLength": 1, "description": "The program to run. Refused when empty: `application: null` is how a world says it starts no program, while an application without a command says it starts one and leaves the reader to guess which." },
+            "args": { "type": "array", "items": { "type": "string" }, "description": "Its arguments, as a list rather than part of the command. A list is what lets a path containing a space be stated without quoting - the defect a shell-shaped spelling invites on Windows, where the same string reaches the program with different quoting rules depending on whether the runtime inserted a shell." }
+          },
+          "required": ["command"],
+          "additionalProperties": false
+        },
+        "root": { "type": "string", "minLength": 1, "description": "The directory on this machine the world's own files live in. A sandbox rather than the application directory, on the same reasoning as `posix.root`: this world creates and deletes files to observe what the application writes, and pointing it at the application would delete the code under test on the first iteration. It is required rather than defaulted because every path a criterion names is resolved inside it, so a defaulted root would judge a contract against whichever directory the process happened to be started in." }
+      },
+      "required": ["host", "root"],
+      "additionalProperties": false
+    },
     "health": {
       "type": "object",
       "properties": {

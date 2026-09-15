@@ -516,6 +516,20 @@ export interface EnvironmentPlan {
    * did not name which of the two it used would be unable to tell them apart.
    */
   readonly vscode: VSCodePlan | null;
+  /**
+   * The process boundary this world is, or `null` when the world is not one.
+   *
+   * The ninth of the same field, one per kind of world, and read for the same reason as the other
+   * eight: the first question asked of a result is *which world produced it*. A process reading
+   * answers that with three facts - which host the readings name, which program the world started,
+   * and which directory on this machine its files live in - and the answer is needed here for a
+   * reason the eight before it did not have, because this is the world whose *observable* facts are
+   * the machine's own. A command's exit code and a file's contents mean the same thing in any world
+   * that can produce them, so the identity is the only thing that says which machine they were
+   * measured on; and the program the world ran is a fact about the run rather than about the reading,
+   * since a criterion that performed its own `run` steps never starts the program at all.
+   */
+  readonly process: ProcessPlan | null;
   readonly health: HealthPolicy;
   readonly reset: { readonly strategy: ResetStrategy; readonly command: string | null };
   readonly browser: BrowserPolicy;
@@ -699,4 +713,43 @@ export interface VSCodePlan {
   readonly root: string;
   /** Configuration values supplied in place of the manifest's declared defaults. */
   readonly settings: Readonly<Record<string, string>>;
+}
+
+/**
+ * A process boundary world's resolved declaration.
+ *
+ * Three fields, and each one answers a question the reading cannot.
+ *
+ * `host` is the same identity `ApiPlan.service` and `VSCodePlan.host` are: free text, because a name
+ * decides nothing a criterion can observe and enumerating it would let a label act as a rule. It
+ * matters here because this world is the one that runs the machine's own programs, so "which machine"
+ * is the question a bundle read later has to be able to answer.
+ *
+ * `process.application` is *why this is a block and not a boolean*. The tenth world's subject is the
+ * process boundary, and a criterion reaches across that boundary two ways: it runs a command of its
+ * own with a `run` step, or it reads what a long-lived program the world started has been doing.
+ * Only the second needs a program, and it is optional - a contract that provisions by running
+ * commands needs no daemon at all. `{ command, args }` rather than one string, so nothing has to
+ * quote a path containing a space, which is the defect a shell-shaped field invites on Windows.
+ *
+ * `root` is the *sandbox* directory, resolved against `appPath` on the same rule `databasePath` and
+ * every other path field follow. It is deliberately not the application's own directory: this world
+ * creates and deletes files to observe what the application writes, and a root pointing at the
+ * application would delete the code under test. {@link ProcessPlan.application} names the program
+ * that runs *in* it.
+ */
+export interface ProcessPlan {
+  /** The host identity the readings name, e.g. `veridian-local-process`. Declared, never inferred. */
+  readonly host: string;
+  /**
+   * The program the world starts and keeps running, or `null` when it starts none.
+   *
+   * Optional on purpose, and the optionality is the interesting part: every other world block names
+   * something the world *is*, while this one names something the world *may do*. A contract that
+   * provisions a tree with `run` steps and reads the files back has no use for a daemon, and
+   * requiring one would make the simplest shape of this world unwritable.
+   */
+  readonly application: { readonly command: string; readonly args: readonly string[] } | null;
+  /** Absolute, resolved against `appPath` on the same rule `databasePath` follows. */
+  readonly root: string;
 }

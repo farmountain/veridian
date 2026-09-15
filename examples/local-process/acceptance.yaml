@@ -1,0 +1,439 @@
+# The contract: nine deterministic acceptance criteria over one real child process.
+#
+# Every step below is a `run` step - the kind the `sim-posix`, `sim-os` and `sim-container` worlds
+# introduced for a program that provisions by printing command vectors. It carries a bare array of
+# strings, which the engine decodes as `argv`: there is no `command` field anywhere, and a contract
+# that wrote one would be describing a step the schema does not have.
+#
+# Read the targets as a grammar, because there are two kinds of thing here and each is refused with
+# its own message:
+#
+#   `process.host`,                no target at all - the host is the reading's, and `process.probe`
+#   `process.probe`                renders the whole world, so neither is a question about a command
+#   `process.argv`, `process.state`,
+#   `process.exitcode`,            a command, named either `app` (the program this world started and
+#   `process.run`, `process.stdout`,  keeps running) or a position counted from 1 naming which `run`
+#   `process.stderr`               step is meant
+#   `process.file`, `process.kind`,  a path inside the world's own root - the sandbox the plan names,
+#   `process.contents`, `process.size`  so `dist/manifest.json` means the one under the sandbox
+#
+# Two consequences of that grammar are worth stating because they decide the shape of the criteria
+# below. A path is only read when some expectation names it - the read set is derived from the
+# expectations and not from the steps - so a criterion that judges a file has to mention the file. And
+# a command can only be judged if this criterion ran it: `observe()` records no commands at all, so
+# every command-targeted expectation here sits beside the `run` step that produced it. A criterion
+# that read position 1 without running anything would not fail; it would be `INCONCLUSIVE`, which is
+# the honest answer to a question nobody asked the world.
+#
+# `goal_id` is declared and is not optional in practice: it is what the cross-goal contradiction guard
+# reads, and a contract without one leaves that guard dormant - the check that stops one goal's
+# criteria being evaluated against another goal's environment would have nothing to deny.
+
+version: 1
+goal_id: local-process
+
+criteria:
+  # ---------------------------------------------------------------------------------------------
+  # AC-001 - the world is the world this goal names, and a program is still running in it.
+  #
+  # This is the criterion every other one stands on, and it earns that position by being the only one
+  # whose failure means the world itself is wrong rather than the application. It asserts three
+  # separate things. The host is what every reading carries, so a result read later says which machine
+  # produced it. The banner is what the program said when it started, and it is the one reading that
+  # survives from a process that is still running - which is also why this criterion judges
+  # `process.state` and not `process.exitcode`: a process that has not exited has no exit code, and
+  # the exit-code validator says so rather than reporting a zero nobody observed.
+  #
+  # `process.probe` renders the whole world, so its `contains` stops in the middle of the daemon's own
+  # line: the byte count that follows depends on how long the sandbox path is on this machine, and an
+  # assertion that included it would be an assertion about a temporary directory. AC-002's `process.run`
+  # is written the same way for the same reason - the refusal quotes the absolute path it could not
+  # read, so its byte count is a fact about this machine and not about the program.
+  #
+  # `process.host` compares the *rendering*, which is the host and the root the reading names - so the
+  # expectation carries both. `renderHost` has composed those two since it was written, and a
+  # criterion naming only the host is a criterion written against a rendering that never existed.
+  #
+  # The root in that rendering is the world's own spelling of its sandbox, relative to the application
+  # directory, and it was moved there by measurement rather than by preference. It used to be the
+  # plan's resolved `root`, which is a fact about the command line rather than about the world: the
+  # loader resolves a document's paths against that document's base, so
+  # `--goal examples/local-process/goal.yaml` yielded `examples/local-process/app/sandbox` while the
+  # same goal spelled absolutely yielded
+  # `D:/all_projects/Veridian/examples/local-process/app/sandbox`. Measured, one variable changed:
+  # **exit 0, PASS, nine of nine** for the first and **exit 1, FAIL, AC-001 alone** for the second,
+  # with the same contract, program and machine. A criterion that passes or fails on how an operator
+  # typed a path is not judging the sandbox. The adapter's `#declaredRoot` records the declaration
+  # instead, which is the same string on every machine, and `#hostRoot` remains the single resolver
+  # for every consumer that has to open the path.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-001
+    description: the world names its host, the daemon announced itself as ready, and it is still running
+    steps: []
+    expect:
+      - validator: process.host
+        equals: "cart-builder (root sandbox)"
+        message: the readings name a host other than the one this goal's environment declares
+      - validator: process.state
+        target: app
+        equals: running
+        message: the daemon this world started is not running
+      - validator: process.stdout
+        target: app
+        contains: "audit daemon ready (channel nightly"
+        message: the daemon did not announce the channel it was started for
+      - validator: process.probe
+        contains: "application: node cart-build.mjs daemon - still running"
+        message: the world's own reading does not describe the daemon as running
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-002 - a verifier with nothing to verify says what it could not read, and does not pretend.
+  #
+  # This runs before anything is built, deliberately: `verify` is the command an operator would reach
+  # for to check a release, and the interesting case is the one where there is no release. Exit 2 is
+  # the refusal - "I could not carry this out" - and it is a different number from the 4 that means
+  # "I read the tree and it is wrong", which AC-005 asserts. Neither is 1, because 1 is what an
+  # uncaught exception produces and a criterion could not tell the two apart.
+  #
+  # `process.stdout` equals the empty string is a real assertion and not a placeholder: the failure
+  # was reported on stderr, and a program that also printed a friendly line to stdout would be
+  # claiming an outcome it did not reach. The `dist` readings are what make the refusal traceable -
+  # the reason there is nothing to verify is that the directory is not there, and both the fact and
+  # the reason are read from the world.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-002
+    description: a verify with no release refuses with exit 2, names what it could not read, and writes nothing to stdout
+    steps:
+      - run: [node, cart-build.mjs, verify]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 2
+        message: verify did not refuse when there was no dist directory to read
+      - validator: process.stdout
+        target: "1"
+        equals: ""
+        message: verify wrote to stdout while refusing
+      - validator: process.stderr
+        target: "1"
+        contains: "verify: dist could not be read:"
+        message: verify did not name the directory it could not read
+      # The rendering is compared without its byte count. The refusal quotes the absolute path it
+      # could not read, so the count moves with the length of this machine's checkout - the same
+      # assertion AC-001's comment refuses, written here by mistake and found by running the
+      # contract against the correct program rather than by reading it.
+      - validator: process.run
+        target: "1"
+        contains: "exit 2, stdout empty, stderr 2 lines"
+        message: verify no longer refuses in the shape this contract was written against
+      - validator: process.file
+        target: dist
+        equals: false
+        message: a dist directory existed before anything was built
+      - validator: process.kind
+        target: dist
+        equals: absent
+        message: the path verify could not read is not absent
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-003 - the build writes the release, and says so on stdout.
+  #
+  # The build line names the count and the version, and both are read back here as one rendering. The
+  # count is not a constant in the program: it is derived from the number of assets the program wrote,
+  # which is why this assertion catches a release that quietly shipped fewer files. The version is the
+  # headline defect's first reading - the same constant is printed here, quoted by the verifier in
+  # AC-004 and written into the manifest in AC-008, so one edit to it moves three criteria.
+  #
+  # `process.stderr` equals the empty string is the other half of the sentence: the release is
+  # announced on stdout, and a build that reported its success on the error stream would satisfy every
+  # other expectation here while telling a reader, and a log scraper, the opposite.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-003
+    description: building writes four files and announces the release count and version on stdout
+    steps:
+      - run: [node, cart-build.mjs, build]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 0
+        message: the build did not succeed
+      - validator: process.stdout
+        target: "1"
+        equals: "cart-build: wrote 4 files into dist at version 1.4.0\n"
+        message: the build did not announce four files at version 1.4.0
+      - validator: process.stderr
+        target: "1"
+        equals: ""
+        message: the build narrated itself on the error stream
+      - validator: process.kind
+        target: dist/cart.js
+        equals: file
+        message: the release does not hold cart.js as a file
+      - validator: process.size
+        target: dist/cart.js
+        equals: 93
+        message: cart.js is no longer the size this contract was written against
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-004 - a verifier independently agrees with the manifest it reads back.
+  #
+  # The build is run first so there is a release to verify, and the verifier is a second, separate
+  # command: it re-reads the tree and the manifest rather than reporting what the build announced a
+  # moment earlier in the same process. Its success line quotes the manifest's own version, so it is a
+  # reading of the release rather than of a constant in the verifier - which is why the headline defect
+  # moves this criterion and a defect in the verifier's own message would not.
+  #
+  # `process.run` states the whole rendering of one command in one string: the exit code, which stream
+  # carried what, and how much text arrived on each. That is a deliberately brittle assertion, and it
+  # is here because a criterion about a *verifier* should be able to say that the verifier was quiet
+  # except for its one line - a program that printed a warning nobody reads would otherwise pass.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-004
+    description: verifying a fresh release succeeds, quoting the manifest's own version, and stays quiet on stderr
+    steps:
+      - run: [node, cart-build.mjs, build]
+      - run: [node, cart-build.mjs, verify]
+    expect:
+      - validator: process.exitcode
+        target: "2"
+        equals: 0
+        message: the verifier rejected a release it had just been handed
+      - validator: process.stdout
+        target: "2"
+        equals: "verify: 4 files consistent with the manifest at version 1.4.0\n"
+        message: the verifier did not confirm four files at the manifest's own version
+      - validator: process.stderr
+        target: "2"
+        equals: ""
+        message: the verifier reported something on the error stream
+      - validator: process.run
+        target: "2"
+        equals: "exit 0, stdout 2 lines (62 bytes), stderr empty"
+        message: verifying a fresh release no longer produces the single line this contract expects
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-005 - a tree holding a file the manifest does not name is reported, not blessed.
+  #
+  # This is the criterion the goal's third clause is about, and the shape of it matters: the build is
+  # run first so the tree holds a genuine release, and only then is one extra file written into it. Had
+  # the stray been the *only* thing in `dist`, the verifier would also have reported the four missing
+  # files and this criterion would be asserting that some inconsistency exists rather than that the
+  # stray was the one found.
+  #
+  # `process.argv` reads back how the file was added, because the assertion is about a path inside the
+  # release and a command that wrote somewhere else would produce a green verify for the wrong reason.
+  # The exit code is 4 rather than 2: the command line was perfectly usable, and what happened is that
+  # the tree disagrees with its own manifest - two different answers, and the reason this world states
+  # both.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-005
+    description: a release holding an unnamed file is refused with exit 4, naming the file, and writes nothing to stdout
+    steps:
+      - run: [node, cart-build.mjs, build]
+      - run: [node, cart-build.mjs, add, dist/extra.txt]
+      - run: [node, cart-build.mjs, verify]
+    expect:
+      - validator: process.exitcode
+        target: "2"
+        equals: 0
+        message: adding a file inside the release failed
+      - validator: process.argv
+        target: "2"
+        equals: "node cart-build.mjs add dist/extra.txt"
+        message: the file was not added inside the release this criterion is about
+      - validator: process.exitcode
+        target: "3"
+        equals: 4
+        message: the verifier accepted a tree holding a file the manifest does not name
+      - validator: process.stdout
+        target: "3"
+        equals: ""
+        message: the verifier wrote to stdout while reporting an inconsistent tree
+      - validator: process.stderr
+        target: "3"
+        contains: "verify: unexpected files: extra.txt"
+        message: the verifier did not name the file that made the tree inconsistent
+      - validator: process.run
+        target: "3"
+        equals: "exit 4, stdout empty, stderr 2 lines (36 bytes)"
+        message: the refusal no longer has the shape this contract was written against
+      - validator: process.contents
+        target: dist/extra.txt
+        equals: "written by cart-build add: dist/extra.txt\n"
+        message: the stray file does not carry the text the add command writes
+      - validator: process.size
+        target: dist/extra.txt
+        equals: 42
+        message: the stray file is not the size this contract was written against
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-006 - a command that wrote one file says so, and says it on stdout.
+  #
+  # This is the fourth defect's criterion and the most instructive of the four, because nothing here
+  # is wrong in the sense an exit code can express: the command succeeds, the file is written, and its
+  # contents and size are exactly right. What failed is where the answer was said. A contract that only
+  # looked at the exit code would call this a pass, and that is the class of false confidence this
+  # product exists to refuse - so the criterion reads the narration, the stream it arrived on, and the
+  # file that narration is supposed to be about.
+  #
+  # The path is outside `dist` on purpose. A file written into the release would change what AC-005's
+  # verifier reads, and the two criteria would then be judging one another.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-006
+    description: adding a file outside the release succeeds, narrates itself on stdout, and writes the file
+    steps:
+      - run: [node, cart-build.mjs, add, notes/todo.txt]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 0
+        message: adding a file failed
+      - validator: process.stdout
+        target: "1"
+        equals: "cart-build: added notes/todo.txt\n"
+        message: the command did not narrate the file it added on stdout
+      - validator: process.stderr
+        target: "1"
+        equals: ""
+        message: the command narrated a success on the error stream
+      - validator: process.file
+        target: notes/todo.txt
+        equals: true
+        message: the command did not write the file it said it added
+      - validator: process.kind
+        target: notes/todo.txt
+        equals: file
+        message: what the command wrote is not a file
+      - validator: process.contents
+        target: notes/todo.txt
+        equals: "written by cart-build add: notes/todo.txt\n"
+        message: the file does not hold the text the add command writes
+      - validator: process.size
+        target: notes/todo.txt
+        equals: 42
+        message: the written file is not the size this contract was written against
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-007 - a command line that cannot be carried out is refused, and the refusal is not a crash.
+  #
+  # Two refusals, both exit 2, both narrated on the error stream: a command that needs a path and was
+  # given none, and a command the program does not implement. They are stated together because they
+  # are the same answer for two different reasons, and it is the answer - not the reason - that this
+  # world can read. The validator judges the application's result and not its stated explanation, so a
+  # criterion here can say "this was refused, in these words" and cannot say "for this reason". That
+  # limit is written down rather than papered over, because a contract that claimed to know the
+  # program's motive would be claiming a reading nothing produced.
+  #
+  # Both are `equals` on the whole line, including the wording of the refusal. That is deliberate: a
+  # refusal an operator cannot act on is a defect, and the spelling of the message is the thing being
+  # asserted. A contract that accepted any text would still be green if every refusal said only
+  # "error".
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-007
+    description: a missing path and an unknown command are both refused with exit 2 and a stated reason
+    steps:
+      - run: [node, cart-build.mjs, add]
+      - run: [node, cart-build.mjs, frobnicate]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 2
+        message: add with no path was not refused
+      - validator: process.stderr
+        target: "1"
+        equals: "cart-build: add needs a path\n"
+        message: add with no path did not say what it needed
+      - validator: process.exitcode
+        target: "2"
+        equals: 2
+        message: an unknown command was not refused
+      - validator: process.stdout
+        target: "2"
+        equals: ""
+        message: an unknown command wrote to stdout while refusing
+      - validator: process.stderr
+        target: "2"
+        equals: "cart-build: unknown command frobnicate\n"
+        message: an unknown command did not name itself when it was refused
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-008 - the manifest the release carries declares the version and the channel it was built at.
+  #
+  # The channel comes from the environment this world supplies, so this criterion is also the one that
+  # proves the world's variables reached the program: `CART_BUILD_CHANNEL` is declared in
+  # `environment.yaml`, read by the application, and written into the release - and a run that dropped
+  # it would fail here and nowhere else. The version is the headline defect's third reading.
+  #
+  # Only the two fields are asserted, not the whole document, because the byte count of the manifest
+  # belongs to AC-009 and an assertion on both would make one edit move one criterion twice. What is
+  # deliberately *not* asserted is the file list - that the manifest names three assets is exactly the
+  # claim a verifier is supposed to check independently, and a criterion that read it back from the
+  # manifest would be asking the document to be its own witness.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-008
+    description: the manifest declares the version and the channel the release was built at
+    steps:
+      - run: [node, cart-build.mjs, build]
+    expect:
+      - validator: process.file
+        target: dist/manifest.json
+        equals: true
+        message: the build did not write a manifest into the release
+      - validator: process.contents
+        target: dist/manifest.json
+        contains: "\"version\": \"1.4.0\""
+        message: the manifest does not declare the release version as 1.4.0
+      - validator: process.contents
+        target: dist/manifest.json
+        contains: "\"channel\": \"nightly\""
+        message: the channel this world supplies did not reach the manifest
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-009 - the manifest is not trusted about its own contents: the tree is read.
+  #
+  # The two files here are named by the manifest and are *not* the ones AC-003 measures, so what this
+  # criterion adds is breadth: every asset is compared with the size the manifest declares, and two
+  # independent sizes agreeing with one declaration is not something a single reading could establish.
+  # The manifest's own size is measured too, which is what stops the whole document from being replaced
+  # by a shorter one that happens to declare the same fields.
+  #
+  # A byte count is a fixed fact about a program that writes fixed content, so these three numbers are
+  # a claim about the application rather than about this machine. That is why they are safe to assert
+  # and why the criterion is untouched by all four defects - it is the control that says the run's
+  # other criteria moved because of the edits rather than because the world is flaky.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-009
+    description: the release holds each declared file at the size the manifest states, and the manifest at its own size
+    steps:
+      - run: [node, cart-build.mjs, build]
+    expect:
+      - validator: process.size
+        target: dist/cart.css
+        equals: 86
+        message: cart.css is no longer the size this contract was written against
+      - validator: process.size
+        target: dist/index.html
+        equals: 82
+        message: index.html is no longer the size this contract was written against
+      - validator: process.size
+        target: dist/manifest.json
+        equals: 260
+        message: the manifest is no longer the size this contract was written against
+    evidence:
+      - json

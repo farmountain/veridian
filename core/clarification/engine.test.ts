@@ -9,7 +9,12 @@ import {
   scriptedSelfPromptPort,
 } from "./engine.ts";
 import { createDeriver, schemaDefaultRule, type IoPort } from "./derive.ts";
-import { runtimeDetectors, type DetectorContext } from "./detect.ts";
+import {
+  detectValidationAmbiguities,
+  runtimeDetectors,
+  type AcceptanceLike,
+  type DetectorContext,
+} from "./detect.ts";
 import { getPointer, joinPointer, setPointer } from "./pointer.ts";
 import { ambiguity, failSafeDefault, type Ambiguity, type Clock } from "./types.ts";
 
@@ -697,4 +702,79 @@ test("a gap raised mid-run is closed by its declared default, with both later ru
   assert.equal(inferred, 0, "a non-blocking gap may not spend an external call");
   assert.equal(selfPrompt.asked.length, 0, "a declared default outranks a self-answer");
   assert.equal(outcome.report.questionsAsked, 0);
+});
+
+// ---------------------------------------------------------------------------------------------
+// The comparison guard: which expectations state a comparison
+// ---------------------------------------------------------------------------------------------
+//
+// This guard had no test at all, which is how it came to answer the question differently from the
+// three other seams that answer it. `equals: ""` is a sentence a contract writes on purpose - "this
+// stream said nothing" - and it is documented as that sentence in six validator families, accepted by
+// the acceptance decoder and accepted by the runtime judge. Only the detector read it as "no
+// comparison", so only the detector refused a correct contract, with a blocking question the author
+// had already answered. The two halves below are the two directions of that finding: the empty
+// string is a comparison *for the key where it is an assertion*, and it is not a comparison for the
+// two keys where it is vacuously true.
+
+const comparisonContext: DetectorContext = {
+  registeredValidators: ["process.stdout"],
+  validatorDescriptors: [
+    { name: "process.stdout", needsTarget: true, comparisons: ["equals", "contains", "matches"] },
+  ],
+  registeredAdapters: [],
+  sourceLabel: "engine.test",
+};
+
+const contractStating = (expectation: Record<string, unknown>): AcceptanceLike => ({
+  criteria: [
+    { id: "AC-001", expect: [{ validator: "process.stdout", target: "1", ...expectation }] },
+  ],
+});
+
+/** The gaps that answer "this expectation states no comparison" - one per expectation that does not. */
+const comparisonGaps = (expectation: Record<string, unknown>): readonly Ambiguity[] =>
+  detectValidationAmbiguities(contractStating(expectation), comparisonContext).filter(
+    (gap) => gap.kind === "underspecified",
+  );
+
+test("an empty string is a stated value for equals, because it is a sentence the contract writes", () => {
+  assert.deepEqual(
+    comparisonGaps({ equals: "" }),
+    [],
+    "equals with an empty expected value is how a contract says this stream said nothing",
+  );
+
+  // The other half, so this test cannot pass because the guard was deleted: an expectation with no
+  // comparison at all is still refused, still blocking, and still refused for the stated reason.
+  const empty = comparisonGaps({});
+  assert.equal(empty.length, 1, "an expectation with no comparison at all must still be refused");
+  assert.equal(empty[0]?.blocking, true, "an expectation that cannot fail is a false PASS waiting");
+  assert.match(empty[0]?.question ?? "", /states no comparison/);
+});
+
+test("an empty pattern is not a comparison, because every string contains it", () => {
+  for (const key of ["contains", "matches"]) {
+    const gaps = comparisonGaps({ [key]: "" });
+    assert.equal(gaps.length, 1, `an empty ${key} must be refused as stating nothing`);
+    assert.equal(gaps[0]?.blocking, true);
+  }
+
+  // So the refusal above is about emptiness and not about the key - a stated value on either one is
+  // a comparison, which is why the guard admits the empty string for `equals` and only for `equals`.
+  assert.deepEqual(comparisonGaps({ contains: "ready" }), []);
+  assert.deepEqual(comparisonGaps({ matches: "^ready" }), []);
+});
+
+test("an invalid regular expression is reported as its own defect, not as an unstated comparison", () => {
+  // The two checks are different questions and a single edit must not answer both. `matches: "("` is
+  // a stated comparison that does not compile, so it is the regex check that must speak - and the
+  // reported path has to name the key, because that is where the operator's answer is written.
+  const gaps = detectValidationAmbiguities(
+    contractStating({ matches: "(" }),
+    comparisonContext,
+  );
+  assert.equal(gaps.length, 1, "a pattern that does not compile is one defect");
+  assert.equal(gaps[0]?.kind, "ambiguous_reference");
+  assert.equal(gaps[0]?.path, "/criteria/0/expect/0/matches");
 });

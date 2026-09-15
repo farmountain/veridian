@@ -48,6 +48,7 @@ export {
   type ObservationRequest,
   type OsPlan,
   type PosixPlan,
+  type ProcessPlan,
   type ResetStrategy,
 } from "./types.ts";
 
@@ -161,3 +162,28 @@ export {
   type ContainerState,
   type ContainerTargetResult,
 } from "./container-observation.ts";
+
+export {
+  PROCESS_APPLICATION,
+  PROCESS_COMMAND_STATES,
+  PROCESS_FILE_KINDS,
+  PROCESS_OBSERVATION_KIND,
+  commandAbsentReason,
+  commandAt,
+  commandSelectorOf,
+  fileAt,
+  isProcessObservationData,
+  processPath,
+  renderArgv,
+  renderCommand,
+  renderExit,
+  renderFile,
+  renderHost,
+  renderStream,
+  type ProcessCommandRecord,
+  type ProcessCommandState,
+  type ProcessFileKind,
+  type ProcessFileReading,
+  type ProcessObservationData,
+  type ProcessStreamReading,
+} from "./process-observation.ts";

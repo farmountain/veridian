@@ -17,6 +17,7 @@ import {
   type HealthPolicy,
   type OsPlan,
   type PosixPlan,
+  type ProcessPlan,
   type ResetStrategy,
   type VSCodePlan,
 } from "./types.ts";
@@ -515,6 +516,87 @@ function readVSCode(raw: unknown, appPath: string): VSCodePlan | null {
   };
 }
 
+/**
+ * The process boundary this world is, or `null` when the world is not one.
+ *
+ * The same rule as every block before it - absent means not this world, present-but-incomplete is
+ * **refused** - and here the refusal has a shape none of the others had, because this block is the
+ * only one whose declarations are all *optional in principle*. A world that ran no program and read
+ * no file would be a world with nothing to observe, so the two facts that make it a world at all are
+ * required and the one that does not is not.
+ *
+ * `root` is required for that reason: every path a criterion names is resolved inside it, so a
+ * defaulted root would judge a contract against whichever directory the process happened to be
+ * started in - which is how a suite passes from the wrong folder. It is resolved against `appPath`
+ * because the schema says a path in this document is relative to `app`, exactly as `databasePath` is.
+ *
+ * `application` is the optional half, and it is optional on purpose rather than by omission: a
+ * contract that provisions a tree with its own `run` steps needs no long-lived program, and requiring
+ * one would make the simplest shape of this world unwritable. It is a `{ command, args }` pair rather
+ * than one string so that no path containing a space has to be quoted - the field a shell-shaped
+ * spelling would need, and the one that breaks first on this platform.
+ */
+function readProcess(raw: unknown, appPath: string): ProcessPlan | null {
+  if (raw === undefined || raw === null) return null;
+  if (!isPlainObject(raw)) {
+    throw defect(
+      "$.process",
+      "process must be an object naming a host, the directory this world's files live in, and " +
+        "optionally a program to run",
+    );
+  }
+  const host = asString(raw["host"]).trim();
+  const root = asString(raw["root"]).trim();
+  const missing = [host === "" ? "host" : null, root === "" ? "root" : null].filter(
+    (entry): entry is string => entry !== null,
+  );
+  if (missing.length > 0) {
+    throw defect(
+      `$.process.${missing[0] ?? "host"}`,
+      `the process declaration is missing ${missing.join(", ")}. The host is what every reading ` +
+        "names, and the root is the directory on this machine the world's own files live in - every " +
+        "path a criterion names is resolved inside it, so defaulting it would judge the contract " +
+        "against a directory nobody chose.",
+    );
+  }
+  return {
+    host,
+    application: readApplication(raw["application"]),
+    root: resolveSibling({ dir: appPath, path: "", text: "" }, root),
+  };
+}
+
+/**
+ * The program this world starts, or `null` when it starts none.
+ *
+ * A declaration present without a command is refused rather than treated as absent. The two are
+ * different documents: `application: null` says "this world runs no program", while an object whose
+ * `command` is empty says "this world runs a program" and then does not name it - and the second is
+ * the input that turns a criterion about a daemon into a criterion nobody could judge, reported
+ * against a world the operator believed they had described.
+ */
+function readApplication(raw: unknown): { readonly command: string; readonly args: readonly string[] } | null {
+  if (raw === undefined || raw === null) return null;
+  if (!isPlainObject(raw)) {
+    throw defect(
+      "$.process.application",
+      "process.application must be an object naming the command to run and its arguments, or null " +
+        "when this world starts no program at all",
+    );
+  }
+  const command = asString(raw["command"]).trim();
+  if (command === "") {
+    throw defect(
+      "$.process.application.command",
+      "the process declaration names an application but no command to run. `application: null` is " +
+        "how a world says it starts no program; an application without a command says it starts one " +
+        "and leaves the reader to guess which, so every criterion about it would be judged against " +
+        "a process that was never started.",
+    );
+  }
+  return { command, args: asStringArray(raw["args"]) };
+}
+
 function readBoundary(limits: GoalLimits): BoundaryPolicy {
   return {
     network: limits.networkPolicy,
@@ -599,6 +681,7 @@ export function finalizeEnvironment(
     cloud: readCloud(raw["cloud"]),
     container: readContainer(raw["container"], appPath),
     vscode: readVSCode(raw["vscode"], appPath),
+    process: readProcess(raw["process"], appPath),
     health: readHealth(raw["health"], url !== "", readyPattern),
     reset: { strategy: strategy as ResetStrategy, command: resetCommand },
     browser: readBrowser(raw["browser"], url !== ""),

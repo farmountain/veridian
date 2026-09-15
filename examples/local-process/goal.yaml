@@ -1,0 +1,65 @@
+# The goal: an observable end state, not an activity.
+#
+# "Build the cart" is not a goal, because it names something the agent does. What is stated below is
+# what an operator could check afterwards without having watched the run: a release exists, it
+# declares its own contents, a verifier independently agrees with that declaration, and a tree that
+# holds more than the manifest names is refused rather than blessed.
+#
+# The statement has three clauses and each one is judged by named criteria, so a run that satisfied
+# two of them cannot report success. The third clause is the one worth reading twice: a verifier that
+# only re-printed the manifest would have verified nothing, so the contract asks for two independent
+# readings of the same release - one of the file names, one of the file sizes - and both are read
+# from the filesystem rather than from the manifest's own list.
+
+version: 1
+
+id: local-process
+
+statement: >-
+  A release of the cart web application is built into a sandbox by a real process, the release and
+  the manifest it writes agree with each other about which files exist and how large each of them
+  is, and a tree holding a file the manifest does not name is reported as inconsistent rather than
+  accepted.
+
+acceptance: acceptance.yaml
+
+environment: environment.yaml
+
+context: |-
+  The tenth world, and the second of the two that are entirely real - `local-api` was the first. The
+  difference between them is the axis each one attacks. The HTTP world asks whether a *service*
+  answers its contract; this world asks whether a *program* did what it was asked, and it asks with
+  the instruments an operating system actually provides: an exit code the kernel produced, a stream a
+  line arrived on, and a file whose size on disk is compared with the size declared.
+
+  That is why there is no substitute anywhere in this world. A synthetic control plane can be built,
+  and this repository builds six of them, but an exit code is the one reading a substitute is tempted
+  to lie about - a stand-in can always print "done" and return zero. Here nothing can: the number in
+  the bundle was produced by `node`'s own `process.exitCode` and observed after the process ended.
+
+  What a reader should watch is the shape of the repair loop, and the demo narrates it. One defect
+  moves three criteria at once, because the release version is printed by the build, quoted back by
+  the verifier and written into the manifest - so a single edit to one constant is visible in three
+  places, which is what makes it the headline. Three others move exactly one criterion each: a
+  misspelt word in the daemon's banner that nothing else reads, an emptied filter that lets a stray
+  file pass, and a narration line sent to the wrong stream while the exit code stays zero. The last
+  of those is the one a reader should not skim: the command succeeded, and it still failed a
+  criterion, because the contract asks where the answer was said and not only whether it was right.
+
+tags:
+  - process-world
+  - tenth-adapter
+
+limits:
+  # 10 is the MVP ceiling. The demo needs 5: one to observe the defects, and four repairs.
+  maxIterations: 10
+  maxRuntimeMs: 300000
+  maxCriterionMs: 30000
+
+  # This world creates and deletes files, and it does so through a program it spawned - so the
+  # policy is stated rather than assumed. It reaches no network: there is no socket in the
+  # application and no address in the document, and the adapter reports the network boundary as
+  # `unsupported` rather than as enforced, because a declaration that cannot be satisfied and a
+  # capability that is never enforced are the same defect seen from two ends.
+  networkPolicy: deny
+  filesystemWrite: sandbox

@@ -1,0 +1,87 @@
+# The world the tenth adapter creates.
+#
+# This is one of the two worlds in this repository that is NOT simulated. Nothing here is stood in
+# for: the adapter starts a real child process, the child's exit code comes from `process.exitCode`
+# on a process this kernel reaped, and every file a criterion reads is a file on this disk. So this
+# document has no `simulated` block and nothing in it names a substitute - and that absence is a
+# claim rather than an omission, because a field saying "simulated: none" would suggest the other
+# answer was available.
+#
+# What makes it a *world* rather than just a program is the sandbox. `process.root` names a
+# directory this world creates, empties and deletes on its own schedule, and every path a criterion
+# names is resolved inside it - so the application under test cannot reach the repository, and a
+# reset really does remove everything the previous iteration wrote. `cart-build.mjs` reads the same
+# directory out of `VERIDIAN_PROCESS_ROOT`, which is why the two agree about where "here" is.
+#
+# A reader watching this world should watch two things. The first is the exit code: `2` means the
+# command line was unusable and `4` means the tree disagrees with its own manifest, so a criterion
+# can tell "you asked me something I cannot do" from "I checked and this is wrong" - and neither is
+# `1`, which is what a crash produces. The second is the stream a line arrives on. A program that
+# printed its success line to stderr would still exit zero, and this world can see the difference.
+
+adapter: local-process
+
+# Relative to this file. The adapter runs `start` and every `run` step with the working directory
+# set here, which is why a contract writes `cart-build.mjs` rather than a path to it.
+app: app
+
+# The application's own variables. `CART_BUILD_CHANNEL` is read by `cart-build.mjs` and written into
+# the manifest, so a criterion can ask whether the release records the channel it was built for.
+# The world supplies `VERIDIAN_PROCESS_HOST`, `VERIDIAN_PROCESS_ROOT` and `VERIDIAN_PROCESS_APP`
+# itself and those win over anything stated here - a document that could override the sandbox it is
+# judged inside would be describing a world nobody created.
+env:
+  CART_BUILD_CHANNEL: "nightly"
+
+# The process boundary this world is. `host` is the identity every reading carries, so a result read
+# later says which machine produced it. `root` is the sandbox, resolved relative to `app` exactly as
+# `databasePath` is in the inventory demo; it is required rather than defaulted for the reason the
+# schema gives - every path a criterion names resolves inside it, so a defaulted root would judge
+# the contract against whichever directory the run happened to start in.
+process:
+  host: cart-builder
+  root: sandbox
+
+  # The program this world starts and keeps running. It is optional on purpose: a contract that
+  # provisions the tree with its own `run` steps and reads the files back needs no daemon at all,
+  # and requiring one would make the simplest shape of this world unwritable. This contract wants
+  # one, because "is a program still running" is the question no `run` step can answer - a `run` is
+  # over by the time anything is observed.
+  #
+  # `args` is a list rather than part of `command`, so a path containing a space could be stated
+  # without quoting. On Windows that is not tidiness: the same string reaches a program with
+  # different quoting rules depending on whether the runtime inserted a shell.
+  application:
+    command: node
+    args: [cart-build.mjs, daemon]
+
+# Null means "this app has no dependencies to install", which is a fact about a program written
+# against the Node standard library alone - and stating it is what lets the demo run from a clean
+# checkout with nothing to fetch.
+dependencyInstall: null
+
+start:
+  # Executed verbatim - never a shell string built by pasting configuration into it.
+  command: node
+  args: [cart-build.mjs, daemon]
+
+  # Wait for the daemon to say it is ready. This is a fact about the world rather than a pause: the
+  # line is printed before the process holds itself open, so a criterion that reads it is reading
+  # something that was true when the world declared itself ready. The pattern stops before the
+  # sandbox path and the version, because one is machine-specific and the other is a fact the
+  # contract asserts separately - a readiness gate that depended on it would let a version defect
+  # abort the run instead of failing a criterion.
+  readyPattern: "cart-build audit daemon ready"
+
+# Reset is first-class, not test cleanup. `restart` stops the daemon before emptying the directory
+# and starting it again, so each iteration is judged in a world that holds nothing the previous one
+# wrote. A validator must never inherit contaminated state from an earlier run.
+reset:
+  strategy: restart
+
+# Stated, not omitted. This world has no `url`, so the browser policy follows the page rather than
+# an address and defaults to off either way - but a document that said nothing would leave the
+# question to the loader, and a reader comparing two worlds should not have to know which of them
+# states a fact and which one relies on a default.
+browser:
+  enabled: false

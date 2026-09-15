@@ -168,6 +168,17 @@ export interface EnvironmentLike {
    * block backwards.
    */
   readonly vscode?: unknown;
+  /**
+   * Present when the world is a process boundary.
+   *
+   * It has no address at all, and it is the first block whose subject is something the *machine* did
+   * rather than something a host or a system holds: a command really ran here, and a file really
+   * exists on this filesystem. Like the four filesystem worlds before it, it carries a root - the
+   * sandbox directory every criterion's paths are resolved inside - so a detector that read "has a
+   * directory" as "has an application to reach over a socket" would be reading this block backwards,
+   * exactly as it would for `vscode`.
+   */
+  readonly process?: unknown;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -178,15 +189,39 @@ const isMissing = (value: unknown): boolean =>
   value === undefined || value === null || (typeof value === "string" && value.trim() === "");
 
 /**
+ * Whether an expectation actually *states* a comparison.
+ *
+ * A different question from `isMissing`, and the whole difference is the empty string. `isMissing`
+ * answers "did the author supply a value", which is the right question for every field the ladder
+ * fills in - an empty string is a value nobody supplied. It is the wrong question here, because
+ * `equals: ""` is a sentence a criterion writes on purpose: "this stream said nothing", "nobody has
+ * been granted this", "this store holds no autostart entry". Every validator family documents it as
+ * exactly that sentence, `core/validation/assertions.ts`'s `statedComparisons` keys on the property
+ * being *present*, and `core/acceptance/plan.ts` refuses on the same presence test - so this file was
+ * the one place that disagreed, and the local-process contract was the first to write the sentence and
+ * be refused for it. A run-blocking question the operator cannot answer, because they had already
+ * answered it.
+ *
+ * The guard is not weakened by the change, because the two keys for which an empty value genuinely
+ * *is* vacuous are still refused: every string contains the empty string, and the empty pattern
+ * matches everything. Those two really are "an expectation that always passes", which is the false
+ * PASS this check exists to refuse. `equals` is the key where the empty value is the assertion.
+ */
+const statesComparison = (key: string, value: unknown): boolean =>
+  key === "equals" ? value !== undefined && value !== null : !isMissing(value);
+
+/**
  * Whether the document describes a world with no HTTP surface of its own.
  *
  * Decided from the *document*, not from the adapter name, because `core/clarification` is the lowest
- * layer and may not import an adapter to ask it. Seven shapes have no HTTP: a world reached by
+ * layer and may not import an adapter to ask it. Eight shapes have no HTTP: a world reached by
  * opening a file (`databasePath`), one whose address is a substitute control plane (`cluster`), one
  * that is a system rather than a service (`posix`), one that is a machine (`os`), one whose subject
  * is an account rather than a host or a system (`cloud`), one whose subject is a runtime holding
- * images and containers (`container`), and one whose subject is the editor host that loads an
- * extension (`vscode`). Anything else is a socket world, and is still asked for its URL.
+ * images and containers (`container`), one whose subject is the editor host that loads an
+ * extension (`vscode`), and one whose subject is the process boundary itself, where a command runs
+ * and a file exists but nothing is listening (`process`). Anything else is a socket world, and is
+ * still asked for its URL.
  *
  * Getting this wrong is not cosmetic, and each new shape is how the cost was measured. Every question
  * gated below is an HTTP question - the address, the health path, the health status, whether to drive
@@ -212,7 +247,8 @@ const hasNoHttp = (environment: EnvironmentLike): boolean =>
     !isMissing(environment.os) ||
     !isMissing(environment.cloud) ||
     !isMissing(environment.container) ||
-    !isMissing(environment.vscode));
+    !isMissing(environment.vscode) ||
+    !isMissing(environment.process));
 
 const asArray = <T>(value: readonly T[] | undefined): readonly T[] => value ?? [];
 
@@ -596,8 +632,8 @@ export function detectValidationAmbiguities(
         );
       }
 
-      const usedComparisons = descriptor.comparisons.filter(
-        (comparison) => !isMissing((expectation as Record<string, unknown>)[comparison]),
+      const usedComparisons = descriptor.comparisons.filter((comparison) =>
+        statesComparison(comparison, (expectation as Record<string, unknown>)[comparison]),
       );
       if (descriptor.comparisons.length > 0 && usedComparisons.length === 0) {
         found.push(

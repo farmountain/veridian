@@ -162,12 +162,21 @@ describe("environment gaps: HTTP questions are not asked of a world with no HTTP
   /**
    * The document keys that stand for a shape with no HTTP surface of its own.
    *
-   * This is the detector's own vocabulary - the seven clauses of `hasNoHttp` in
+   * This is the detector's own vocabulary - the eight clauses of `hasNoHttp` in
    * `core/clarification/detect.ts` - written once here so the *members* can be derived rather than
-   * listed. A world named below is one whose own declaration says which of the seven it is; a world
+   * listed. A world named below is one whose own declaration says which of the eight it is; a world
    * that names none of them is asked every HTTP question, which is the other half.
    */
-  const NO_HTTP_KEYS = ["databasePath", "cluster", "posix", "os", "cloud", "container", "vscode"];
+  const NO_HTTP_KEYS = [
+    "databasePath",
+    "cluster",
+    "posix",
+    "os",
+    "cloud",
+    "container",
+    "vscode",
+    "process",
+  ];
 
   it("skips them for every world whose own declaration says it has no socket", () => {
     // **Derived from the register, not listed here, and that is the half that cost a defect.** The
@@ -201,7 +210,16 @@ describe("environment gaps: HTTP questions are not asked of a world with no HTTP
     // dropping a clause from the predicate - fails here rather than silently covering less.
     assert.deepEqual(
       [...covered].sort(),
-      ["local-db", "sim-cloud", "sim-container", "sim-k8s", "sim-os", "sim-posix", "sim-vscode"],
+      [
+        "local-db",
+        "local-process",
+        "sim-cloud",
+        "sim-container",
+        "sim-k8s",
+        "sim-os",
+        "sim-posix",
+        "sim-vscode",
+      ],
       "one registered world per no-HTTP shape, and the register no longer names them all",
     );
   });
@@ -217,7 +235,7 @@ describe("environment gaps: HTTP questions are not asked of a world with no HTTP
 
     // And the same question asked of the **register** rather than of `local-web`, because the two
     // directions of one predicate are one property: every world whose own declaration names none of
-    // the seven no-HTTP shapes must be asked for an address, and a world that is silently skipped is
+    // the eight no-HTTP shapes must be asked for an address, and a world that is silently skipped is
     // the `sim-k8s` abort one family out with its sign flipped. `local-api` is the world that made
     // this necessary - it is the first world that is *real* and reached over a socket, so the only
     // thing that distinguishes it from a `local-db` is the shape its requirement names, and a

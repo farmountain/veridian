@@ -499,20 +499,62 @@ capability rather than a detail.
 **Acceptance:** four deliberate defects, eight criteria, the same `FAIL` -> repair -> `PASS` descent,
 and a reading that names no substitute because there is none. Measured in §7.
 
-### Phase D2 - `local-process`
+### Phase D2 - the tenth adapter: `local-process`, the world with no socket in it
 
-The other Tier 1 item: a real child process plus a filesystem observation, judged on what it wrote and
-on how it exited. It needs no new step kind (`run` carries argv today) and no new evidence kind beyond
-`json` and `log`, so it is a repeat of the same eight-part procedure rather than a new capability.
+The other Tier 1 item, and the second world in the series that substitutes **nothing at all**: a real
+program is started as a real child process and judged on the text it printed on stdout and stderr, the
+code it exited with, a probe of whether it is still up, and the files it really wrote under a real
+directory. It adds no new step kind - a contract that provisions a tree does so with the `run` steps
+the second world introduced - and no new evidence kind beyond `json` and `log`, so it is the same
+eight-part procedure rather than a new capability.
 
-**Why it is still worth building despite adding no capability.** Every world in the series so far has
-been *large* - a cluster, an operating system, a runtime, a provider account - and every one of them
+**Why it was still worth building despite adding no capability.** Every world in the series before it
+was *large* - a cluster, an operating system, a runtime, a provider account - and every one of them
 made its point by being hard. `local-process` is the small case, and the small case is where an
 architecture built for the large one is most likely to have acquired a dependency it did not notice.
 `local-api` played that role for HTTP; `local-process` plays it for the process boundary itself,
 where the observable facts are an exit code, a stream, and a file on disk rather than a record in a
-table. It is deliberately last of the three local worlds, so that it is built against a settled seam
-rather than a seam being decided while it is built.
+table.
+
+**What makes it different from `local-api`, which is also real.** Two things, and the first is the
+sharpest distinction in the series.
+
+1. **There is no socket, so there is no `call`.** `local-api` is the only world whose contract can put
+   its own request to its subject. This world has nowhere to put one, so a criterion acts in it with
+   `run` and reads the result - which is why the world that adds the least capability is the one that
+   shows the step register was never the frame around the worlds; the worlds are the frame around the
+   step register.
+2. **Two target grammars in one family, chosen by the *validator* rather than by the spelling.** `app`
+   or a bare 1-based position names a *command* (`process.probe`, `process.argv`, `process.state`,
+   `process.exitcode`, `process.run`, `process.stdout`, `process.stderr`); a world-relative path names
+   a *file* (`process.file`, `process.kind`, `process.contents`, `process.size`). `commandAt` is
+   deliberately index-free for `app` and index-based for a position, because the program is the same
+   program in every criterion while "the second command" is a fact about *this* criterion. The
+   `process.file` and `process.contents` targets are read as places and the `process.exitcode` target
+   as a selector, so neither can misread the other's spelling.
+
+- `core/` gains `core/environment/process-observation.ts` and one more plan field (`ProcessPlan`), and
+  nothing else a validator could have reached through an adapter. That file carries the two target
+  grammars beside the refusal that decides which spellings of a path leave the world.
+- A tenth validator family - `process.host`, `process.probe`, `process.argv`, `process.state`,
+  `process.exitcode`, `process.run`, `process.stdout`, `process.stderr`, `process.file`,
+  `process.kind`, `process.contents`, `process.size` - needs no change to `core/validation` or
+  `core/execution`. That is the **eighth** demonstration of the claim this series exists to make, and
+  the second made by a world that is entirely real.
+- **A path that leaves the root is refused, and the refusal is recorded as a boundary crossing**
+  rather than reported as a missing file. A resource that is absent and a place that is out of bounds
+  are two different observations, and the adapter must not answer the second with the first.
+- **The world records its own declaration, not the host path that declaration resolved to.** The
+  reading carries `"root": "sandbox"`, which is what the environment document says and what a reader
+  can check against it. An earlier version recorded the absolute spelling, and whether a criterion
+  passed then depended on how the operator spelled their `--goal` - the same tree, run twice, gave
+  exit 0 with a relative path and exit 1 with an absolute one.
+- `PROCESS_ENV` declares the three names the application reads - `VERIDIAN_PROCESS_HOST`,
+  `VERIDIAN_PROCESS_ROOT`, `VERIDIAN_PROCESS_APP` - which is also how the host name a `process.host`
+  criterion compares stays a *declared* fact rather than something the world inferred from a pid.
+
+**Acceptance:** four deliberate defects, nine criteria, the same `FAIL` -> repair -> `PASS` descent,
+and a reading that names no substitute because there is none. Measured in §7.
 
 ---
 
@@ -565,7 +607,7 @@ run ids rather than adjectives.
 | `local-web` | real child process + real browser | - | **built** (`v0.1.0`) |
 | `local-db` | real SQLite via `node:sqlite`; the app's own schema and seed code runs | - | **built** |
 | `local-api` | real child process, real HTTP service, and the criterion puts its own request | - | **built**, see §7 |
-| `local-process` | real child process, real filesystem | - | planned (Phase D) |
+| `local-process` | real child process, and the program's own two streams, exit code and files | - | **built**, see §7 |
 | `sim-k8s` | real app process against a real HTTP control plane | `scheduler`, `kubelet`, `cri`, `etcd`, `cni`, `admission`, `ingress` | **built** |
 | `sim-cloud` | real app process against real HTTP endpoints | `regions`, `object-store`, `queue`, `key-management`, `secret-rotation`, `identity`, `metering` | **built**, see §7 |
 | `sim-container` | real app process provisioning images and containers over a real command surface | `namespaces`, `cgroups`, `image-layers`, `registry`, `published-ports`, `volumes`, `user-switching` | **built**, see §7 |
@@ -1130,3 +1172,52 @@ another file has to be moved into the defective file rather than given its own t
 authored in `catalog.mjs` and moved into `server.mjs` for exactly this reason - a table whose entries
 live in two files is a table whose `correct`-form assertions need two reads and two line-ending
 conversions, and the second one is the one that gets forgotten.
+
+### Phase D2: the program world, and what the tenth adapter proved
+
+The second world in the series that substitutes **nothing at all**, and the first whose subject is a
+program rather than a page, a file of rows, a service or a substitute. A real program is started as a
+real child process, and it is judged on the text it printed on stdout and on stderr, the code it exited
+with, a probe of whether it is still up, and the files it really wrote under a real directory.
+
+| Area | Status | Detail |
+|------|--------|--------|
+| File probe | built | `adapters/local-process/process-port.ts` - reads a world-relative path under a root, bounded at `MAX_TEXT_BYTES`, and never throws for a condition the reading has a field for. Its seam takes the **accession** (the host path this machine can open), never the declaration, because the declaration is what the reading records. |
+| Adapter lifecycle | built | `local-process-environment.ts` implements all ten lifecycle methods. It starts the program named by `start`, waits for the readiness line `cart-build audit daemon ready`, and performs `run` steps only - it declares no step kind of its own. `PROCESS_ENV` names the three variables the application reads (`VERIDIAN_PROCESS_HOST`, `VERIDIAN_PROCESS_ROOT`, `VERIDIAN_PROCESS_APP`). **Nothing is stood in.** |
+| Observation vocabulary | built | `core/environment/process-observation.ts` - the tenth family's reading, carrying a command record (argv, state, exit code, both streams, duration), a file record, and the renderings the validators compare. The tenth family needed **no core change** beyond this file and a name registration: the **eighth** sample of that claim, and the **second** made by a world with no `simulated` field. |
+| Validator family | built | `validators/process/` - twelve validators, all of them exercised by the demo: `host`, `probe`, `argv`, `state`, `exitcode`, `run`, `stdout`, `stderr`, `file`, `kind`, `contents`, `size`. 77 tests, falsified three ways rather than trusted. It has no new step kind. It is the only family asked two different kinds of question, so it carries **two target grammars** and the validator - not the spelling - chooses between them: `app` or a bare 1-based position names a command, a world-relative path names a file. |
+| Evidence, honestly bounded | built | The evidence kinds are `json` and `log`, and there is no `simulated` field at all, because nothing is stood in. A path that leaves the root is refused by the adapter and recorded as a **boundary crossing** rather than reported as a missing file. |
+| Demo | built | `examples/local-process/` - four deliberate defects, nine criteria, `npm run demo:local-process`, exit 0. Measured: iteration 1 `FAIL`s exactly six criteria and passes `AC-002`, `AC-007` and `AC-009`; the defects are repaired in criterion order, so the failing count descends **`6 -> 3 -> 2 -> 1 -> 0`** over five iterations and four repairs; the final run is `PASS (COMPLETED, 5 iteration(s))` with `9/9 mandatory criteria passed, environment valid, no safety violation, evidence complete.` The bundle holds **37 files**. |
+| Regression tests | built | `tests/local-process-demo.test.ts` (19, falsified 3/3), `validators/process/process-validators.test.ts` (77, falsified 3/3), a `process` case in `tests/environment-gaps.test.ts`, the `process` roster entry in `tests/readme-rosters.test.ts`, and a `**built**` row in this document's own world table that `tests/simulated-surfaces.test.ts` reads both ways. |
+
+**What the tenth world settled.** `core/` changed by an observation vocabulary and a name, for the
+eighth time. The ninth world made that claim about a real world; this one makes it about a real world
+whose subject has no socket in it at all - and the sharpest form of the claim is that a criterion here
+acts with `run` because there is nowhere to put a `call`. The step register is not the frame around
+the worlds; the worlds are the frame around the step register, and this is the one that proves it by
+adding no vocabulary to it.
+
+**Why the reading carries `sandbox` rather than the path that resolved to it.** Whether a criterion
+passed originally depended on how the operator spelled their `--goal`: the same tree, run twice with a
+relative path and with an absolute one, gave exit 0 and exit 1, with a single criterion the only mover.
+The reading now records the world's **own** spelling of the declaration, and the host path is produced
+by a separately named reader of the same field - so the two cannot be conflated by a future edit. A
+field that is both an input to the world and an output of the recording is two fields in one slot.
+
+**Why a defect table needs controls before it can have a headline.** `D2` (a stray-file list emptied,
+so `verify` reports nothing wrong), `D3` (a banner misspelled) and `D4` (a narration line written to
+stderr instead of stdout) are each read by exactly **one** criterion - `AC-005`, `AC-001` and `AC-006`.
+`D1` (a release version constant) moves **three** at once, and each is a separate true consequence of
+one edited constant: the version appears in the build summary, again in the verifier's summary, and
+again inside the manifest the program writes. So the failing count falls by three the first time -
+`6 -> 3` - and by one each time afterwards. Three criteria never move at all: `AC-002`, `AC-007` and
+`AC-009`. That is what makes the movements attributable to the edits rather than to the world.
+
+**Why `D4` had to be retargeted, and why the retarget is now a guard.** `D4` was first filed against
+`AC-006` while its block edited the **stderr** branch inside `verify()` - a line `AC-006`'s code path
+never executes - so the criterion it named could never have moved however many iterations the loop ran.
+Nothing failed, because the demo still descended to zero: the defect had *some* effect somewhere else,
+and a table written from the defects' own names agreed with the names. It now edits `add()`'s own
+narration, and the guard that holds it is a row probe: apply the block, run the program, read what the
+world answers. A defect's `criterionId` is a claim that its block sits on that criterion's code path,
+and the only way to hold that claim is to compile, inject, run and watch.

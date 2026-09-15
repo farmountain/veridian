@@ -64,6 +64,7 @@ function environmentPlan(browserEnabled: boolean): EnvironmentPlan {
     cloud: null,
     container: null,
     vscode: null,
+    process: null,
     health: { path: "/", expectStatus: 200, timeoutMs: 15000, intervalMs: 250, readyPattern: null },
     reset: { strategy: "snapshot-restore", command: null },
     browser: { enabled: browserEnabled, viewport: null, locale: null, timezoneId: null },

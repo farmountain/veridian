@@ -29,6 +29,7 @@
 import { LocalWebEnvironment } from "../adapters/local-web/index.ts";
 import type { BrowserPort } from "../adapters/local-web/index.ts";
 import { LocalApiEnvironment } from "../adapters/local-api/index.ts";
+import { LocalProcessEnvironment } from "../adapters/local-process/index.ts";
 import { LocalDbEnvironment } from "../adapters/local-db/index.ts";
 import { SimK8sEnvironment } from "../adapters/sim-k8s/index.ts";
 import { SimCloudEnvironment } from "../adapters/sim-cloud/index.ts";
@@ -504,6 +505,62 @@ const WORLDS: readonly World[] = [
     ],
     build: ({ environment, io, logger, processes, stateDir }) =>
       new LocalApiEnvironment(environment, {
+        io,
+        clock: systemClock,
+        logger,
+        processes,
+        stateDir,
+      }),
+  },
+  {
+    kind: "local-process",
+    summary:
+      "a local program run as a real child process, judged on its exit code, its two streams and the files it wrote",
+    // Two fields, and both are the world rather than a convenience. A host is what every reading
+    // names, for the reason `local-api` records one: a criterion asserting *which* world answered is
+    // asserting a declared fact, and a world that inferred the name from a pid would make every such
+    // criterion unfalsifiable. A root is the directory every path a criterion names is resolved
+    // inside - so a defaulted root would judge the contract against whichever directory the runner
+    // happened to start in, which is exactly how a suite passes from the wrong folder.
+    //
+    // `application` is deliberately absent from this list even though the adapter reads it. It is the
+    // optional half of the world: a contract that provisions a tree with its own `run` steps needs no
+    // long-lived program, so requiring it would make the simplest shape of this world unwritable - and
+    // a requirement is a question the operator is forced to answer, not a field that may be null.
+    //
+    // Asked as pointers rather than as one `process` object for the reason every world after `sim-k8s`
+    // records here: the ladder resolves a requirement against a *place*, so a single `process` field
+    // would report the whole block missing however much of it the document already stated.
+    //
+    // There is no `*_SIMULATED_SURFACES` constant for this world and none is wanted. The child
+    // process is a real process, the files are files on this machine, and the exit code is the one the
+    // kernel reported - nothing is stood in. That is why this entry sits beside `local-web`,
+    // `local-db` and `local-api` rather than beside the six `sim-*` worlds, and why the readings it
+    // produces carry no `simulated` field at all.
+    requires: [
+      {
+        field: "process.host",
+        question: "What should this world be called?",
+        why:
+          "Every reading of this world records the host it came from, and the name is the thing a " +
+          "criterion can assert so that a run which silently judged a different world is a detectable " +
+          "failure rather than a silent one. There is no default: a world that invented a name could " +
+          "neither confirm nor deny that the process it started is the one the criteria were written " +
+          "about.",
+      },
+      {
+        field: "process.root",
+        question: "Which directory do this world's files live in?",
+        why:
+          "Every path a criterion names is resolved inside it, so this is the answer that decides " +
+          "what `out/report.txt` means - and a defaulted root would resolve the contract against the " +
+          "directory the runner happened to be started in. It is stated relative to the world's own " +
+          "application directory, the way `databasePath` is, so a bundle quotes a path a reader can " +
+          "take back to the document it came from.",
+      },
+    ],
+    build: ({ environment, io, logger, processes, stateDir }) =>
+      new LocalProcessEnvironment(environment, {
         io,
         clock: systemClock,
         logger,

@@ -37,8 +37,8 @@ in `extension/vscode/`, if you want the same engine with a UI.
 git clone <this-repository-url> veridian
 cd veridian
 npm ci                    # runtime dependency: yaml. dev: typescript, @types/node.
-npm run gate              # tsc --noEmit, then the whole test suite. 1704 tests, about five seconds
-                          # (this tree's own 1640 plus the Cockpit's 64, which the runner discovers
+npm run gate              # tsc --noEmit, then the whole test suite. 1833 tests, about five seconds
+                          # (this tree's own 1769 plus the Cockpit's 64, which the runner discovers
                           # because it walks the tree; the extension has its own gate as well).
 
 npm run e2e:install       # one-time, ~150 MB: fetch the Playwright browser
@@ -56,14 +56,16 @@ npm run demo:vscode       # the eighth: a real extension is loaded by a SIMULATE
                           # and judged on what that host recorded while it ran
 npm run demo:api          # the ninth: a real service judged through its own HTTP interface, with
                           # nothing simulated and nothing rendered - the contract makes the requests
+npm run demo:local-process # the tenth: a real program run as a real child process and judged on what
+                          # it printed, what it exited with and the files it wrote - nothing simulated
 ```
 
-Run those eleven in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
+Run those twelve in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
 Playwright is installed **outside** the lockfile on purpose, so installing the browser before `npm ci`
 would discard it.
 
-`demo`, `demo:db`, `demo:api`, `demo:posix`, `demo:os`, `demo:cloud`, `demo:container` and
-`demo:vscode` need no
+`demo`, `demo:db`, `demo:api`, `demo:local-process`, `demo:posix`, `demo:os`, `demo:cloud`,
+`demo:container` and `demo:vscode` need no
 extra setup. `demo:k8s` needs neither a cluster nor `kubectl`, `demo:posix` needs neither a virtual
 machine nor a Linux host, `demo:os` needs neither a Windows guest nor a hypervisor, `demo:cloud` needs
 no cloud account, no `aws`/`az`/`gcloud` session and no outbound socket, `demo:container` needs no
@@ -77,6 +79,12 @@ each run records what it stood in for and a verdict a simulation cannot justify 
 `demo:api` is the one in that list that substitutes **nothing**: it starts a real service and puts
 real requests to it over loopback, so its reading is the service's own status line, headers, bytes and
 JSON - which is why it is also the only demo whose verdict rests on no substitute at all.
+
+`demo:local-process` is the second such demo, and it stands to `demo:api` the way a subtree stands to
+a service: a real program is started as a real child process on this machine and judged on the text it
+printed on stdout and stderr, the code it exited with, what a probe of it found still running, and the
+files it really wrote. Nothing is stood in - the child process is a process, the file it wrote is on
+the filesystem - so its readings carry no `simulated` field either.
 
 Requires **Node 22.18.0 or newer**.
 
@@ -832,6 +840,85 @@ the process reading from a terminal would be staking it on something no criterio
 
 ---
 
+## The tenth world: a program, judged on what it did
+
+`local-process` is the fourth world in this list that substitutes **nothing**, and it is aimed at a
+different subject from the first three. `local-web` judges a page, `local-db` judges a file of rows,
+`local-api` judges an HTTP contract; `local-process` judges a **program** - the text it printed, the
+code it exited with, whether it was still up when asked, and the files it left behind under a real
+directory on this machine. There is no socket and no browser anywhere in the loop; the only thing
+that is real is a child process, which is the thing being judged.
+
+A world declares the program it runs:
+
+```yaml
+adapter: local-process
+app: app
+env:
+  CART_BUILD_CHANNEL: nightly
+process:
+  host: cart-builder
+  root: sandbox
+  application:
+    command: node
+    args: [cart-build.mjs, daemon]
+start:
+  command: node
+  args: [cart-build.mjs, daemon]
+  readyPattern: "cart-build audit daemon ready"
+```
+
+`host` and `root` are both **required**, and each is required for a reason rather than for symmetry.
+A host is required because a criterion asserting *which world answered* is asserting a declared fact,
+and a world that inferred the name from a pid would make every such criterion unfalsifiable. A root
+is required because a defaulted root would judge the contract against whichever directory the runner
+happened to start in, which is exactly how a suite passes from the wrong folder. `application` is
+deliberately **not** required: a contract that provisions a tree with its own `run` steps needs no
+long-lived program at all, and a world that insisted on one would refuse the simpler contract.
+
+The family is asked two different kinds of question, and it holds two target grammars because of it -
+chosen by the **validator**, not by the spelling. A target naming a command is either `app` (the
+program the world started) or a bare 1-based position (the criterion's own `run` steps, counted from
+one, in the order it ran them). A target naming a file is a path relative to the world's root.
+`process.file` reads its target as a place and `process.exitcode` reads its target as a selector, so
+neither can misread the other's spelling, and the one collision a reader could construct - a file
+called `1` - is resolved by rule rather than by guess: a bare positive integer is a selector, and
+`./1` is a path.
+
+A path that leaves the root is **refused rather than resolved**. `path.resolve` would happily turn
+`/etc/passwd` into a path on this machine and `../..` into somewhere outside the sandbox, and a world
+that opened either while calling it the sandbox's would read the developer's own filesystem under a
+name saying it had not. So a leading separator, a drive letter and a `..` that pops past the root are
+each refused, and the adapter records the refusal as a **boundary crossing** rather than reporting a
+missing file - because a resource that is absent and a place that is out of bounds are two different
+observations, and only one of them is the application's problem.
+
+The twelve validators are `process.host`, `process.probe`, `process.argv`, `process.state`,
+`process.exitcode`, `process.run`, `process.stdout`, `process.stderr`, `process.file`, `process.kind`,
+`process.contents` and `process.size`. `process.host` is targetless and reads the declared name;
+`process.state` and `process.probe` ask whether the program is still up; the rest read one command or
+one file. A stream is compared as the text an operator would read, not as raw bytes - a name that
+suggested otherwise would be a name a contract could be written against and never satisfy.
+
+`npm run demo:local-process` drives this: four deliberate defects, nine criteria, and a `FAIL` ->
+repair -> `PASS` descent in five iterations - measured, verbatim: the failing count is
+`6, 3, 2, 1, 0`, and iteration 5 is `PASS` with `9/9 mandatory criteria passed, environment valid, no
+safety violation, evidence complete.` The reach of each defect is what makes the table readable
+rather than merely descending. `D2`, `D3` and `D4` are each read by **exactly one** criterion, so each
+is a control: a reader can watch one edit move one reading. `D1` then moves **three** at once - a
+release version constant the program prints in its build summary, again in its verifier's summary and
+again inside the manifest it writes - because those are three separate true consequences of one
+edited constant, not one fact counted three times. `AC-002`, `AC-007` and `AC-009` are never moved at
+all, and that is the measurement that says the other six moved because of the edits rather than
+because the world is flaky.
+
+Because nothing is stood in, its reading carries **no** `simulated` field either, and this world is
+the one the register answers a question about by name: there is no `*_SIMULATED_SURFACES` constant for
+it and none is wanted, which is why it sits beside `local-web`, `local-db` and `local-api` rather than
+beside the six `sim-*` worlds.
+
+---
+
 ## How the code is arranged
 
 ```
@@ -844,8 +931,8 @@ core/acceptance/        AcceptanceCriterion, and the engine that turns a contrac
 core/execution/         the run controller: state machine, bounded exits, repair gate
 core/validation/        ValidationResult, the validator registry, status semantics, verdict rollup
 core/environment/       EnvironmentAdapter, the environment manager, the shared web, database, k8s,
-                        posix, os, cloud, container and extension-host vocabularies that keep
-                        validators from importing an adapter
+                        posix, os, cloud, container, extension-host and process vocabularies that
+                        keep validators from importing an adapter
 core/evidence/          the evidence engine and the run bundle
 core/run/               run identity, history, iteration state
 core/metrics/           M1..M5, measured over the bundles on disk
@@ -872,6 +959,10 @@ adapters/local-api/     starts a real service and talks to it over loopback thro
                         the application serves; every criterion puts its own request and reads the
                         status, the headers, the bytes and a pointer into the body. Nothing is
                         substituted and nothing is rendered: the application IS the interface
+adapters/local-process/ starts a real program as a real child process and reads its exit code, its
+                        two streams, a probe of whether it is still up and the files it wrote under
+                        a real directory. Nothing is substituted here either - the process is a
+                        process and the file is a file - so no reading carries a `simulated` field
 validators/playwright/  web.element, web.visible, web.text, web.value, web.count, web.url,
                         web.console.clean, web.network.ok
 validators/database/    db.table, db.column, db.count, db.value
@@ -896,6 +987,9 @@ validators/vscode/      vscode.host, vscode.identity, vscode.engine, vscode.acti
                         vscode.subscription, vscode.file, vscode.refusal, vscode.call, vscode.probe
 validators/api/         api.service, api.exchange, api.status, api.header, api.body, api.bytes,
                         api.json, api.log
+validators/process/     process.host, process.probe, process.argv, process.state, process.exitcode,
+                        process.run, process.stdout, process.stderr, process.file, process.kind,
+                        process.contents, process.size
 schemas/                goal / acceptance / environment / run / result / ambiguity
 scripts/                bootstrap and build steps that must run before anything is checked
 examples/shopping-cart/ the canonical demo: correct app, defect overlay, goal, contract, world
@@ -916,10 +1010,14 @@ examples/sim-vscode/    the eighth demo: a real extension is loaded by a substit
 examples/local-api/     the ninth demo: a real service judged through its own HTTP interface, with no
                         page, no substitute and nothing rendered - four defects, eight criteria, and
                         the same FAIL -> repair -> PASS loop
+examples/local-process/ the tenth demo: a real program judged on its exit code, its streams and the
+                        files it wrote under a real directory. Four defects, nine criteria, and the
+                        failing count descending `6 -> 3 -> 2 -> 1 -> 0` - one version constant moves
+                        three criteria at once, and the three controls after it move one each
 extension/vscode/       the VS Code Cockpit: a thin client, no validation logic. The one directory
                         with a build step, because the extension host is not Node's loader
                         (`npm run package` produces the `.vsix` you can hand to somebody else)
-tests/                  1704 tests in a root `node --test` run: this tree's own 1640 plus the
+tests/                  1833 tests in a root `node --test` run: this tree's own 1769 plus the
                         Cockpit's 64
 
 dist/                   GENERATED by `npm run build`. Never edited, never committed.
@@ -950,8 +1048,8 @@ Layering is enforced by hand, and `core/*` may not import `adapters/*`, `validat
 `validators/*` may not import `adapters/*` (the shared vocabulary lives in
 `core/environment/web-observation.ts`, `db-observation.ts`, `k8s-observation.ts`,
 `posix-observation.ts`, `os-observation.ts`, `cloud-observation.ts`,
-`container-observation.ts`, `vscode-observation.ts` and `api-observation.ts` for exactly that
-reason);
+`container-observation.ts`, `vscode-observation.ts`, `api-observation.ts` and `process-observation.ts`
+for exactly that reason);
 `cli/*` is the only layer that may import all three.
 
 ---
@@ -959,12 +1057,15 @@ reason);
 ## Scope
 
 **In, for the MVP:** VS Code + Veridian Core + a local application + a browser + Playwright +
-deterministic acceptance criteria + evidence + reset/replay. Nine adapters exist: `local-web`,
-`local-db` and `local-api`, the second being the proof that `EnvironmentAdapter` is a seam rather
-than a browser
-harness with an interface bolted on, and the third being that proof's mirror - a world that is
-**real** and reached over a socket, where the contract puts its own request rather than observing one
-the application made - and six *simulated* worlds. `sim-k8s`: a real application
+deterministic acceptance criteria + evidence + reset/replay. Ten adapters exist: `local-web`,
+`local-db`, `local-api` and `local-process` - four worlds that substitute nothing - and six
+*simulated* ones. Three of the real ones are also the argument that `EnvironmentAdapter` is a seam
+rather than a browser harness with an interface bolted on: `local-db` judges a SQLite file,
+`local-api` is that proof's mirror - a world that is **real** and reached over a socket, where the
+contract puts its own request rather than observing one the application made - and `local-process`
+is the same argument aimed at a subject with no socket at all: a real program run as a real child
+process, judged on its exit code, its two streams, a probe of whether it is still up and the files
+it wrote under a real directory. `sim-k8s`: a real application
 process really deploys itself into a substitute control plane over a real HTTP surface it really
 calls, with no cluster software anywhere in the loop. `sim-posix`: a real application process really
 provisions a substitute Linux system through commands it really issues, with no virtual machine and
@@ -980,7 +1081,9 @@ loaded by a real Node process through a module resolved in place of `vscode`, an
 contributions, commands, invocations, settings, status, output, messages, subscriptions and refusals
 that process recorded, with no editor, no window and no installed VS Code anywhere in the loop.
 `local-api`: no substitute at all - a real service, judged through its own HTTP interface on loopback,
-with the contract's own requests as the observation. In all
+with the contract's own requests as the observation. `local-process`: no substitute at all either,
+and no socket - a real program run as a real child process and judged on the text it printed, the
+code it exited with and the files it really wrote. In all
 six of the simulated ones, the substitution is
 **declared**: `environment.json` names what was stood in for and the reading carries a `simulated`
 field, so a `PASS` is traceable to a named substitute rather than to unexamined reality - and a
