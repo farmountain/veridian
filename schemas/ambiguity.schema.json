@@ -51,6 +51,18 @@
         },
         {
           "type": "object",
+          "required": ["via", "value", "confidence", "grounds", "rounds"],
+          "properties": {
+            "via": { "const": "self_prompted" },
+            "value": {},
+            "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+            "grounds": { "type": "string" },
+            "rounds": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
           "required": ["via", "value", "answer"],
           "properties": {
             "via": { "const": "answered" },

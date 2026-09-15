@@ -273,8 +273,11 @@ extension/vscode/       The VS Code Cockpit - a thin client, no validation logic
                         type floor, the allowlist and the licence copy. Read
                         `extension/vscode/README.md` for the install routes and the list of what
                         a real VS Code test host would still have to cover.
-core/clarification/     The ambiguity protocol: ladder (derived → inferred → defaulted → answered →
-                        deferred), detectors, JSON-pointer editing, the report. Lowest layer.
+core/clarification/     The ambiguity protocol: ladder (derived → inferred → defaulted → self_prompted
+                        → answered → deferred), detectors, JSON-pointer editing, the report. Lowest
+                        layer. Rung 4 is the run answering its *own* gap from material it already
+                        holds; it may eliminate a candidate the contract offered and may never invent
+                        one, which is the whole safety argument for letting a run answer itself.
 core/schema/            JSON Schema validation + the loader that reads schemas/.
 core/goal/              Goal definition, loading, persistence, versioning.
 core/acceptance/        AcceptanceCriterion + the engine that turns a contract into an
@@ -1704,6 +1707,73 @@ port had none, which is why the defect reached a demo run.
   re-states a predicate rather than iterating the register can only cover the worlds it was written
   with* - the same rule the `hasNoHttp` `||`-chain entry already records one layer up, arriving this
   time at the test rather than at the code.
+
+- **A vocabulary spelled as a `oneOf` of `const` branches is invisible to an `enum` walker, so the
+  guard keeps passing while describing nothing.** `tests/schema-vocabulary.test.ts` exists to hold
+  `RUNGS` and the ambiguity schema to one list. The ladder is written as `oneOf` branches of
+  `const` - one branch per rung - because that is what lets each branch carry its own fields
+  (`evidence`, `confidence`/`source`, `assumption`, `answer`, `reason`). A walker that collected only
+  `enum` arrays therefore found **no** ladder and reported no disagreement, which is the vacuous
+  pass, not the clean one. `via` had been listed in the vocabulary's `slots` since the guard was
+  written, so the guard *named* the slot it could not see. The walker now reads `const` strings too,
+  groups them by their parent `oneOf`, and a second assertion pins the schema's rung order to the
+  engine's own walk - because a schema that prints the rungs in one order while the engine walks them
+  in another documents a ladder nobody implements. *This is the fifth occurrence of "a vocabulary the
+  engine owns and the schema re-states", and the new twist is the shape of the re-statement: an
+  `enum` is one list, a `const` group is one list written as N siblings, and a guard that reads one
+  spelling is blind to the other.* Read the schema's own JSON before trusting a walker's silence.
+
+- **Inserting a rung renumbers every rung after it, and prose is read by nothing.** Adding
+  `self_prompted` between `defaulted` and `answered` invalidated **six** independent claims, none of
+  which any compiler reads: four numbered rung markers in doc comments and a test title
+  (`core/clarification/engine.ts`, `core/clarification/types.ts` x3,
+  `core/clarification/engine.test.ts`); the ladder roster printed in this file's own layout block
+  (`(derived → inferred → defaulted → answered → deferred)`); and, in
+  `docs/IMPLEMENTATION-PLAN.md`, the `Resolution` union, the ladder diagram, the heading *"3.5 The
+  exit - four independent stops"*, the row `| maxRungsPerAmbiguity | 3 |` naming a policy field that
+  **does not exist in `Policy` at all**, the claim *"No rung is retried. The ladder is a straight
+  line, so it terminates in <= 5 steps by construction"* (rung 4 is exactly the rung that may retry),
+  and two port-class names recalled rather than read (`CliPromptPort`, `ScriptedPromptPort`; the code
+  exports `createCliPromptPort` and `scriptedPromptPort`). `npx tsc --noEmit` stayed silent through
+  every one of them, and so did the whole suite. The test title was the one that *mattered* - it read
+  *"stop 4 - the ladder is a straight line, so termination needs no budget"* and it was asserting a
+  product-wide property that the new rung makes false - so it was retitled to name its own subject
+  (*"with no self-prompt port every rung is attempted once"*), which is true, rather than deleted.
+  *A numbered marker, a heading that counts its contents, and a roster in a document are three
+  spellings of one claim: "this is what the code holds". The cheapest way to hold a name is a test
+  that reads the code, and the only way to hold a number is to re-measure at the moment the document
+  is touched - which is why this file says so in four separate entries now.*
+
+- **A probe's anchor text obeys the file's line endings, and a skipped probe reports a verdict it did
+  not earn.** The rung-4 falsification harness edits `core/clarification/engine.ts` by string
+  replacement, and its second probe - the one that deletes the wall-clock ceiling - was authored with
+  `\n` while the file holds `\r\n`. The anchor did not match, so the probe printed
+  `SKIPPED - the anchor text is not in the file` and the harness went on to print
+  `verdict: every probe fired = false` - a **true** reading of the harness with a **wrong** implied
+  cause, since the two probes that did fire proved the code was fine and only the third was untested.
+  The fix is three lines - detect the file's EOL, and route every anchor and replacement through it -
+  after which the probe fired on its first re-run and named subtest 26, *"the wall-clock ceiling is
+  the bound an attempt cap cannot replace"*. *This is the third time this repository has paid for the
+  CRLF rule and the first time it was paid at a probe rather than at a demo or a test*, and the
+  distinction is worth keeping: a skipped probe does not fail, it **silently reduces coverage**, so
+  the harness must not treat "did not fire" as "did not matter". *A probe that cannot run is not
+  evidence, and a verdict line computed over a skipped probe is a claim about work that did not
+  happen.*
+
+- **An assertion about a message must read the message's wording from the code, not recall it.**
+  The new `createSelfPromptPort` suite asserted the decline note matched
+  `/confirmed:2|"confirmed":2/` - the colon-shaped field format a reader expects from a structured
+  logger. `consoleLogger` renders fields as `key=value` inside parentheses, so the measured line is
+  `veridian debug: self-prompt declined (path=/target attempt=1 confirmed=2)` and the assertion failed
+  against **correct product code**. The failure message printed `actual:` with the real line, which is
+  what made the diagnosis a reading rather than a guess, and the assertion was replaced by that exact
+  line. *The generalisation is not "logging tests are brittle" - it is that a test asserting a
+  message's shape is asserting a property of the formatter, so it has to quote the formatter rather
+  than an expectation of it.* The same pass produced its sibling: the port's hostile-inputs loop
+  wrote `candidates: candidates as readonly string[]` and `npx tsc --noEmit` answered `TS2352`,
+  *"Conversion of type `number[] | boolean[] | ...` to type `readonly string[]` may be a mistake"* -
+  a cast is a claim, and when the compiler disputes it the type should be declared
+  (`readonly (readonly unknown[])[]`) rather than asserted away.
 
 ## Documentation
 

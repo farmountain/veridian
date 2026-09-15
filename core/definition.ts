@@ -264,10 +264,11 @@ const emptyReport = (): ClarificationReport => ({
   records: [],
   questionsAsked: 0,
   rounds: 0,
+  selfPromptRounds: 0,
   elapsedMs: 0,
   budgetExhausted: false,
   unresolvedBlocking: 0,
-  byVia: { derived: 0, inferred: 0, defaulted: 0, answered: 0, deferred: 0 },
+  byVia: { derived: 0, inferred: 0, defaulted: 0, self_prompted: 0, answered: 0, deferred: 0 },
 });
 
 const emptyReports = (): DefinitionReports => ({

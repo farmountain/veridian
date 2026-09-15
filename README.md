@@ -269,6 +269,75 @@ repair cannot change a criterion nobody observed, so the run stops rather than i
 
 ---
 
+## Resolving ambiguity: the run asks itself before it asks you
+
+A goal, a contract and an environment document always leave gaps - a value the operator meant to fill
+in, a selector nobody spelled, a target a criterion names and the plan does not carry. Veridian does
+not guess and does not stop. Every gap goes down one ladder, in order, and stops at the first rung
+that can answer it:
+
+```
+1. DERIVE        compute it from the documents in hand.                        (free, certain)
+2. INFER         recall it from what earlier runs learned.       (blocking gaps only)
+3. DEFAULT       a declared fail-safe default. A default is usable only when it
+                 arrives with a rationale - a default without one is a guess
+                 wearing a policy's clothes.
+4. SELF-PROMPT   put the gap to the run itself, from material it already holds.
+5. ASK           put the gap to you. The only rung that interrupts.
+6. DEFER         record it as unresolved and carry on without it.
+```
+
+Rung 4 is the one the run performs on itself, and it outranks asking you. Its whole safety argument
+is in how narrow it is: a self-answer may **only** choose a candidate the contract already offered,
+and may **never** invent one. A candidate is accepted when material already in hand corroborates it -
+the registered validator names and adapter names, or the gap's own `context` - and the answer has to
+name the entry that corroborated it, because *a prompt with no grounds is a guess in a costume.* Two
+corroborated candidates are a decline and not a coin toss. A second attempt on the same gap may widen
+to a substring match, once, and the confidence it reports is the lower one that width earns.
+
+A run answering itself is held to a stricter standard than a run consulting what earlier runs learned:
+`selfPromptThreshold` is 0.8 by default, deliberately *above* `inferThreshold` at 0.7.
+
+**Only critical questions reach you.** A non-blocking gap never reaches rung 5 at all - that is
+structural and not budgeted - so it is closed by a self-answer, by a declared default, or it is
+deferred with the run continuing around it. A *blocking* gap that no earlier rung can close reaches
+you at most `maxQuestionsPerRun` times, batched into rounds of at most `maxQuestionsPerRound`.
+
+**Every loop in this protocol has a bound, and every bound is checked *before* an attempt rather than
+after one**, so the worst case is a bound that was already reached rather than one that is one over:
+
+```
+maxSelfPromptRoundsPerAmbiguity    2    one refinement is worth affording; a third
+                                        attempt is a loop wearing a budget's clothes
+maxSelfPromptRoundsPerRun         10    rung 4 cannot become a whole run's slow path
+selfPromptBudgetMs            60 000    wall-clock ceiling on rung 4 alone
+maxQuestionsPerRun                 5    hard cap on how often a run interrupts you
+maxQuestionsPerRound               3    how many of those arrive in one round
+budgetMs                     120 000    wall-clock ceiling on the whole clarification phase
+```
+
+`veridian clarify --goal my-app/goal.yaml` resolves every gap first and prints the transcript; it
+starts nothing. `veridian validate` runs the same ladder and then runs the goal.
+
+What the ladder decided is evidence, not trivia. Every run writes `clarifications.json` beside its
+other artifacts, and the same block appears in `result.json` under `clarifications`: one record per
+gap naming the rung that answered it and the rungs attempted before it, plus `byVia`, a count per
+rung, and `selfPromptRounds`, how much self-prompt work the run actually did.
+
+```json
+{ "selfPromptRounds": 2,
+  "byVia": { "derived": 4, "inferred": 0, "defaulted": 2,
+             "self_prompted": 2, "answered": 1, "deferred": 0 } }
+```
+
+That count is work *done*, never capability *present*: a run planned with no self-prompt port reports
+`0` rather than a `1` that describes a port it could have used. And when no question can be asked at
+all - headless, or CI - the run does not hang: DEFER closes the gap, the criteria that depended on it
+report `INCONCLUSIVE`, and the CLI exits 2. *A headless run returns `INCONCLUSIVE`; it does not block
+forever.* That is the anti-hang guarantee at the human boundary.
+
+---
+
 ## The command line
 
 ```bash
@@ -384,7 +453,7 @@ limits:
 
 `networkPolicy` and `filesystemWrite` are **applied, not just recorded**. Under `deny` the local-web
 adapter refuses every request that is not to the application's own origin, and each refusal is
-recorded as a crossing that fails the run with `SECURITY_VIOLATION` �?even if every criterion passed.
+recorded as a crossing that fails the run with `SECURITY_VIOLATION` - even if every criterion passed.
 `filesystemWrite` cannot be held by an adapter that runs the application as an ordinary child process,
 so it is reported `unsupported` rather than `enforced`. `environment.json` always pairs the policy with
 the enforcement actually achieved, so a declaration is never mistaken for a guarantee:
@@ -492,8 +561,8 @@ health: { timeoutMs: 30000, intervalMs: 100 }
 reset: { strategy: restart }
 ```
 
-`npm run demo:posix` drives this: four deliberate defects, thirteen criteria, and a `FAIL` �?repair �?
-`PASS` descent in five iterations (measured, verbatim: iteration 1 fails `AC-003`, `AC-006`, `AC-008`,
+`npm run demo:posix` drives this: four deliberate defects, thirteen criteria, and a `FAIL` ->
+repair -> `PASS` descent in five iterations (measured, verbatim: iteration 1 fails `AC-003`, `AC-006`, `AC-008`,
 `AC-010`, `AC-011`, `AC-012` and cannot judge `AC-007`; iteration 5 is `PASS` on all thirteen with the
 reason `13/13 mandatory criteria passed, environment valid, no safety violation, evidence complete.`).
 
@@ -523,8 +592,8 @@ health: { timeoutMs: 30000, intervalMs: 100 }
 reset: { strategy: restart }
 ```
 
-`npm run demo:os` drives this: four deliberate defects, seventeen criteria, and a `FAIL` �?repair �?
-`PASS` descent in five iterations (measured, verbatim: iteration 1 fails `AC-001`, `AC-006`, `AC-007`,
+`npm run demo:os` drives this: four deliberate defects, seventeen criteria, and a `FAIL` ->
+repair -> `PASS` descent in five iterations (measured, verbatim: iteration 1 fails `AC-001`, `AC-006`, `AC-007`,
 `AC-009`, `AC-010`, `AC-013` and `AC-014` and cannot judge `AC-012`; iteration 5 is `PASS` on all
 seventeen with the reason `17/17 mandatory criteria passed, environment valid, no safety violation,
 evidence complete.`). One of its criteria expects the world to **refuse** a command that names a path

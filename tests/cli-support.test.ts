@@ -8,6 +8,7 @@ import {
   EXIT_CODES,
   consoleLogger,
   createCliPromptPort,
+  createSelfPromptPort,
   exitCodeForVerdict,
   selectRepairGate,
   systemClock,
@@ -469,5 +470,124 @@ describe("systemClock", () => {
     assert.ok(Number.isFinite(iso), "iso() did not return a parseable instant");
     assert.ok(Math.abs(clock.now() - iso) < 1_000);
     assert.ok(Math.abs(clock.now() - Date.now()) < 1_000);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// The self-prompt port
+// ---------------------------------------------------------------------------------------------
+//
+// Rung 4 of the clarification ladder: the run answering its own gap from material it already
+// holds. The safety argument for letting a run answer itself is entirely in the narrowness of this
+// rule - it may *eliminate* candidates the contract offered, and it may never invent one - so every
+// test below is about a refusal or about the exact reason an answer was accepted.
+
+describe("createSelfPromptPort", () => {
+  const material = ["web.element", "db.count", "local-web", "sim-k8s"];
+
+  it("reports itself unavailable when it holds no material", async () => {
+    const port = createSelfPromptPort({ material: [] });
+
+    // A rule that reads nothing can answer nothing. Reporting `available: true` here would make the
+    // run's `selfPromptRounds` look like work that happened.
+    assert.equal(port.available, false);
+    assert.equal(await port.prompt(question("target", { candidates: ["db.count"] }), 1), null);
+  });
+
+  it("answers from material already in hand and cites the entry that corroborated it", async () => {
+    const port = createSelfPromptPort({ material });
+    const answer = await port.prompt(
+      question("target", { candidates: ["db.count", "db.rowCount"] }),
+      1,
+    );
+
+    assert.equal(port.available, true);
+    assert.equal(answer?.value, "db.count");
+    assert.equal(answer?.confidence, 0.95, "a value found verbatim is the strongest reading there is");
+    assert.match(String(answer?.grounds), /found in "db\.count"/);
+  });
+
+  it("refuses to choose between two corroborated candidates", async () => {
+    const lines: string[] = [];
+    const port = createSelfPromptPort({
+      material,
+      logger: consoleLogger({ level: "debug", sink: (line) => lines.push(line) }),
+    });
+
+    // Two values the run can justify is the ambiguity this rung exists to refuse. Picking between
+    // them would be the run grading its own homework to the answer it preferred, which is the one
+    // way a self-prompt could manufacture a PASS.
+    const answer = await port.prompt(question("target", { candidates: ["db.count", "web.element"] }), 1);
+
+    assert.equal(answer, null);
+    assert.equal(lines.filter((line) => line.includes("self-prompt declined")).length, 1);
+    // The wording is the port's own: `consoleLogger` renders fields as `key=value`, which is why this
+    // is asserted against the measured line rather than against a colon-shaped guess.
+    assert.match(
+      lines.join(""),
+      /self-prompt declined \(path=\/target attempt=1 confirmed=2\)/,
+      "the note names the gap, the attempt, and how many candidates it could justify",
+    );
+  });
+
+  it("declines rather than inventing a candidate the gap never offered", async () => {
+    const port = createSelfPromptPort({ material });
+
+    assert.equal(await port.prompt(question("target", { candidates: [] }), 1), null);
+    assert.equal(await port.prompt(question("target"), 1), null, "no candidates means no answer");
+
+    const answer = await port.prompt(question("target", { candidates: ["db.count"] }), 1);
+    assert.equal(answer?.value, "db.count", "the value is one of the gap's own candidates");
+  });
+
+  it("widens once on the second attempt and reports the confidence that width earns", async () => {
+    const port = createSelfPromptPort({
+      material: ["the db.count validator is registered for this family"],
+    });
+    const gap = question("target", { candidates: ["db.count", "db.value"] });
+
+    // Attempt 1 asks whether a candidate is *present*; attempt 2 asks whether it is *named by* an
+    // entry. That widening is what makes `rounds` a measurement rather than decoration.
+    assert.equal(await port.prompt(gap, 1), null);
+
+    const widened = await port.prompt(gap, 2);
+    assert.equal(widened?.value, "db.count");
+    assert.equal(widened?.confidence, 0.85, "being named is weaker evidence than being present");
+    assert.match(String(widened?.grounds), /named by/);
+  });
+
+  it("reads the gap's own context as material, keys included", async () => {
+    const port = createSelfPromptPort({ material: ["unrelated"] });
+
+    const fromValue = await port.prompt(
+      question("namespace", { candidates: ["dev", "prod"], context: { namespace: "dev" } }),
+      1,
+    );
+    assert.equal(fromValue?.value, "dev");
+
+    const fromKey = await port.prompt(
+      question("resource", { candidates: ["cpus", "memory"], context: { limits: { cpus: 1 } } }),
+      1,
+    );
+    assert.equal(fromKey?.value, "cpus", "a candidate is as likely to be a key as a value");
+  });
+
+  it("filters an empty candidate instead of treating it as corroborated", async () => {
+    const port = createSelfPromptPort({ material: [""] });
+
+    assert.equal(await port.prompt(question("target", { candidates: [""] }), 1), null);
+    assert.equal(await port.prompt(question("target", { candidates: ["", ""] }), 1), null);
+  });
+
+  it("never rejects, whatever shape the candidate list arrives in", async () => {
+    const port = createSelfPromptPort({ material });
+
+    // The engine calls this through `#safe`, but a port that rejects would be spending that catch
+    // on its own defect rather than on a reasoning failure.
+    const hostile: readonly (readonly unknown[])[] = [[null], [{}], [0], [false], [undefined]];
+    for (const candidates of hostile) {
+      const answer = await port.prompt(question("target", { candidates }), 1);
+      assert.equal(answer, null, `candidates ${JSON.stringify(candidates)} must decline, not throw`);
+    }
   });
 });

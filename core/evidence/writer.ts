@@ -106,6 +106,14 @@ export function serializeClarificationRecord(record: ClarificationRecord): Recor
       };
     case "defaulted":
       return { ...base, value: resolution.value ?? null, assumption: resolution.assumption };
+    case "self_prompted":
+      return {
+        ...base,
+        value: resolution.value ?? null,
+        confidence: resolution.confidence,
+        grounds: resolution.grounds,
+        selfPromptRounds: resolution.rounds,
+      };
     case "answered":
       return { ...base, value: resolution.value ?? null, answer: resolution.answer };
     case "deferred":
@@ -123,10 +131,12 @@ function serializeClarifications(reports: readonly ClarificationReport[]): Recor
     elapsedMs: sum((report) => report.elapsedMs),
     budgetExhausted: reports.some((report) => report.budgetExhausted),
     unresolvedBlocking: sum((report) => report.unresolvedBlocking),
+    selfPromptRounds: sum((report) => report.selfPromptRounds),
     byVia: {
       derived: sum((report) => report.byVia.derived),
       inferred: sum((report) => report.byVia.inferred),
       defaulted: sum((report) => report.byVia.defaulted),
+      self_prompted: sum((report) => report.byVia.self_prompted),
       answered: sum((report) => report.byVia.answered),
       deferred: sum((report) => report.byVia.deferred),
     },

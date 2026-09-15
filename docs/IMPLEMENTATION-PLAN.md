@@ -126,8 +126,8 @@ interface Ambiguity<T = unknown> {
 ```
 
 Every ambiguity carries the **question** it would take to resolve it. That is what makes the same
-object usable by DERIVE, by INFER, and by a human — the resolution machinery is a set of attempts
-to answer that one string.
+object usable by DERIVE, by INFER, by the run itself, and by a human — the resolution machinery is a
+set of attempts to answer that one string.
 
 ### 3.3 The ladder
 
@@ -141,17 +141,28 @@ recorded with its provenance.
         │               accepted only at confidence ≥ policy.inferThreshold (default 0.7).
         ├─ 3. DEFAULT   apply `ambiguity.defaultValue`.
         │               permitted only when the value is fail-safe (see A8/A3.4).
-        ├─ 4. ASK       put the question to a human.
+        ├─ 4. SELF-PROMPT  put the question to the run itself, from material it already holds.
+        │               accepted only at confidence ≥ policy.selfPromptThreshold (default 0.8,
+        │               deliberately ABOVE inferThreshold), and bounded three ways (§3.5).
+        ├─ 5. ASK       put the question to a human.
         │               permitted only when: blocking ∧ budget remaining ∧ batched.
-        └─ 5. DEFER     no value. The affected criterion becomes INCONCLUSIVE.
+        └─ 6. DEFER     no value. The affected criterion becomes INCONCLUSIVE.
                         The run cannot be PASS. This is the exit.
 ```
+
+**Rung 4 is the one rung that is not a straight line**, because it may put one gap to the self more
+than once — which is why it is the one rung with bounds of its own. The whole safety argument for
+letting a run answer itself is in the narrowness of the port: it may **eliminate** a candidate the
+contract already offered, and it may never **invent** one. An answer must cite the material that
+corroborated it (`grounds`), so the bundle distinguishes "the run read this off its own contract"
+from "the run guessed". A prompt with no grounds is a guess in a costume.
 
 ```ts
 type Resolution =
   | { via: "derived";  value: unknown; evidence: string }
   | { via: "inferred"; value: unknown; confidence: number; source: string }
   | { via: "defaulted"; value: unknown; assumption: string }
+  | { via: "self_prompted"; value: unknown; confidence: number; grounds: string; rounds: number }
   | { via: "answered"; value: unknown; answer: string }
   | { via: "deferred"; reason: DeferReason };
 ```
@@ -183,18 +194,26 @@ And every `blocking` ambiguity that *does* have a fail-safe default is DEFAULTed
 reaches ASK either. ASK is reserved for **semantic ambiguity with no safe value** — which in
 practice is a small, genuinely human-answerable set.
 
-### 3.5 The exit — four independent stops
+### 3.5 The exit — every loop has a bound
 
 An indefinite self-prompting loop is prevented structurally, not by convention:
 
 | Stop | Default | Effect |
 |---|---|---|
-| `maxRungsPerAmbiguity` | 3 | An ambiguity cannot be retried forever; rungs are attempted at most once each. |
+| *(structural)* | — | Rungs 1-3 and 5-6 are attempted **at most once each**, so the ladder is a straight line through six steps. Only rung 4 may repeat. |
+| *(structural)* | — | A `non_blocking` ambiguity can never reach ASK, and rung 4 may close one without spending a question. |
+| `maxSelfPromptRoundsPerAmbiguity` | 2 | How many times **one gap** is put to the self. One refinement is worth affording; a third attempt is a loop wearing a budget's clothes. |
+| `maxSelfPromptRoundsPerRun` | 10 | Hard cap on self-prompt rounds for an entire run, so rung 4 cannot become the slow path. |
+| `selfPromptBudgetMs` | 60 000 | Wall-clock ceiling on the self-prompting rung **alone** - the bound an attempt cap cannot replace, because a port that never resolves would sit inside one round forever. |
 | `maxQuestionsPerRun` | 5 | Hard cap on human interruptions for an entire run. |
 | `maxQuestionsPerRound` | 3 | Questions are batched into rounds, not asked one at a time. |
 | `budgetMs` | 120 000 | Wall-clock ceiling on the whole clarification phase. |
-| *(structural)* | — | A `non_blocking` ambiguity can never reach ASK. No budget is consumed by them. |
-| *(structural)* | — | No rung is retried. The ladder is a straight line, so it terminates in ≤ 5 steps by construction. |
+
+**Every bound is checked *before* an attempt**, so the worst case is a bound that was already
+reached rather than one that is one over. The three rung-4 bounds are not redundant: the per-gap cap
+stops a stubborn question, the per-run cap stops a contract full of gaps, and the clock stops a
+single round that never returns. Each is exercised by its own test, and each test was falsified by
+deleting its bound.
 
 Exhaustion is **not** an error to paper over. It sets `via: "deferred"`, marks the affected criteria
 `INCONCLUSIVE`, and the run terminates `ABORTED` with `insufficientInformation: true`. That is the
@@ -223,8 +242,15 @@ protocol cohesive rather than bolted on: the stages have no other way to proceed
 
 ### 3.7 Surfaces
 
-- **User prompt port** — `UserPromptPort`. Implementations: `CliPromptPort` (interactive),
-  `ScriptedPromptPort` (tests, and the deterministic answer key for repeat runs), `NullPromptPort`
+- **Self-prompt port** — `SelfPromptPort` for rung 4. Implementations: `createSelfPromptPort`
+  (the CLI's real port: a candidate is accepted only if the contract's own material, or the gap's own
+  `context`, corroborates it), `scriptedSelfPromptPort` (tests), `NullSelfPromptPort`
+  (headless/CI, and the behaviour that predates the rung - the ladder degrades to a straight line).
+  `available: false` is what the null port reports, so the run's `selfPromptRounds` stays a count of
+  work *done* rather than of capability *present*; a capability count beside a work count is how a
+  bundle comes to describe a run that did not happen.
+- **User prompt port** — `UserPromptPort`. Implementations: `createCliPromptPort` (interactive),
+  `scriptedPromptPort` (tests, and the deterministic answer key for repeat runs), `NullPromptPort`
   (headless/CI → forces DEFER rather than a hang). *A headless run returns `INCONCLUSIVE`, it does
   not block forever.* That is the anti-hang guarantee at the human boundary.
 - **Memory port** — `MemoryPort` for rung 2. `NullMemory` (no-op) and `HttpMemory`
@@ -342,7 +368,7 @@ already separates them; this is the concrete application.)
 
 | Layer | What is proven |
 |---|---|
-| `clarification` | The ladder order is respected; the classifier marks exactly the semantic cases blocking; every rung is recorded with the right `via`; **each of the four budget stops fires**; `non_blocking` never reaches ASK; exhaustion produces `deferred` and never a value. |
+| `clarification` | The ladder order is respected; the classifier marks exactly the semantic cases blocking; every rung is recorded with the right `via`; **each budget stop fires, including rung 4's three**; `non_blocking` never reaches ASK; exhaustion produces `deferred` and never a value. |
 | `run/state-machine` | Every legal transition; every illegal transition rejected; all four terminal states absorbing; `MAX_ITERATIONS` reachable and absorbing. |
 | `validation/rollup` | **The false-PASS guard, adversarially:** all-PASS + invalid env ⇒ not PASS; all-PASS + safety violation ⇒ not PASS; all-PASS + missing required evidence ⇒ not PASS; one `INCONCLUSIVE` ⇒ not PASS; optional criteria excluded from the roll-up. |
 | `validation/types` | A throwing validator classifies `VALIDATOR_ERROR`, never `TEST_FAILURE`. |

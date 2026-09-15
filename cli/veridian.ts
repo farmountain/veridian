@@ -84,6 +84,7 @@ import {
   EXIT_CODES,
   consoleLogger,
   createCliPromptPort,
+  createSelfPromptPort,
   exitCodeForVerdict,
   selectRepairGate,
   systemClock,
@@ -193,11 +194,20 @@ async function openSession(parsed: CliArguments, logger: Logger): Promise<Sessio
   // and the one that agreed with the other would be the one nobody checked.
   const user = createCliPromptPort();
 
+  // The material the run reads to answer its own gaps: the names it is already holding because it
+  // registered them. Deliberately not "everything on disk" — a self-prompt may corroborate a
+  // candidate the contract already offered, and a wider reading would be the run inventing one.
+  const selfPrompt = createSelfPromptPort({
+    material: [...registry.names(), ...registeredAdapters()],
+    logger,
+  });
+
   const memory = selectMemory(parsed, logger);
 
   const clarifier = new ClarificationEngine({
     derive: createDeriver(defaultDeriveRules(io)),
     infer: new MemoryInferrer(memory.port),
+    selfPrompt,
     user,
     clock: systemClock,
     logger,
@@ -615,12 +625,14 @@ function printReports(reports: readonly NamedReport[]): void {
       `${String(report.byVia.derived)} derived`,
       `${String(report.byVia.inferred)} inferred`,
       `${String(report.byVia.defaulted)} defaulted`,
+      `${String(report.byVia.self_prompted)} self-prompted`,
       `${String(report.byVia.answered)} answered`,
       `${String(report.byVia.deferred)} deferred`,
     ];
     write(
       `  ${name}: ${String(records.length)} gap(s) - ${parts.join(", ")}` +
-        `${report.budgetExhausted ? ", question budget exhausted" : ""}\n`,
+        `${report.budgetExhausted ? ", question budget exhausted" : ""}` +
+        `${report.selfPromptRounds > 0 ? `, ${String(report.selfPromptRounds)} self-prompt round(s)` : ""}\n`,
     );
 
     for (const record of records) {
@@ -644,6 +656,12 @@ function describeResolution(resolution: ClarificationReport["records"][number]["
       );
     case "defaulted":
       return `= ${short(resolution.value)}   (default: ${resolution.assumption})`;
+    case "self_prompted":
+      return (
+        `= ${short(resolution.value)}   (self-prompted at confidence ` +
+        `${resolution.confidence.toFixed(2)} over ${String(resolution.rounds)} round(s): ` +
+        `${resolution.grounds})`
+      );
     case "answered":
       return `= ${short(resolution.value)}   (answered "${resolution.answer}")`;
     case "deferred":

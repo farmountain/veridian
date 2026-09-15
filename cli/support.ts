@@ -16,7 +16,7 @@
 import { createInterface } from "node:readline/promises";
 import { stdin as processStdin, stdout as processStdout } from "node:process";
 
-import type { Clock, Logger, UserPromptPort } from "../core/clarification/index.ts";
+import type { Clock, Logger, SelfPromptPort, UserPromptPort } from "../core/clarification/index.ts";
 import type { RepairGate } from "../core/execution/index.ts";
 import { CommandRepairGate, ManualRepairGate, NoRepairGate } from "../core/execution/index.ts";
 import type { ProcessRunner } from "../core/process.ts";
@@ -202,6 +202,102 @@ export function createCliPromptPort(options: CliPromptPortOptions = {}): UserPro
 
 function isTty(input: NodeJS.ReadableStream): boolean {
   return (input as { isTTY?: boolean }).isTTY === true;
+}
+
+// ---------------------------------------------------------------------------------------------
+// SelfPromptPort
+// ---------------------------------------------------------------------------------------------
+
+export interface SelfPromptPortOptions {
+  /**
+   * The names the process already holds when a gap reaches this rung: the registered validators, the
+   * registered adapters, the schema ids. This is the *material* the run reads to answer itself, and
+   * it is why the port is a port rather than a fixed rule — what is in hand is the caller's business,
+   * and the caller is the only one that knows.
+   */
+  readonly material: readonly string[];
+  readonly logger?: Logger;
+}
+
+/**
+ * The run, answering its own gap from material already in hand.
+ *
+ * The ladder's rungs before this one read the *document* (`derive` re-reads the file the gap was
+ * found in) and the *memory substrate* (`infer` asks what earlier runs were taught). This rung reads
+ * neither: it reads what this process is already holding, and answers only when exactly one of the
+ * gap's own candidates is corroborated by it. That is the whole rule, and its narrowness is the
+ * safety argument — it can eliminate candidates, but it cannot invent one, so it can never resolve a
+ * gap to a value the contract did not already offer.
+ *
+ * The two attempts are two widths of one reading, not two guesses. Attempt 1 accepts a candidate
+ * that is *present* in the material (`db.count` is a registered name). Attempt 2 accepts a candidate
+ * that is *named by* it (a spelled-out sentence that quotes the candidate). Widening once is what
+ * makes `rounds` a measurement rather than decoration, and it is also where the widening stops: the
+ * engine's `maxSelfPromptRoundsPerAmbiguity` is what bounds it, and this port reports `null` past
+ * that rather than coming up with a third width.
+ *
+ * `available` is `false` when there is no material, because a rule that reads nothing can answer
+ * nothing — and an `available: true` port that always declines would make the run's `selfPromptRounds`
+ * look like work that happened.
+ */
+export function createSelfPromptPort(options: SelfPromptPortOptions): SelfPromptPort {
+  return {
+    available: options.material.length > 0,
+    prompt(ambiguity, attempt) {
+      const candidates = (ambiguity.candidates ?? []).filter(
+        (candidate) => String(candidate).length > 0,
+      );
+      if (candidates.length === 0) return Promise.resolve(null);
+
+      const inHand = [...options.material, ...flattenValues(ambiguity.context)];
+      const confirms = (candidate: unknown): string | null => {
+        const spelled = String(candidate);
+        for (const entry of inHand) {
+          if (entry === spelled) return entry;
+          if (attempt > 1 && entry.includes(spelled)) return entry;
+        }
+        return null;
+      };
+
+      const confirmed = candidates
+        .map((candidate) => ({ candidate, by: confirms(candidate) }))
+        .filter((row): row is { candidate: unknown; by: string } => row.by !== null);
+
+      // Exactly one. Two corroborated candidates is the ambiguity this rung exists to *refuse*, and
+      // picking between them would be the run grading its own homework to the pass it preferred.
+      const winner = confirmed[0];
+      if (confirmed.length !== 1 || winner === undefined) {
+        options.logger?.debug("self-prompt declined", {
+          path: ambiguity.path,
+          attempt,
+          confirmed: confirmed.length,
+        });
+        return Promise.resolve(null);
+      }
+
+      return Promise.resolve({
+        value: winner.candidate,
+        confidence: attempt > 1 ? 0.85 : 0.95,
+        grounds:
+          `"${String(winner.candidate)}" is already in hand ` +
+          `(${attempt > 1 ? "named by" : "found in"} "${winner.by}")`,
+      });
+    },
+  };
+}
+
+/**
+ * Every string a JSON-ish value carries, so "in hand" means the same thing for a list of names and
+ * for a nested document. Keys are included because a candidate is as likely to be a key as a value.
+ */
+function flattenValues(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (typeof value === "number" || typeof value === "boolean") return [String(value)];
+  if (Array.isArray(value)) return value.flatMap(flattenValues);
+  if (value !== null && typeof value === "object") {
+    return Object.entries(value).flatMap(([key, entry]) => [key, ...flattenValues(entry)]);
+  }
+  return [];
 }
 
 // ---------------------------------------------------------------------------------------------

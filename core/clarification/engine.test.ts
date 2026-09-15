@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ClarificationEngine, NullPromptPort, scriptedPromptPort } from "./engine.ts";
+import {
+  ClarificationEngine,
+  NullPromptPort,
+  NullSelfPromptPort,
+  scriptedPromptPort,
+  scriptedSelfPromptPort,
+} from "./engine.ts";
 import { createDeriver, schemaDefaultRule, type IoPort } from "./derive.ts";
 import { getPointer, joinPointer, setPointer } from "./pointer.ts";
 import { ambiguity, failSafeDefault, type Ambiguity, type Clock } from "./types.ts";
@@ -164,7 +170,7 @@ test("a non-blocking gap never reaches a human", async () => {
   );
 });
 
-test("rung 4 ASK is batched per round and answers become values", async () => {
+test("rung 5 ASK is batched per round and answers become values", async () => {
   const answers: Record<string, string> = {
     "goal:/a:missing_value": "alpha",
     "goal:/b:missing_value": "beta",
@@ -254,7 +260,10 @@ test("stop 3 - no user available defers rather than hanging", async () => {
   assert.equal(outcome.report.questionsAsked, 0);
 });
 
-test("stop 4 - the ladder is a straight line, so termination needs no budget", async () => {
+test("stop 4 - with no self-prompt port every rung is attempted once, so the ladder terminates itself", async () => {
+  // Rung 4 is the one rung that may attempt the same gap more than once, so it is the one rung that
+  // needs a budget - and its three bounds are exercised by the rung 4 suite below. Without a port the
+  // ladder is a straight line, which is what this asserts.
   let deriveCalls = 0;
   const engine = new ClarificationEngine({
     derive: {
@@ -344,4 +353,222 @@ test("setPointer appends to a missing array position deterministically", () => {
 
 test("failSafeDefault refuses an empty rationale", () => {
   assert.throws(() => failSafeDefault("x", "   "), /non-empty rationale/);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Rung 4: SELF-PROMPT. The run asks itself before it asks a person.
+// ---------------------------------------------------------------------------------------------
+
+const selfAnswer = (value: unknown, confidence: number, grounds = "corroborated by the contract") => ({
+  "goal:/a:missing_value": { value, confidence, grounds },
+});
+
+test("rung 4 fires before ASK, so a self-answerable gap never costs a question", async () => {
+  const human = scriptedPromptPort({ "goal:/a:missing_value": "from-the-human" });
+  const engine = new ClarificationEngine({
+    selfPrompt: scriptedSelfPromptPort(selfAnswer("from-the-run", 0.95)),
+    user: human,
+    clock: fixedClock(),
+  });
+
+  const outcome = await engine.resolve({}, [goalAmbiguity("/a", { blocking: true })]);
+  const resolution = outcome.report.records[0]?.resolution;
+
+  assert.equal(resolution?.via, "self_prompted");
+  assert.equal(getPointer(outcome.artifact, "/a"), "from-the-run");
+  assert.deepEqual(human.asked, [], "ASK sits below SELF-PROMPT: the human is the last resort");
+  assert.equal(outcome.report.questionsAsked, 0);
+  assert.equal(outcome.report.byVia.self_prompted, 1);
+  assert.deepEqual(outcome.report.records[0]?.rungsAttempted, ["self_prompted"]);
+  assert.equal(resolution?.via === "self_prompted" ? resolution.rounds : 0, 1);
+  assert.match(resolution?.via === "self_prompted" ? resolution.grounds : "", /corroborated/);
+});
+
+test("rung 4 is recorded where it sits in the ladder, not where it was installed", async () => {
+  const engine = new ClarificationEngine({
+    derive: { derive: () => null },
+    infer: { infer: () => Promise.resolve(null) },
+    selfPrompt: scriptedSelfPromptPort(selfAnswer("x", 0.9)),
+    user: NullPromptPort,
+    clock: fixedClock(),
+  });
+
+  const outcome = await engine.resolve({}, [goalAmbiguity("/a", { blocking: true })]);
+  assert.deepEqual(outcome.report.records[0]?.rungsAttempted, [
+    "derived",
+    "inferred",
+    "self_prompted",
+  ]);
+});
+
+test("a declared fail-safe default outranks a self-prompt, which outranks a question", async () => {
+  // The placement invariant. A self-prompt that could displace a declared fail-safe default would
+  // let a run talk itself into a value its own author argued could only make a failure louder -
+  // which is the one direction this rung must never move a verdict in.
+  const prompt = scriptedSelfPromptPort(selfAnswer("from-the-run", 0.99));
+  const human = scriptedPromptPort({ "goal:/a:missing_value": "from-the-human" });
+  const engine = new ClarificationEngine({ selfPrompt: prompt, user: human, clock: fixedClock() });
+
+  const outcome = await engine.resolve({}, [
+    goalAmbiguity("/a", {
+      blocking: true,
+      ...failSafeDefault("from-the-default", "selecting it can only make a failure louder"),
+    }),
+  ]);
+
+  assert.equal(outcome.report.records[0]?.resolution.via, "defaulted");
+  assert.deepEqual(prompt.asked, [], "SELF-PROMPT sits below DEFAULT; it must not be reached");
+  assert.deepEqual(human.asked, []);
+  assert.equal(getPointer(outcome.artifact, "/a"), "from-the-default");
+});
+
+test("rung 4 holds the run's own answer to a stricter standard than rung 2 holds the substrate's", async () => {
+  // 0.7 is exactly `inferThreshold` and below `selfPromptThreshold`. The same number that would
+  // be accepted from what earlier runs learned from a human is refused from the run's own
+  // reasoning - which is what keeps a low-confidence self-answer out of the artifact.
+  const engine = new ClarificationEngine({
+    selfPrompt: scriptedSelfPromptPort(selfAnswer("a guess", 0.7)),
+    user: NullPromptPort,
+    clock: fixedClock(),
+  });
+
+  const outcome = await engine.resolve({}, [goalAmbiguity("/a", { blocking: true })]);
+  assert.equal(outcome.report.records[0]?.resolution.via, "deferred");
+  assert.equal(outcome.report.byVia.self_prompted, 0);
+  assert.equal(outcome.report.selfPromptRounds, 2, "the rung was spent, and the count says so");
+  assert.equal(getPointer(outcome.artifact, "/a"), undefined);
+});
+
+test("rung 4 stops retrying one gap at the per-ambiguity cap and defers it", async () => {
+  const port = scriptedSelfPromptPort(selfAnswer("low", 0.1));
+  const engine = new ClarificationEngine({
+    selfPrompt: port,
+    user: NullPromptPort,
+    clock: fixedClock(),
+  });
+
+  const outcome = await engine.resolve({}, [goalAmbiguity("/a", { blocking: true })]);
+  assert.deepEqual(
+    port.asked,
+    [
+      { id: "goal:/a:missing_value", attempt: 1 },
+      { id: "goal:/a:missing_value", attempt: 2 },
+    ],
+    "attempt is 1-based, so a port can refine its answer rather than repeat it",
+  );
+  assert.equal(outcome.report.selfPromptRounds, 2);
+  assert.equal(outcome.report.records[0]?.resolution.via, "deferred");
+});
+
+test("the per-run cap bounds the rounds a contract full of gaps can spend", async () => {
+  const port = scriptedSelfPromptPort(selfAnswer("low", 0.1));
+  const engine = new ClarificationEngine({
+    selfPrompt: port,
+    user: NullPromptPort,
+    clock: fixedClock(),
+    policy: { maxSelfPromptRoundsPerRun: 3 },
+  });
+
+  const outcome = await engine.resolve({}, [
+    goalAmbiguity("/a", { blocking: true }),
+    goalAmbiguity("/b", { blocking: true }),
+    goalAmbiguity("/c", { blocking: true }),
+    goalAmbiguity("/d", { blocking: true }),
+  ]);
+
+  assert.equal(
+    outcome.report.selfPromptRounds,
+    3,
+    "four gaps at two attempts each is eight; the per-run cap is what makes it three",
+  );
+  assert.equal(port.asked.length, 3, "the counter and the port must agree about the work done");
+  assert.equal(engine.selfPromptRounds, 3);
+});
+
+test("the wall-clock ceiling is the bound an attempt cap cannot replace", async () => {
+  const port = scriptedSelfPromptPort(selfAnswer("x", 0.99));
+  const engine = new ClarificationEngine({
+    selfPrompt: port,
+    user: NullPromptPort,
+    clock: fixedClock(),
+    policy: { selfPromptBudgetMs: 0 },
+  });
+
+  const outcome = await engine.resolve({}, [goalAmbiguity("/a", { blocking: true })]);
+  assert.deepEqual(port.asked, [], "no attempt may be made once the ceiling is reached");
+  assert.equal(outcome.report.selfPromptRounds, 0);
+  assert.equal(outcome.report.byVia.self_prompted, 0);
+});
+
+test("a throwing self-prompt port degrades instead of failing the run", async () => {
+  let calls = 0;
+  const engine = new ClarificationEngine({
+    selfPrompt: {
+      available: true,
+      prompt: () => {
+        calls += 1;
+        throw new Error("reasoning exploded");
+      },
+    },
+    user: NullPromptPort,
+    clock: fixedClock(),
+  });
+
+  const outcome = await engine.resolve({}, [goalAmbiguity("/a", { blocking: true })]);
+  assert.equal(calls, 2);
+  assert.equal(outcome.report.records[0]?.resolution.via, "deferred");
+  assert.equal(outcome.report.selfPromptRounds, 2, "a thrown attempt is still an attempt spent");
+});
+
+test("NullSelfPromptPort reports itself absent rather than present-and-silent", async () => {
+  const engine = new ClarificationEngine({
+    selfPrompt: NullSelfPromptPort,
+    user: NullPromptPort,
+    clock: fixedClock(),
+  });
+
+  const outcome = await engine.resolve({}, [goalAmbiguity("/a", { blocking: true })]);
+  assert.equal(NullSelfPromptPort.available, false);
+  assert.equal(outcome.report.selfPromptRounds, 0);
+  assert.equal(outcome.report.byVia.self_prompted, 0);
+  assert.deepEqual(
+    outcome.report.records[0]?.rungsAttempted,
+    ["deferred"],
+    "an absent port means the rung is not attempted, so it is not recorded as attempted",
+  );
+});
+
+test("the report counts self-prompt work rather than self-prompt capability", async () => {
+  const port = scriptedSelfPromptPort({
+    "goal:/a:missing_value": { value: "alpha", confidence: 0.9, grounds: "scripted" },
+  });
+  const engine = new ClarificationEngine({ selfPrompt: port, user: NullPromptPort, clock: fixedClock() });
+
+  const outcome = await engine.resolve({}, [
+    goalAmbiguity("/a", { blocking: true }),
+    goalAmbiguity("/b", { blocking: true }),
+  ]);
+
+  assert.equal(outcome.report.byVia.self_prompted, 1, "only /a had an answer to give");
+  assert.equal(outcome.report.selfPromptRounds, 3, "one attempt for /a, two declined for /b");
+  assert.equal(port.asked.length, 3);
+  assert.equal(getPointer(outcome.artifact, "/a"), "alpha");
+  assert.equal(getPointer(outcome.artifact, "/b"), undefined);
+});
+
+test("rung 4 may close a non-blocking gap, where rung 2 is forbidden from spending a call", async () => {
+  // Rung 2 is blocking-gated because it costs an external call. Rung 4 costs in-process work only,
+  // and a non-blocking gap it closes is one the run would otherwise have had to defer - so the gate
+  // is deliberately absent. This records the measured behaviour rather than leaving a reader to
+  // assume the two rungs are gated alike.
+  const engine = new ClarificationEngine({
+    infer: { infer: () => Promise.resolve({ value: "inferred", confidence: 1, source: "memory" }) },
+    selfPrompt: scriptedSelfPromptPort(selfAnswer("self", 0.9)),
+    user: NullPromptPort,
+    clock: fixedClock(),
+  });
+
+  const outcome = await engine.resolve({}, [goalAmbiguity("/a", { blocking: false })]);
+  assert.equal(outcome.report.records[0]?.resolution.via, "self_prompted");
+  assert.equal(getPointer(outcome.artifact, "/a"), "self");
 });

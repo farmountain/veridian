@@ -33,12 +33,20 @@ export type {
   Logger,
   Resolution,
   Rung,
+  SelfPromptPort,
+  SelfPromptResult,
   UserPromptPort,
 } from "./types.ts";
 
 export { getPointer, hasPointer, joinPointer, parentOf, setPointer } from "./pointer.ts";
 
-export { ClarificationEngine, NullPromptPort, scriptedPromptPort } from "./engine.ts";
+export {
+  ClarificationEngine,
+  NullPromptPort,
+  NullSelfPromptPort,
+  scriptedPromptPort,
+  scriptedSelfPromptPort,
+} from "./engine.ts";
 export type { ClarificationEngineDeps } from "./engine.ts";
 
 export { createDeriver, defaultDeriveRules, filenameRule, manifestStartRule, schemaDefaultRule } from "./derive.ts";

@@ -368,7 +368,14 @@ describe("the persisted result satisfies its own contract", () => {
             blocking: false,
           },
           resolution: { via: "deferred", reason: "no_user_available" },
-          rungsAttempted: ["derived", "inferred", "defaulted", "answered", "deferred"],
+          rungsAttempted: [
+            "derived",
+            "inferred",
+            "defaulted",
+            "self_prompted",
+            "answered",
+            "deferred",
+          ],
         } satisfies ClarificationRecord,
       ],
       questionsAsked: 0,
@@ -376,7 +383,15 @@ describe("the persisted result satisfies its own contract", () => {
       elapsedMs: 12,
       budgetExhausted: false,
       unresolvedBlocking: 0,
-      byVia: { derived: 0, inferred: 0, defaulted: 0, answered: 0, deferred: 1 },
+      selfPromptRounds: 0,
+      byVia: {
+        derived: 0,
+        inferred: 0,
+        defaulted: 0,
+        self_prompted: 0,
+        answered: 0,
+        deferred: 1,
+      },
     };
 
     const schemas = await loadSchemaSet(nodeIo({ root: process.cwd() }));

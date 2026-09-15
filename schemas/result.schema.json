@@ -164,8 +164,8 @@
       }
     },
     "Rung": {
-      "enum": ["derived", "inferred", "defaulted", "answered", "deferred"],
-      "description": "How a recorded ambiguity was resolved. `deferred` is the only one that leaves the gap open."
+      "enum": ["derived", "inferred", "defaulted", "self_prompted", "answered", "deferred"],
+      "description": "How a recorded ambiguity was resolved. `deferred` is the only one that leaves the gap open; `self_prompted` is a rung the run answered itself, preferred over interrupting a person and never permitted to displace a declared fail-safe default."
     },
     "ClarificationRecord": {
       "type": "object",
@@ -188,27 +188,31 @@
         "confidence": { "type": ["number", "null"] },
         "source": { "type": ["string", "null"] },
         "assumption": { "type": ["string", "null"], "description": "Why a fail-safe default cannot make the run report PASS more readily than the truth." },
+        "grounds": { "type": ["string", "null"], "description": "What a self-prompted answer read to reach its value. Present only when via is `self_prompted`." },
+        "selfPromptRounds": { "type": ["integer", "null"], "minimum": 1, "description": "Attempts a self-prompted answer took. Present only when via is `self_prompted`." },
         "answer": { "type": ["string", "null"] },
         "reason": { "type": ["string", "null"], "description": "Why the gap was deferred. Present only when via is `deferred`." }
       }
     },
     "Clarifications": {
       "type": "object",
-      "required": ["questionsAsked", "rounds", "elapsedMs", "budgetExhausted", "unresolvedBlocking", "byVia", "records"],
+      "required": ["questionsAsked", "rounds", "elapsedMs", "budgetExhausted", "unresolvedBlocking", "selfPromptRounds", "byVia", "records"],
       "properties": {
         "questionsAsked": { "type": "integer", "minimum": 0 },
         "rounds": { "type": "integer", "minimum": 0 },
         "elapsedMs": { "type": "integer", "minimum": 0 },
         "budgetExhausted": { "type": "boolean" },
         "unresolvedBlocking": { "type": "integer", "minimum": 0 },
+        "selfPromptRounds": { "type": "integer", "minimum": 0, "description": "Self-prompt rounds the run actually spent, summed over the stages that clarified. Zero when no self-prompt port is installed, because it is a count of work done rather than a capability flag." },
         "byVia": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["derived", "inferred", "defaulted", "answered", "deferred"],
+          "required": ["derived", "inferred", "defaulted", "self_prompted", "answered", "deferred"],
           "properties": {
             "derived": { "type": "integer", "minimum": 0 },
             "inferred": { "type": "integer", "minimum": 0 },
             "defaulted": { "type": "integer", "minimum": 0 },
+            "self_prompted": { "type": "integer", "minimum": 0 },
             "answered": { "type": "integer", "minimum": 0 },
             "deferred": { "type": "integer", "minimum": 0 }
           }
