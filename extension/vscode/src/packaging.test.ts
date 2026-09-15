@@ -58,6 +58,7 @@ interface Version {
 }
 
 interface Manifest {
+  readonly icon?: string;
   readonly main?: string;
   readonly type?: string;
   readonly files?: readonly string[];
@@ -187,6 +188,24 @@ test("the packaged file list contains the entry point the manifest names", () =>
   assert.ok(
     covered,
     `main is "${manifest.main}", so the archive must include it, and \`files\` is ${JSON.stringify(manifest.files ?? [])}`,
+  );
+});
+
+test("the manifest names and allowlists the extension icon", () => {
+  assert.equal(manifest.icon, "icon.png", "the extension manifest must use icon.png as its icon");
+  assert.ok(
+    (manifest.files ?? []).includes("icon.png"),
+    "icon.png must be in the package allowlist or the installed extension will have no icon",
+  );
+});
+
+test("the extension icon is the project logo", () => {
+  const projectLogo = readFileSync(here("../../../veridian-logo.png"));
+  const extensionIcon = readFileSync(here("../icon.png"));
+  assert.deepEqual(
+    extensionIcon,
+    projectLogo,
+    "extension/vscode/icon.png and the project logo have diverged - recopy the supplied image",
   );
 });
 

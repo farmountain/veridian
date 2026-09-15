@@ -26,12 +26,17 @@ export interface Disposable {
 }
 
 /**
- * A channel the run's progress is written to.
+ * A channel the child's output is written to.
  *
  * The CLI writes every log line to **stderr on purpose** (`cli/support.ts`): the run's result is a
  * file and stdout is the summary a caller reads, so progress chatter on stdout would make the one
- * machine-readable stream machine-unreadable. The Cockpit therefore streams the child's *stderr*
- * here and reads the verdict from the bundle, never from stdout.
+ * machine-readable stream machine-unreadable. The Cockpit therefore streams the child's *stderr* for
+ * a run and reads the verdict from the bundle, never from stdout.
+ *
+ * `metrics` is the exception and the reason is the same fact read the other way: it produces no
+ * bundle and no summary, so the M1..M5 report on stdout is the whole of what it has to say, and its
+ * stdout is what arrives here. Which stream that is, is decided with the arguments
+ * (`extension/vscode/src/cli.ts` -> `streamFor`) rather than at this sink.
  */
 export interface OutputChannel {
   appendLine(line: string): void;

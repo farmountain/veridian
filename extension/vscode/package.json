@@ -1,8 +1,8 @@
 {
   "name": "veridian-cockpit",
   "displayName": "Veridian Cockpit",
-  "description": "A thin client for Veridian - run a sandbox validation, see the verdict, open the evidence. Veridian builds eleven reproducible sandbox worlds and decides whether the software works; the agent stays external.",
-  "version": "0.2.0",
+  "description": "The Veridian Cockpit - the VS Code client for Veridian. Run a sandbox validation, see the verdict, open the evidence. Veridian builds eleven reproducible sandbox worlds and decides whether the software works; the agent stays external.",
+  "version": "0.2.1",
   "type": "module",
   "license": "BSD-2-Clause",
   "repository": {
@@ -10,7 +10,7 @@
     "url": "git+https://github.com/farmountain/veridian.git"
   },
   "publisher": "farmountain",
-  "private": true,
+  "icon": "icon.png",
   "engines": {
     "vscode": "^1.100.0"
   },
@@ -27,6 +27,7 @@
   "main": "./out/host/activate.js",
   "files": [
     "out",
+    "icon.png",
     "LICENSE"
   ],
   "activationEvents": [],
@@ -99,9 +100,10 @@
     "build": "tsc -p tsconfig.build.json",
     "test": "node --test",
     "smoke:out": "node scripts/smoke-out.mjs",
-    "package": "vsce package --no-dependencies --out veridian-cockpit.vsix",
+    "package": "vsce package --no-dependencies",
     "smoke:vsix": "node scripts/smoke-vsix.mjs",
-    "gate": "npm run typecheck && npm test && npm run build && npm run smoke:out"
+    "gate": "npm run typecheck && npm test && npm run build && npm run smoke:out",
+    "prepublishOnly": "npm run gate"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",

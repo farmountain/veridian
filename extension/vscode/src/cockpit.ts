@@ -18,19 +18,57 @@
  */
 
 import type { StatusBarItem, VscodePort } from "./port.ts";
-import type { BrowserChoice, CliCommand, CliRunner, CliSettings, Invocation } from "./cli.ts";
+import type { BrowserChoice, CliCommand, CliRoute, CliRunner, CliSettings } from "./cli.ts";
 import { isAbsolutePath, planInvocation, resolveCli } from "./cli.ts";
 import type { BundlePaths, RunSummary } from "./bundle.ts";
 import { bundlePaths, describeVerdict, readLastSummary } from "./bundle.ts";
 import { join } from "node:path";
 
-/** The CLI's exit codes, named. Values are `cli/support.ts`'s; the names are the meaning. */
+/**
+ * The CLI's exit codes for a run, named. Values are `cli/support.ts`'s; the names are the meaning.
+ *
+ * These are `validate`'s codes. `metrics` reuses the same numbers for different things, which is
+ * why it has a table of its own - see `exitMeaning`.
+ */
 export const EXIT_MEANING: Readonly<Record<number, string>> = {
   0: "PASS - every mandatory criterion passed",
   1: "FAIL - the application did not meet the contract",
   2: "INCONCLUSIVE - nothing could decide it; this is not a pass",
   3: "the definition could not be loaded, so no run happened",
 };
+
+/**
+ * The same numbers, as `metrics` means them.
+ *
+ * `metrics` measures the bundles already on disk; it starts no world and judges no application, so
+ * none of the four sentences above is true of it. Read through the run's table, its `1` - a violated
+ * metric - arrived as the dialog *"FAIL - the application did not meet the contract"* for a command
+ * that never looked at an application, and its `2` - an empty history - as *"nothing could decide
+ * it"* about a command that decided precisely that there was nothing to decide. The wording below is
+ * the CLI's own (`cli/veridian.ts`'s `runMetrics`), because the sentence an operator reads should be
+ * the sentence the program printed.
+ *
+ * `3` is the top-level catch, so for this subcommand it means the command never ran - not that a
+ * definition would not load, which no definition was asked for.
+ */
+export const EXIT_MEANING_METRICS: Readonly<Record<number, string>> = {
+  0: "a clean history - nothing was violated",
+  1: "at least one metric was violated, so the history is not clean",
+  2: "INCONCLUSIVE - there is no run bundle to measure; this is not a pass",
+  3: "the command could not run, so nothing was measured",
+};
+
+/**
+ * What an exit code means **for this subcommand**.
+ *
+ * One number, two meanings, and the table is chosen by the command that produced the number rather
+ * than by the number alone. A single table would be a claim that every subcommand's `1` is the same
+ * event, which is false the day a second non-run subcommand exists.
+ */
+export function exitMeaning(command: CliCommand, code: number): string {
+  const table = command === "metrics" ? EXIT_MEANING_METRICS : EXIT_MEANING;
+  return table[code] ?? `unrecognised exit code ${String(code)}`;
+}
 
 /** Everything the Cockpit needs from outside itself, so the activation path is testable. */
 export interface CockpitDeps {
@@ -165,7 +203,12 @@ export function createCockpit(deps: CockpitDeps): Cockpit {
   const output = port.createOutputChannel("Veridian");
   const status: StatusBarItem = port.createStatusBarItem("left", 100);
 
-  /** Where the run's own logs go. Stderr only; the verdict comes from the bundle. */
+  /**
+   * Where the child's output goes - its logs for a run, its report for `metrics`.
+   *
+   * Which stream that is belongs to the invocation (`streamFor`); this is only the sink. A run's
+   * verdict still comes from the bundle and never from here.
+   */
   const log = (line: string): void => {
     output.appendLine(line);
   };
@@ -195,7 +238,7 @@ export function createCockpit(deps: CockpitDeps): Cockpit {
   function prepare(): {
     readonly root: string;
     readonly settings: CliSettings;
-    readonly base: Invocation;
+    readonly base: CliRoute;
   } | null {
     const root = port.workspaceRoot;
     if (root === null) {
@@ -223,12 +266,13 @@ export function createCockpit(deps: CockpitDeps): Cockpit {
    *
    * The dialog shown depends on the exit code, and the mapping is the point of this function: `1`
    * and `2` are *results*, so they are information; `3` and a failed spawn are *conditions*, so they
-   * are errors. See the file comment.
+   * are errors. See the file comment. The *wording* is per-command, because the same number is a
+   * different event in a different subcommand - see `exitMeaning`.
    */
   async function runCommand(
     command: CliCommand,
     settings: CliSettings,
-    base: Invocation,
+    base: CliRoute,
     extra: readonly string[],
   ): Promise<void> {
     const invocation = planInvocation(base, settings, command, extra);
@@ -255,7 +299,7 @@ export function createCockpit(deps: CockpitDeps): Cockpit {
       return;
     }
     const code = outcome.code;
-    const meaning = EXIT_MEANING[code] ?? `unrecognised exit code ${String(code)}`;
+    const meaning = exitMeaning(command, code);
     log(`exit ${String(code)}: ${meaning}`);
 
     if (code === 3) {

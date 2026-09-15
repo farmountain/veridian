@@ -11,8 +11,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { CliSettings } from "./cli.ts";
-import { cliCandidates, commandArguments, planInvocation, resolveCli } from "./cli.ts";
+import type { CliSettings, Invocation } from "./cli.ts";
+import {
+  cliCandidates,
+  commandArguments,
+  planInvocation,
+  resolveCli,
+  streamFor,
+  systemRunner,
+} from "./cli.ts";
 
 /** A POSIX-style root: `cliCandidates` joins with `/` on every platform, so this is deterministic. */
 const ROOT = "/ws";
@@ -195,4 +202,67 @@ test("the display line is the argv, so the log says what actually ran", () => {
   const planned = planInvocation(base, settings(), "init");
   assert.equal(planned.display, `${process.execPath} ${CHECKOUT} init --state-dir .veridian`);
   assert.equal(planned.display.startsWith(planned.executable), true);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Which stream is shown
+// ---------------------------------------------------------------------------------------------
+
+test("only metrics is shown on stdout, because its report is not a bundle", () => {
+  // `validate` logs to stderr and writes its verdict to a file the dashboard reads; `metrics`
+  // writes no file and updates no dashboard, so stdout is the whole of what it produces. Measured
+  // over this repository's own history before the split existed: 641,966 bytes on stdout, 0 on
+  // stderr - so the output channel showed a run's worth of header and footer and none of the
+  // measurements between them.
+  assert.equal(streamFor("metrics"), "stdout");
+  for (const command of ["init", "clarify", "validate"] as const) {
+    assert.equal(streamFor(command), "stderr", command);
+  }
+});
+
+test("the stream reaches the invocation, not only the table beside it", () => {
+  // The runner is handed the invocation and nothing else, so a decision that lived beside the
+  // invocation rather than on it would be a decision the process that has to act on it cannot read.
+  const base = resolveCli(settings(), ROOT, only(CHECKOUT));
+  assert.ok(base !== null);
+  assert.equal(planInvocation(base, settings(), "metrics").stream, "stdout");
+  assert.equal(planInvocation(base, settings({ goal: "goal.yaml" }), "validate").stream, "stderr");
+});
+
+// ---------------------------------------------------------------------------------------------
+// The real runner
+// ---------------------------------------------------------------------------------------------
+
+/** A child that says one word on each of its streams, so which one arrives is the only variable. */
+const SAYS = "process.stdout.write('out-line\\n'); process.stderr.write('err-line\\n');";
+
+function speaking(stream: "stdout" | "stderr"): Invocation {
+  return {
+    executable: process.execPath,
+    args: ["-e", SAYS],
+    cwd: process.cwd(),
+    shell: false,
+    display: "node -e <says one line on each stream>",
+    stream,
+  };
+}
+
+test("the stream an invocation names is the one that is shown", async () => {
+  const shown: string[] = [];
+  const outcome = await systemRunner().run(speaking("stdout"), (line) => shown.push(line));
+
+  assert.equal(outcome.code, 0);
+  assert.deepEqual(shown, ["out-line"]);
+  // stderr is still *recorded* whichever stream is shown: which stream an operator sees is a display
+  // decision and what the child said is a record, so they are two facts about one process.
+  assert.equal(outcome.stderr, "err-line\n");
+});
+
+test("a run's logs arrive from stderr, and its stdout is drained rather than shown", async () => {
+  const shown: string[] = [];
+  const outcome = await systemRunner().run(speaking("stderr"), (line) => shown.push(line));
+
+  assert.equal(outcome.code, 0);
+  assert.deepEqual(shown, ["err-line"]);
+  assert.equal(outcome.stderr, "err-line\n");
 });

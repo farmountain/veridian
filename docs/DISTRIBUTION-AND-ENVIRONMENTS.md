@@ -154,11 +154,11 @@ What exists instead is the nearest thing that can be run here, and the two are n
 | Gate | Command | Result |
 |------|---------|--------|
 | Typecheck | `npx tsc --noEmit` | silent (exit 0) |
-| Decisions, headless | `node --test` | 64 tests, 0 failing |
+| Decisions, headless | `node --test` | 72 tests, 0 failing |
 | Build | `npm run build` | `out/` - 6 files |
 | **Compiled artifact** | `npm run smoke:out` | 15 checks, exit 0 |
-| Package | `npm run package` | `veridian-cockpit.vsix` - 11 files, 24.39 KB |
-| **Packaged archive** | `npm run smoke:vsix` | 32 checks, exit 0 |
+| Package | `npm run package` | `veridian-cockpit-0.2.1.vsix` - 12 files, 118.19 KB |
+| **Packaged archive** | `npm run smoke:vsix` | 34 checks, exit 0 |
 | All of the above | `npm run gate` | exit 0 |
 
 The third row is the reason this phase could be built at all: the extension host is not Node's
@@ -193,7 +193,7 @@ opposite - that packaging needs `@vscode/vsce`, that the output had never been p
 machine, and that adding a package script nobody had run would be the same unverified claim this
 document refuses for a Dockerfile. That reasoning was right, and the fix was to run it rather than to
 keep declining: `@vscode/vsce` is now a dev dependency, `npm run package` produces
-`veridian-cockpit.vsix` (11 files, 24.39 KB) and `npm run smoke:vsix` reads it back as a zip - by
+`veridian-cockpit-<version>.vsix` (12 files, 118.19 KB) and `npm run smoke:vsix` reads it back as a zip - by
 hand, with `node:zlib`, because this tree has no runtime dependency and adding one to read an archive
 would be the tail wagging the dog. The archive is a **fourth** artifact that nothing else here can
 load, so the same discipline `smoke:dist` and `smoke:out` follow one runtime further out applies:
@@ -211,6 +211,31 @@ cleanly and never started - nothing errors at install time. Read out of the 1.10
 rather than recalled, fixed to `^1.100.0`, and held by `src/packaging.test.ts`, which derives the
 module format from `tsconfig.json` and the floor from the manifest and asserts the second admits the
 first.
+
+**The two extension marketplaces are the fifth distribution route, and the archive was already the
+whole of it.** A `.vsix` is what both `vsce publish` (the VS Code Marketplace) and `ovsx publish`
+(Open VSX) upload, so the third artifact *is* the distribution and neither publisher adds a
+second one to keep in step. What each publisher adds is **metadata read off the manifest it is
+given**: the display name, the description, the version, the icon, the categories and the keywords
+are all fields in `extension/vscode/package.json`, which is why that file is the single source for
+both storefronts' descriptions rather than a copy kept beside each. Two things had to change for the
+route to exist at all, and both were recorded before they were fixed rather than after:
+
+- **`"private": true` was a hard blocker.** `vsce publish` and `ovsx publish` both refuse a private
+  package, so the manifest could produce an installable archive and could never publish one. It is
+  removed, and the guard that replaced it is narrower on purpose: `prepublishOnly` runs `npm run
+gate`, so a package whose own tests are red cannot leave the machine, where `private: true` would
+  also have blocked a local `vsce package` for no reason.
+- **A version is written in two files and reconciled by nothing.** The extension's `package.json`
+  and this repository's root `package.json` carry the same figure by convention and no mechanism, so
+  the marketplace's version and the CLI's reported `veridianVersion` can drift apart silently. They
+  are both `0.2.1` as this is written, and the check is `npm run package` - the archive is named
+  `veridian-cockpit-<manifest version>.vsix` because the `package` script passes no `--out`, so a
+  filename that disagrees with the manifest cannot be produced.
+
+**Publishing is still the maintainer's step, not an agent's.** `vsce publish` and `ovsx publish`
+need a token and a claimed name, and both are the maintainer's to hold. What this repository owes is
+an archive whose manifest describes it correctly, which `npm run smoke:vsix` reads back.
 
 **What is still not reached:** no VS Code test host, and no `.vscodeignore`. The second is
 deliberate: with `files` in the manifest, `vsce` includes only what the allowlist names plus the
@@ -773,14 +798,14 @@ rather than locally, and the run id is cited below rather than the word "works".
 
 | Step | Status | Evidence |
 |------|--------|----------|
-| `tsconfig.build.json` emits `dist/` | **done** | 62 files; first line of `dist/cli/veridian.js` is `#!/usr/bin/env node` |
+| `tsconfig.build.json` emits `dist/` | **done** | 128 files; first line of `dist/cli/veridian.js` is `#!/usr/bin/env node` |
 | `.ts` import specifiers rewritten to `.js` | **done** | `dist/cli/veridian.js` holds `import { assetsRoot } from "../core/assets.js";` |
 | `schemas/` carried into `dist/` | **done** | `copy-assets: schemas/ -> dist/schemas/`; all 6 present |
 | Asset root resolved from the module | **done** | `core/assets.ts`; `tests/assets.test.ts` holds both halves |
 | `package.json` packaging | **done** | `files: ["dist"]`, `bin.veridian`, `prepublishOnly`, `prepare` |
-| Gate stays green | **done** | `1273 tests / 216 suites / 0 fail`, exit 0 |
+| Gate stays green | **done** | `2190 tests / 356 suites / 0 fail`, exit 0 |
 | Smoke test exists **and discriminates** | **done** | falsified by reverting the asset root in the built `.js`: `FAIL ... exits 2, not 3`, exit 1 |
-| `npm pack` -> clean install -> run | **done** | 65 files, 124.5 kB; `npx veridian help` exit 0; a browserless validate exit 2 with schemas resolved from `node_modules` |
+| `npm pack` -> clean install -> run | **done** | 131 files, 554.1 kB; `npx veridian help` exit 0; a browserless validate exit 2 with schemas resolved from `node_modules` |
 | `Dockerfile` + `image` CI job | **done, in CI** | This machine has no container runtime, so the verification is where the runtime is. Run 34845548864 on `41d16f8`: job `container image` succeeded - the image builds, the container runs the CLI, and a browserless validate inside it resolves the schemas the image carries. |
 | `dist` CI job (`smoke:dist` + pack/install round trip) | **done, in CI** | Same run, job `distribution`: succeeded. `npm pack` -> install into a clean directory -> run, which is the only check that reads `files` and `bin` the way a consumer does. |
 

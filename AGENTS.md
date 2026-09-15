@@ -70,10 +70,11 @@ instructions file for this workspace — do not add a second one
 > the sixth world's does, and the pair means the same inverted thing there: `data.call` reads the
 > requests the **application** put to the broker, `data.probe` the ones the **criterion** itself
 > issued, so a criterion's own request cannot be mistaken for evidence about the application.
-> `npx tsc --noEmit` is silent and `node --test` reports 2182 passing tests -
-> Veridian's own 2118 plus the 64 the VS Code Cockpit contributes, which the root runner discovers
-> because it walks the tree. Four distribution routes ship - a clone, an npm package, the Cockpit (as
-> a development install and as a `.vsix`), and a container image - and there is still **no
+> `npx tsc --noEmit` is silent and `node --test` reports 2190 passing tests -
+> Veridian's own 2118 plus the 72 the VS Code Cockpit contributes, which the root runner discovers
+> because it walks the tree. Five distribution routes ship - a clone, an npm package, the Cockpit (as
+> a development install and as a `.vsix`), the extension marketplaces that `.vsix` is published to,
+> and a container image - and there is still **no
 > build step between the source tree and the running program**: Node 22 strips types and runs `.ts`
 > straight from the source. `npm run build` exists only to produce the *compiled* copy an installed
 > package needs, because Node refuses type-stripping under `node_modules`, and the Cockpit has its own
@@ -294,9 +295,9 @@ extension/vscode/       The VS Code Cockpit - a thin client, no validation logic
                         that as an executable rule. The one directory with a build step: the
                         extension host is not Node's loader, so it compiles to `out/`, and
                         `npm run smoke:out` is what loads that artifact (no test in the tree can).
-                        `npm run package` produces `veridian-cockpit.vsix` and `npm run smoke:vsix`
-                        reads it back as a zip, because the archive is a third artifact no test in
-                        either tree can load; `src/packaging.test.ts` holds the editor floor, the
+                        `npm run package` produces `veridian-cockpit-<version>.vsix` and
+                        `npm run smoke:vsix` reads it back as a zip, because the archive is a third
+                        artifact no test in either tree can load; `src/packaging.test.ts` holds the editor floor, the
                         type floor, the allowlist and the licence copy. Read
                         `extension/vscode/README.md` for the install routes and the list of what
                         a real VS Code test host would still have to cover.
@@ -765,8 +766,8 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 2182 tests, ~7s. No directory argument.
-                           # 2182 = the root's own 2118 + the Cockpit's 64, because the runner walks
+node --test                # the whole suite. 2190 tests, ~7s. No directory argument.
+                           # 2190 = the root's own 2118 + the Cockpit's 72, because the runner walks
                            # the tree and reaches extension/vscode/src/*.test.ts. Neither figure is
                            # the whole story on its own: the root tsconfig EXCLUDES extension/**, so
                            # `npx tsc --noEmit` here does not typecheck the Cockpit and the root gate
@@ -788,22 +789,25 @@ npm ci                     # install. Dev only: typescript, @types/node, @types/
                            # by hand rather than with a zip library.
 npm run gate               # typecheck, test, build, smoke:out - in that order.
                            # npx tsc --noEmit  -> silent
-                           # node --test       -> 64 tests, 0 failing
+                           # node --test       -> 72 tests, 0 failing
                            # npm run build     -> out/, 6 files
                            # npm run smoke:out -> loads the compiled entry point, 15 checks
 npm run smoke:out          # alone: resolve the manifest's `main`, activate it twice under a
                            # recording double of `vscode` (scripts/vscode-stub.mjs), and assert the
                            # registered commands equal the six the manifest declares. Exit 1 if the
                            # compiled file the manifest names is not there.
-npm run package            # vsce package --no-dependencies --out veridian-cockpit.vsix
-                           # 11 files, 24.39 KB, at the extension root. Deliberately NOT in `gate`:
+npm run package            # vsce package --no-dependencies
+                           # The archive lands at veridian-cockpit-<version>.vsix - `vsce` takes the
+                           # name and the version out of the manifest it packages, so the filename
+                           # cannot claim a version the extension inside it does not have.
+                           # 12 files, 118.19 KB, at the extension root. Deliberately NOT in `gate`:
                            # a packaging tool's output is not part of the source tree's contract,
                            # and making the local gate depend on `vsce` would make every local run
                            # need it. CI runs it, and runs the check below against it.
 npm run smoke:vsix         # read that archive back as a zip and assert what it holds: the entry
                            # point `main` names, the manifest field-for-field, the absence of
                            # src/, tests and node_modules, the licence byte for byte, and every
-                           # compiled file identical to the build's. 32 checks. Exit 1 if the
+                           # compiled file identical to the build's. 34 checks. Exit 1 if the
                            # archive is stale, incomplete or wider than the manifest allowlists.
 ```
 
@@ -916,13 +920,16 @@ is `.mjs` for a related reason: it runs *after* `tsc` in the same npm script, so
 need compiling.
 
 **CI runs the same gates, on both platforms, and now the artifacts too.**
-[`.github/workflows/ci.yml`](./.github/workflows/ci.yml) has four jobs. `gate` runs `npm run gate` on
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml) has six jobs. `gate` runs `npm run gate` on
 `ubuntu-latest` and `windows-latest` (both resolving Node from `.nvmrc`). `demo` runs the canonical
 demo on ubuntu, asserts that `--browser none` really exits 2, and uploads `.veridian/` as an artifact.
-`distribution` runs `npm run smoke:dist` and then a full `npm pack` -> install into a clean directory
--> run round trip, because that is the only check that reads `files` and `bin` the way a consumer
-does. `container image` builds the Dockerfile and requires the container to run the CLI **and** to
-resolve its own schemas from a browserless run.
+`simulated worlds` runs the seven browserless demos and names the world that regressed, because
+before that job existed no CI ran any of them. `distribution` runs `npm run smoke:dist` and then a
+full `npm pack` -> install into a clean directory -> run round trip, because that is the only check
+that reads `files` and `bin` the way a consumer does. `container image` builds the Dockerfile and
+requires the container to run the CLI **and** to resolve its own schemas from a browserless run, and
+`VS Code Cockpit` runs the extension's own gate and reads the packaged `.vsix` back - the root gate
+neither typechecks nor tests that tree, because the root tsconfig excludes `extension/**`.
 
 **Both of those last two jobs have now run, and that is why they can be cited.** They were added and
 pushed in one commit, which means they existed for a short window as exactly the thing this file
@@ -1036,11 +1043,11 @@ What the phase produced, all measured on this machine:
 
 ```
 npx tsc --noEmit    silent (exit 0)
-node --test         64 tests, 0 failing
+node --test         72 tests, 0 failing
 npm run build       out/, 6 files
 npm run smoke:out   15 checks, exit 0
-npm run package     veridian-cockpit.vsix, 11 files, 24.39 KB
-npm run smoke:vsix  32 checks, exit 0
+npm run package     veridian-cockpit-0.2.1.vsix, 12 files, 118.19 KB
+npm run smoke:vsix  34 checks, exit 0
 npm run gate        exit 0
 ```
 
@@ -1057,14 +1064,16 @@ npm run gate        exit 0
   a third artifact that no test in either tree can load. The list of what only a real VS Code test
   host could exercise is written out in [`extension/vscode/README.md`](./extension/vscode/README.md)
   rather than left implied.
-- `src/packaging.test.ts` holds four facts that are each a way the extension ships broken: that the
+- `src/packaging.test.ts` holds six facts that are each a way the extension ships broken: that the
   editor floor admits the module format the build emits, that `@types/vscode` is not ahead of that
-  floor, that the manifest's `files` allowlist covers the entry point the manifest names, and that
-  `extension/vscode/LICENSE` is still the repository's licence byte for byte. It reads the floor,
-  the `module` setting and the allowlist out of the files rather than restating them.
-- `extension/vscode/out/` and `extension/vscode/veridian-cockpit.vsix` are generated, never edited,
-  never committed, and ignored by `.gitignore` for the same reason `dist/` is: a generated tree that
-  is not ignored is one `git add .` away from being committed. The archive rule is `*.vsix` rather
+  floor, that the manifest's `files` allowlist covers the entry point the manifest names, that
+  `extension/vscode/LICENSE` is still the repository's licence byte for byte, that the manifest names
+  and allowlists the extension icon, and that the icon is the project's own logo byte for byte. It
+  reads the floor, the `module` setting and the allowlist out of the files rather than restating them.
+- `extension/vscode/out/` and `extension/vscode/veridian-cockpit-<version>.vsix` are generated,
+  never edited, never committed, and ignored by `.gitignore` for the same reason `dist/` is: a
+  generated tree that is not ignored is one `git add .` away from being committed. The archive rule
+  is `*.vsix` rather
   than one filename, so a second target added to the `package` script cannot arrive unignored.
 
 Consequence for anyone touching the CLI: **the source is still the interface.** Keep `cli/veridian.ts`
@@ -1764,7 +1773,7 @@ port had none, which is why the defect reached a demo run.
   register.** `README.md` said a step is "one of seven kinds" while `core/acceptance/steps.ts` holds
   **eleven** in `STEP_KINDS` - a figure that had drifted through four new worlds without anything
   reading it. The same pass found `AGENTS.md` quoting `1273` tests and `1213` of the tree's own, where
-  the measured run was `1456` and `1396` - and the count stands at `2182` and `2118` as this is
+  the measured run was `1456` and `1396` - and the count stands at `2190` and `2118` as this is
   written, which is the rule demonstrating itself. *Both are the same defect as a roster printed in a
   document: a number is a claim about the code, and the cheapest way to hold it is to read the code -
   the difference is that a number cannot be pinned by a test the way a name can, so it has to be
@@ -2098,6 +2107,7 @@ Add a one-line index entry here for each new doc instead of duplicating its cont
 | [`.github/instructions/tests.instructions.md`](./.github/instructions/tests.instructions.md) | Auto-attaches to test files via `applyTo`. |
 | [`.github/instructions/typescript.instructions.md`](./.github/instructions/typescript.instructions.md) | Auto-attaches to every `*.ts` file via `applyTo`. |
 | [`.github/agents/verifier.agent.md`](./.github/agents/verifier.agent.md) | Delegated gate runs. Read-only by design. |
+| [`.github/agents/cockpit-operator.agent.md`](./.github/agents/cockpit-operator.agent.md) | Driving or reading a Veridian run through the Cockpit or the CLI. Read-only by design. |
 | [`.github/prompts/new-module.prompt.md`](./.github/prompts/new-module.prompt.md) | `/` → **Add a Module**. |
 | [`.github/hooks/format.json`](./.github/hooks/format.json) | `PostToolUse` on every file write. |
 | [`.github/hooks/format.mjs`](./.github/hooks/format.mjs) | The hook's implementation. Never installs anything, never exits non-zero. |

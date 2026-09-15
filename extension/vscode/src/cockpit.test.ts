@@ -325,6 +325,31 @@ test("an unrecognised exit code is reported as unrecognised rather than as succe
   assert.match(h.port.information[0] ?? "", /unrecognised exit code 42/);
 });
 
+test("metrics reports its own exit codes, because it judges no application", async () => {
+  const h = activated();
+  h.setOutcome({ code: 1, signal: null, stderr: "" });
+  await h.port.invoke("veridian.metrics");
+
+  const said = [...h.port.lines, ...h.port.information].join("\n");
+  assert.match(said, /at least one metric was violated/);
+  // Read through the run's table, this same `1` arrives as the dialog "FAIL - the application did not
+  // meet the contract" - about a command that started no world and looked at no application.
+  assert.doesNotMatch(said, /did not meet the contract/);
+  assert.equal(h.port.errors.length, 0);
+});
+
+test("an empty history is information for metrics, and says what was missing", async () => {
+  const h = activated();
+  h.setOutcome({ code: 2, signal: null, stderr: "" });
+  await h.port.invoke("veridian.metrics");
+
+  // `2` is still not a pass and is still not an error; what changed is that the sentence is now about
+  // the thing this subcommand actually found.
+  assert.equal(h.port.errors.length, 0);
+  assert.match(h.port.lines.join("\n"), /no run bundle to measure/);
+  assert.doesNotMatch(h.port.lines.join("\n"), /nothing could decide it/);
+});
+
 // ---------------------------------------------------------------------------------------------
 // The dashboard
 // ---------------------------------------------------------------------------------------------

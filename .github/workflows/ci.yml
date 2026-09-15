@@ -6,10 +6,13 @@
 # emits dist/ for the npm package and for the container image, because Node 22
 # refuses to strip types under node_modules.
 #
-# Five jobs, because they answer different questions:
+# Six jobs, because they answer different questions:
 #   gate   - does the source still hold? Runs on both platforms that matter.
 #   demo   - does the product still do the thing it exists to do? Needs a
 #            browser, so it is separate and does not slow the gate down.
+#   worlds - do the seven browserless worlds still demo green? None of them
+#            needs Playwright, and before this job existed no CI ran any of
+#            them: "passes on a developer's machine" is a claim about a machine.
 #   dist   - does the artifact we would publish actually work? Compiled
 #            JavaScript is touched by no unit test, and npm reads `files` and
 #            `bin` in ways the source tree never exercises.
@@ -272,7 +275,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: veridian-cockpit-vsix
-          path: extension/vscode/veridian-cockpit.vsix
+          # A glob, because `vsce` names the archive `<name>-<version>.vsix` out of the manifest it
+          # packages - so a version bump moves the path, and a literal one here would upload
+          # nothing on every release after the next.
+          path: extension/vscode/*.vsix
           # A step whose name states an outcome must fail when that outcome does
           # not happen. The default is `warn`, and this repository has already
           # carried a green run whose artifact step uploaded nothing.

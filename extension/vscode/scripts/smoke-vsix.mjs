@@ -106,23 +106,26 @@ function entriesOf(bytes) {
 }
 
 /**
- * The archive the `package` script writes, read out of that script rather than repeated here.
+ * The archive the `package` script writes, derived rather than repeated here.
  *
  * `AGENTS.md`: *"a requirement that names a place must be resolved as a pointer, not read as a
  * literal key."* A copy of the name would agree with the script on the day it was written and be
  * free to disagree afterwards, and the symptom would be this check reading an archive nobody
  * produces while the real one went unexamined.
+ *
+ * When the script names no `--out`, `vsce` writes `<name>-<version>.vsix`, taking both out of the
+ * manifest it is packaging - so the version in the filename is the version of the extension inside
+ * it, and the two cannot disagree. The fallback is not a convenience: it is what puts the version
+ * in the name at all.
  */
-function archiveNameOf(packageScript) {
+function archiveNameOf(packageScript, manifest) {
   const named = /--out\s+(\S+)/u.exec(packageScript ?? "");
-  if (named === null || named[1] === undefined) {
-    throw new Error('the "package" script names no `--out`, so there is no archive for this check to read');
-  }
-  return named[1];
+  if (named?.[1] !== undefined) return named[1];
+  return `${String(manifest.name)}-${String(manifest.version)}.vsix`;
 }
 
 const manifest = JSON.parse(await readFile(join(PACKAGE_ROOT, "package.json"), "utf8"));
-const archiveName = archiveNameOf(manifest.scripts?.package);
+const archiveName = archiveNameOf(manifest.scripts?.package, manifest);
 const archivePath = join(PACKAGE_ROOT, archiveName);
 
 check(existsSync(archivePath), `the archive exists (${archiveName})`);
@@ -216,6 +219,13 @@ check(installed.length === 0, "no installed dependency travelled with the archiv
 for (const name of installed) console.log(`     ${name}`);
 
 check(find("extension/readme.md") !== null, "the archive ships a readme");
+
+const icon = find("extension/icon.png");
+check(icon !== null, "the archive ships the extension icon");
+if (icon !== null) {
+  const projectLogo = await readFile(join(PACKAGE_ROOT, "..", "..", "veridian-logo.png"));
+  check(icon.data.equals(projectLogo), "the archive icon is byte-identical to the project logo");
+}
 
 // The licence is looked up the way `vsce` looks for it - `/^extension\/licen[cs]e(\.(md|txt))?$/i` -
 // rather than by the name the source file has, because `vsce` *renames* it: a licence file with no

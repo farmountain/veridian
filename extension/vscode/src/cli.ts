@@ -56,6 +56,9 @@ export type CliCommand = "init" | "clarify" | "validate" | "metrics";
 /** The browser choices the CLI accepts, spelled exactly as its own flag spells them. */
 export type BrowserChoice = "auto" | "playwright" | "none";
 
+/** Which of the child's two streams carries what the operator asked to see. See `streamFor`. */
+export type CliStream = "stdout" | "stderr";
+
 /** What the operator configured, after narrowing from `unknown`. */
 export interface CliSettings {
   readonly cliPath: string | null;
@@ -64,14 +67,27 @@ export interface CliSettings {
   readonly browser: BrowserChoice;
 }
 
-/** One process to run. `shell` is set only where the platform forces it - see `resolveCli`. */
-export interface Invocation {
+/**
+ * A program that can run the CLI, before a subcommand has been chosen.
+ *
+ * `resolveCli` returns one of these rather than an `Invocation`, because which of the child's two
+ * streams is *shown* is a property of the subcommand and not of the route - see `streamFor`. A route
+ * carrying a stream would have to carry a default, and a default that is always overwritten is a
+ * field nobody reads: it typechecks, it looks like a decision, and it is never the value in force.
+ */
+export interface CliRoute {
   readonly executable: string;
   readonly args: readonly string[];
   readonly cwd: string;
+  /** Set only where the platform forces a shell - see `resolveCli`. */
   readonly shell: boolean;
   /** A single line for the log. Never used to decide anything. */
   readonly display: string;
+}
+
+/** One process to run: a route, a subcommand's arguments, and the stream it reports on. */
+export interface Invocation extends CliRoute {
+  readonly stream: CliStream;
 }
 
 /** What a finished process produced. */
@@ -113,7 +129,7 @@ function isScript(path: string): boolean {
  * and the branch that runs Veridian from source must use the *same* interpreter - the one `.nvmrc`
  * and `engines.node` were written for - rather than whatever `node` happens to be first on `PATH`.
  */
-function scriptInvocation(script: string, args: readonly string[], cwd: string): Invocation {
+function scriptInvocation(script: string, args: readonly string[], cwd: string): CliRoute {
   return {
     executable: process.execPath,
     args: [script, ...args],
@@ -148,7 +164,7 @@ export function resolveCli(
   settings: CliSettings,
   root: string,
   existing: (path: string) => boolean,
-): Invocation | null {
+): CliRoute | null {
   const configured = settings.cliPath;
   if (configured !== null && configured.trim() !== "") {
     const path = resolveAgainst(root, configured.trim());
@@ -174,7 +190,7 @@ export function resolveCli(
   };
 }
 
-function directInvocation(executable: string, args: readonly string[], cwd: string): Invocation {
+function directInvocation(executable: string, args: readonly string[], cwd: string): CliRoute {
   return { executable, args, cwd, shell: false, display: `${executable} ${args.join(" ")}` };
 }
 
@@ -208,6 +224,27 @@ export function commandArguments(
 }
 
 /**
+ * Which stream the subcommand's report arrives on.
+ *
+ * `init`, `clarify` and `validate` log to **stderr on purpose** (`cli/support.ts`): the run's result
+ * is a file and stdout is the summary a caller reads, so showing stdout would render the same
+ * progress twice. `metrics` is the one subcommand with neither a file nor a dashboard - it starts
+ * nothing, writes no bundle and updates no status bar - so the M1..M5 report on stdout *is* the
+ * whole product, and it is the one command that must be shown on stdout rather than on stderr.
+ *
+ * Measured before this existed: `metrics` over 104 bundles wrote **641,966 bytes to stdout and 0
+ * bytes to stderr**, so the Cockpit's output channel showed the `> ...` header and the exit line and
+ * nothing between them - a command that had measured the whole history, reporting nothing.
+ *
+ * Decided here, beside the arguments, for the reason `commandArguments` passes `--state-dir`
+ * unconditionally: the invocation is the only thing the runner sees, and a runner that worked out
+ * which subcommand this was would be a second place the command name is parsed.
+ */
+export function streamFor(command: CliCommand): CliStream {
+  return command === "metrics" ? "stdout" : "stderr";
+}
+
+/**
  * The whole invocation for a subcommand, given where the CLI was found.
  *
  * Nothing is filtered out of `base.args`, and an earlier version of this function did filter - it
@@ -220,7 +257,7 @@ export function commandArguments(
  * something else.*
  */
 export function planInvocation(
-  base: Invocation,
+  base: CliRoute,
   settings: CliSettings,
   command: CliCommand,
   extra: readonly string[] = [],
@@ -230,6 +267,7 @@ export function planInvocation(
     ...base,
     args: [...base.args, ...args],
     display: `${base.executable} ${[...base.args, ...args].join(" ")}`,
+    stream: streamFor(command),
   };
 }
 
@@ -238,12 +276,16 @@ export function planInvocation(
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Run the CLI and stream its stderr.
+ * Run the CLI and stream the stream the invocation names.
  *
- * Only stderr, and that is not an oversight. `cli/support.ts` sends every log line there
- * deliberately - the run's result is a file and stdout is the summary a caller reads - so streaming
- * stdout would render the same progress twice and put the one machine-readable stream in an output
- * channel no machine reads. The Cockpit takes its verdict from the bundle, never from the console.
+ * Which stream is shown is read off the invocation rather than fixed here, because it is a fact
+ * about the subcommand: `streamFor` carries the reasoning. Both streams are still *consumed* either
+ * way - a child whose pipe buffer fills blocks forever, so the stream that is not shown is drained
+ * and discarded rather than left unread.
+ *
+ * `stderr` is accumulated into the outcome whichever stream is shown. Which stream an operator sees
+ * is a display decision; what the child said is a record, and the two are different facts about one
+ * process.
  */
 export function systemRunner(): CliRunner {
   return {
@@ -259,7 +301,6 @@ export function systemRunner(): CliRunner {
         let carry = "";
 
         const consume = (chunk: string): void => {
-          stderr += chunk;
           const lines = `${carry}${chunk}`.split(/\r?\n/);
           carry = lines.pop() ?? "";
           for (const line of lines) {
@@ -269,14 +310,15 @@ export function systemRunner(): CliRunner {
 
         child.stderr.setEncoding("utf8");
         child.stderr.on("data", (chunk: string) => {
-          consume(chunk);
+          stderr += chunk;
+          if (invocation.stream === "stderr") consume(chunk);
         });
 
-        // stdout is drained and discarded rather than left unread: a child whose stdout buffer fills
+        // stdout is not left unread when it is the hidden stream: a child whose stdout buffer fills
         // blocks forever, and a hung run with no output is worse than output nobody wanted.
         child.stdout.setEncoding("utf8");
-        child.stdout.on("data", () => {
-          /* deliberately unread - see the doc comment */
+        child.stdout.on("data", (chunk: string) => {
+          if (invocation.stream === "stdout") consume(chunk);
         });
 
         child.on("error", (error) => {

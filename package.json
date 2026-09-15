@@ -1,7 +1,7 @@
 {
   "name": "veridian",
-  "version": "0.2.0",
-  "description": "Veridian - the sandbox testing and validation layer for AI coding agents. Eleven reproducible sandbox worlds, explicit acceptance criteria, machine-verifiable evidence; the agents remain external.",
+  "version": "0.2.1",
+  "description": "Veridian - the sandbox testing and validation layer for AI coding agents. Eleven reproducible sandbox worlds, explicit acceptance criteria, and machine-verifiable evidence; the agents stay external. Ships the `veridian` CLI and the VS Code Cockpit.",
   "type": "module",
   "license": "BSD-2-Clause",
   "repository": {
