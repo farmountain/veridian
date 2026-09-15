@@ -1,6 +1,6 @@
 # The world this application is judged in: a *simulated* Windows system.
 #
-# `adapter: sim-os` is the fifth adapter and the second simulated one. There is no VM, no image, no
+# `adapter: sim-os` is the fifth adapter and the third simulated one. There is no VM, no image, no
 # hypervisor, no boot and no container runtime anywhere in this run. The world is a directory on this
 # machine, a table of accounts, files, access control entries, store values and services that the
 # adapter maintains, and a small register of programs it answers in process - with one exception that is

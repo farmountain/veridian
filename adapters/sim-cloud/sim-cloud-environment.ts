@@ -1,5 +1,5 @@
 /**
- * The sixth world: a provider account. And the third one that is explicitly *simulated*.
+ * The sixth world: a provider account. And the fourth one that is explicitly *simulated*.
  *
  * ## What the subject is
  *

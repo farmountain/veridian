@@ -21,7 +21,7 @@ the MVP, this one covers what comes after it.
 | 3 | VS Code extension | **Built** (Phase B) | `PLAN.md` §30, this doc, Phase B |
 | 4 | Database environment | Roadmap "Later" | `PLAN.md` §38, this doc, Phase C |
 | 5 | Linux / Kali / Windows / macOS | Roadmap Tier 2-3 | Linux/Kali built as a **simulated** world, `sim-posix` (Phase C3); Windows built as `sim-os` (Phase C4), §7 |
-| 6 | Kubernetes, cloud, data platform | Roadmap Tier 4-5 | Kubernetes built as a **simulated** world, `sim-k8s`; cloud and data planned (§5) |
+| 6 | Kubernetes, cloud, data platform | Roadmap Tier 4-5 | Kubernetes built as a **simulated** world, `sim-k8s`; cloud built as `sim-cloud` (Phase C5); data planned (§5) |
 
 Nothing in this list is forbidden. `PLAN.md` §3 forbids Veridian becoming a *Kubernetes management
 platform*, a *cloud deployment platform*, a *CI/CD platform*; it explicitly permits integrating with
@@ -308,6 +308,45 @@ correctly, and a model that is almost correct produces a confident wrong answer.
 **Acceptance:** four deliberate defects, seventeen criteria, the same `FAIL` -> repair -> `PASS`
 descent, and a bundle that names the substitute. Measured in §7.
 
+### Phase C5 - the sixth adapter: `sim-cloud`, the provider-account world
+
+Phase C4 proved the family seam admits a second operating system. This one attacks a different axis:
+its subject is not a container for files at all but a **remote account**. A provider account is the
+question furthest from "is there a directory", so if the adapter seam holds here it holds anywhere.
+
+The world is a real HTTP server on loopback that speaks a provider's own routes and holds buckets,
+objects, queues, secrets and principals. Every permission question is decided by the account's own
+evaluator - deny beats allow, an explicit deny beats everything - and each decision is recorded
+*alongside the statement that fired*, so `cloud.policy` judges what was granted and `cloud.access`
+judges what one named account may actually do, from the world's own record rather than from a
+re-derivation of the ordering rules. That split is the same one `sim-os` makes between `acl` and
+`access`, arrived at independently: three facts with three different repairs.
+
+- `core/` gains `core/environment/cloud-observation.ts` and one more plan field (`CloudPlan`) - and
+  that file carries more than a vocabulary, because the sixth world is the first whose *actions*, not
+  just its readings, need a shared grammar: the action vocabulary, the reference grammar
+  (`bucket/...`, `object/<bucket>/<key>`, `queue/...`, `secret/...`, `principal/...`, and
+  `principal:action:resource` for an access question) and the refusal vocabulary all live there, so the
+  substitute and the validators agree by construction.
+- A sixth validator family - `cloud.bucket`, `cloud.object`, `cloud.tag`, `cloud.policy`,
+  `cloud.access`, `cloud.queue`, `cloud.secret`, `cloud.call`, `cloud.setting`, `cloud.probe`,
+  `cloud.meter` - needs no change to `core/validation` or `core/execution`. That is the fourth
+  demonstration, and the family prints what an *operator* reads rather than raw JSON: a bucket, an
+  object, a policy and a decision each render to a spelling a failure report can quote.
+- The run is judged **as `svc-cart`**, and the loader refuses `root`, `account-root`, `owner`,
+  `administrator` and `admin` by name - every policy in an account yields to an account root, so a
+  hardening contract judged as one would report a pass for permissions no ordinary workload gets.
+  `svc-reader` is a second identity and a different question: an account the *program itself* creates,
+  which criteria ask about without the run having to run as it.
+- **This is the only world that performs a `call` step**, the sixth step kind and the only one that
+  puts the criterion's own request to the world rather than reading a request the application made. The
+  other four adapters refuse it by name, and the cloud plan - and only the cloud plan - admits it, so a
+  contract whose meaning depends on asking the world directly cannot drift onto a world where that
+  question has no answer.
+
+**Acceptance:** four deliberate defects, twenty-seven criteria, the same `FAIL` -> repair -> `PASS`
+descent, and a bundle whose reading names each surface standing in for something. Measured in §7.
+
 ### Phase D - the rest of Tier 1
 
 `local-api` and `local-process` (`PLAN.md` §36 Tier 1). Both need only a child process and an HTTP
@@ -368,7 +407,7 @@ run ids rather than adjectives.
 | `local-db` | real SQLite via `node:sqlite`; the app's own schema and seed code runs | - | **built** |
 | `local-api` / `local-process` | real child process, real HTTP | - | planned (Phase D) |
 | `sim-k8s` | real app process against a real HTTP control plane | scheduler, kubelet, etcd, CNI, admission | **built** |
-| `sim-cloud` | real app process against real HTTP endpoints | the AWS / Azure / GCP services | planned |
+| `sim-cloud` | real app process against real HTTP endpoints | the AWS / Azure / GCP services | **built**, see §7 |
 | `sim-container` | real app process | the runtime, the image store, cgroup semantics | planned |
 | `sim-posix` (linux, kali) | real process runner + real sandboxed filesystem | the kernel, the distro, the package manager; Kali's attack network | **built** (Linux/Debian; Kali is the same world with a different declared distribution) |
 | `sim-os` (windows, macos) | real process runner | the machine accounts, the ACL engine, the registry / plist store, services and ports | **built** (Windows, judged as `svc-audit`; macOS is the same world with a different declared family) |
@@ -384,7 +423,7 @@ statement - each names the world it blocks, and the simulated row that answers i
 | a real Linux / Windows / macOS / Kali guest | No VM substrate on this machine. Booting a guest nobody can boot is the unverifiable claim this document refuses. | `sim-posix`, `sim-os` - both **built**, see §7 |
 | a real Kubernetes cluster | Same, plus no `kubectl`. | `sim-k8s` - **built**, see §7 |
 | a real container runtime as a *world* | No runtime here. Phase A2's Dockerfile is a *distribution* route and needs none; an adapter that starts and resets containers does. | `sim-container` |
-| a real cloud account | Not a runtime question: an unattended run against a metered, credentialed account is a cost model rather than a test. | `sim-cloud` |
+| a real cloud account | Not a runtime question: an unattended run against a metered, credentialed account is a cost model rather than a test. | `sim-cloud` - **built**, see §7 |
 
 **This table used to be an inventory of what is not installed here, and that was the wrong question.**
 It listed "no container runtime", "no `qemu`/`vagrant`/Hyper-V", "no macOS guest licence", "no
@@ -435,7 +474,7 @@ rather than locally, and the run id is cited below rather than the word "works".
 | `schemas/` carried into `dist/` | **done** | `copy-assets: schemas/ -> dist/schemas/`; all 6 present |
 | Asset root resolved from the module | **done** | `core/assets.ts`; `tests/assets.test.ts` holds both halves |
 | `package.json` packaging | **done** | `files: ["dist"]`, `bin.veridian`, `prepublishOnly`, `prepare` |
-| Gate stays green | **done** | `495 tests / 94 suites / 0 fail`, exit 0 |
+| Gate stays green | **done** | `1273 tests / 216 suites / 0 fail`, exit 0 |
 | Smoke test exists **and discriminates** | **done** | falsified by reverting the asset root in the built `.js`: `FAIL ... exits 2, not 3`, exit 1 |
 | `npm pack` -> clean install -> run | **done** | 65 files, 124.5 kB; `npx veridian help` exit 0; a browserless validate exit 2 with schemas resolved from `node_modules` |
 | `Dockerfile` + `image` CI job | **done, in CI** | This machine has no container runtime, so the verification is where the runtime is. Run 34845548864 on `41d16f8`: job `container image` succeeded - the image builds, the container runs the CLI, and a browserless validate inside it resolves the schemas the image carries. |
@@ -724,4 +763,71 @@ three - and a `chown` for a system that expresses the same intent as an ACL.
    each family's printed roster against the constant the code exports - not by reading the README,
    which looked complete. *A document that prints a vocabulary must print every member in full, and the
    cheapest way to hold it is a test that reads both.*
+
+### Phase C5: the provider-account world, and what the sixth adapter proved
+
+| Step | Status | Evidence |
+|------|--------|----------|
+| Substitute account | built | `adapters/sim-cloud/cloud-port.ts` is a real HTTP server on loopback speaking a provider's own routes and holding buckets, objects (with versions, tags, checksums and encryption), queues, secrets and principals; it decides every permission question with the account's own evaluator - deny beats allow, an explicit deny beats everything - and records each decision beside the statement that fired. `cloud-port.test.ts` is 103 tests over it, falsified rather than trusted. |
+| Adapter lifecycle | built | `adapters/sim-cloud/sim-cloud-environment.ts` implements all ten `EnvironmentAdapter` methods and declares the five `CLOUD_ENV` names the application reads. **No cloud account, no session, no provider API and no outbound socket**: the server is on loopback, and the application's only route out of the process is the one it is given. `reset` rebuilds the account, including its meter. |
+| Observation vocabulary | built | `core/environment/cloud-observation.ts`, so no validator imports an adapter. The sixth family needed **no core change** beyond this and the name registration - the fourth sample of that claim. It is also the first observation vocabulary that carries an *action* grammar, because a `call` step needs one the substitute and the validators share. |
+| Validator family | built | `validators/cloud/` - eleven validators, 59 tests, including a contract-coverage case that reads `examples/sim-cloud/acceptance.yaml` and asserts every registered name is reachable from the demo. Falsified by replacing a comparison rather than trusted. |
+| Judged as a named account | built | The loader refuses `root`, `account-root`, `owner`, `administrator` and `admin`. Every policy in an account yields to an account root, so a hardening contract judged as one would report a pass for permissions no ordinary workload gets. |
+| The `call` step | built | The sixth step kind, and the only one that puts the criterion's *own* request to the world rather than reading a request the application made - so a criterion can ask the account a question the application never asked. The other four adapters refuse it by name; the cloud plan, and only the cloud plan, admits it. |
+| Demo | built | `examples/sim-cloud/` - four deliberate defects, twenty-seven criteria, `npm run demo:cloud`, exit 0. Iteration 1 `FAIL`s seven criteria (`AC-003`, `AC-005`, `AC-009`, `AC-011`, `AC-013`, `AC-026`, `AC-027`); iterations 2-4 remove six, four and two; iteration 5 is `PASS` on all twenty-seven with `27/27 mandatory criteria passed, environment valid, no safety violation, evidence complete.` |
+| Regression tests | built | `tests/sim-cloud-demo.test.ts` (19), `tests/cloud-observation.test.ts` (32), `validators/cloud/cloud-validators.test.ts` (59), `adapters/sim-cloud/cloud-port.test.ts` (103), plus a `cloud` case in `tests/environment-gaps.test.ts` and the `cloud` roster entry in `tests/readme-rosters.test.ts`. |
+
+**What the sixth world settled.** `core/` changed by an observation vocabulary and a name, for the
+fourth time - and this time the vocabulary had to carry more than names, because the world has verbs.
+The stronger claim is the one this world was built to make: the subject can be an *account* rather
+than a filesystem, so the adapter seam does not depend on there being a tree underneath it. And the
+sixth world is the first that can be *asked* rather than only *watched*: `cloud.call` makes its own
+request, which is what makes a criterion about a permission decision a criterion about the decision
+rather than about whatever the application happened to attempt.
+
+**Four defects this world's build produced.**
+
+1. **A sub-resource is a query parameter, and a router that matches only the path cannot tell two
+   requests apart.** The world's defect D2 is one word: a tagging request aimed at an object instead of
+   at the bucket that owns it. The route table keyed on the path alone, so
+   `.../objects/cart.js?tagging` and `.../buckets/cart-assets?tagging` both landed on the same handler
+   and the criterion read `PASS` for both - a defect that was *invisible to the world under test*
+   rather than missed by it. The sub-resource is now part of the route, a sub-resource asked of the
+   wrong resource is answered with a stated reason naming both, and the log line carries
+   `routeAddress` - the request as it was actually made, including its query. *A route is a request,
+   not a path.*
+
+2. **A refusal with an empty body is an observation nobody can read.** The substitute answered every
+   refusal with a status code and nothing else, so the `call` reading recorded *that* a request was
+   refused and never *why* - and a criterion about a permission decision is a criterion about the
+   reason. `refusalBody` now renders `{ kind, reason, status, message }` at every refusal site, and the
+   adapter carries it into the reading. *A status code is a verdict; the body is the evidence, and a
+   validator may only quote what it was given.*
+
+3. **A meter is a count of events, so it is part of the world and has to be reset with it.** The
+   account's meter describes its *current life*: a reset begins a new one, because a bill that carries
+   a previous world's writes into a fresh one describes two worlds with one number. The rule
+   generalises past cost - any reading that is a function of the run's own history is state, and a
+   reset that restores the resources and not the history leaves a bundle whose evidence belongs to an
+   iteration the reader is not looking at.
+
+4. **A rendering pin must be measured against the source, not recalled.** The action vocabulary admits
+   `s3` as a service segment and camel-case verbs, so the pattern that guards it is
+   `/^[a-z][a-z0-9]*(\.[a-z][a-zA-Z0-9]*)+$/` - which the first attempt, a tidy pattern recalled from
+   the *validator* naming rule next door, rejected outright. `statementSpelling` had the same shape of
+   error in its own doc comment: it described four fields and renders three, because a statement is
+   read for what it *grants* rather than for whom it happens to name. *An assertion about a message is
+   an assertion about the code's wording - read the wording from the source.*
+
+**And two of this world's defects were in its tests rather than in its code**, which is the more
+instructive half. `tests/sim-cloud-demo.test.ts` asserted `program.includes(defect.correct)` against a
+CRLF checkout while the only multi-line defect block is authored with `\n` - so that assertion could
+never match on this machine, and the *negative* half beside it (`!includes(defective)`) is true for
+every file and was passing vacuously. It now goes through the shared implementation in
+`examples/defect-text.ts` and asserts an exact count of 1 for the correct form and 0 for the defective
+one. The same file asserted that every identity named in the contract equalled `cloud.principal`, and
+failed on a **correct** contract that names two identities: the account the application runs as, and
+`svc-reader`, a reader the program itself creates. Both failures were diagnosed by reading the
+failure message rather than by guessing, and both fixes were falsified - one by filing a defect
+against a criterion no defect claims, the other by putting a typo into a `correct` block.
 

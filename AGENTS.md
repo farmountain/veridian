@@ -4,7 +4,7 @@ Agent instructions for the **Veridian** repository. This is the single always-on
 instructions file for this workspace — do not add a second one
 (`.github/copilot-instructions.md`) alongside it.
 
-> **Status: the MVP is implemented and green, and four more sandbox worlds have landed.** Core, the
+> **Status: the MVP is implemented and green, and five more sandbox worlds have landed.** Core, the
 > `local-web` adapter, the Playwright validators, the CLI, the schemas and the canonical demo all exist.
 > `local-db` - a second adapter and a second validator family, against a SQLite file with no browser -
 > exists beside them, and is the proof that `EnvironmentAdapter` is a seam. `sim-k8s` is the third, and
@@ -16,8 +16,15 @@ instructions file for this workspace — do not add a second one
 > anywhere in the loop. `sim-os` is the fifth and the third simulated one: the same shape one family
 > out, with a substitute holding machine accounts, ACLs, registry store entries, services and ports,
 > judged as `svc-audit` rather than as `SYSTEM`, and with no guest and no image anywhere in the loop.
-> `npx tsc --noEmit` is silent and `node --test` reports 1013 passing tests -
-> Veridian's own 953 plus the 60 the VS Code Cockpit contributes, which the root runner discovers
+> `sim-cloud` is the sixth and the fourth simulated one, and its subject is a **remote provider
+> account**: a real HTTP server speaking a provider's own routes over loopback, holding buckets,
+> objects, queues, secrets and principals and deciding every permission question with the account's
+> own evaluator, judged as `svc-cart` rather than as an account root, with no cloud account, no
+> session, no provider API and no outbound socket anywhere in the loop. It is also the only world that
+> performs a `call` step, so a criterion can put its own request to the account rather than infer the
+> account's answer from the application's traffic.
+> `npx tsc --noEmit` is silent and `node --test` reports 1273 passing tests -
+> Veridian's own 1213 plus the 60 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Four distribution routes ship - a clone, an npm package, the Cockpit, and
 > a container image - and there is still **no
 > build step between the source tree and the running program**: Node 22 strips types and runs `.ts`
@@ -257,7 +264,10 @@ core/environment/       EnvironmentAdapter interface + Environment Manager (life
                         the same idea for the database family + k8s-observation.ts for the cluster
                         family + posix-observation.ts for the system family + os-observation.ts for the
                         machine family (the fifth, and the third proof that the rule holds - a validator
-                        family that needs no core change to exist) + the boundary vocabulary
+                        family that needs no core change to exist) + cloud-observation.ts for the
+                        provider family (the sixth, and the fourth reason that rule holds, and the one
+                        that carries the action vocabulary, the reference grammar and the refusal
+                        vocabulary the substitute and the validators share) + the boundary vocabulary
                         (BoundaryPolicy/BoundaryReport) that keeps a declared safety limit from being
                         mistaken for an enforced one.
 core/evidence/          Evidence Engine. Writes the run bundle.
@@ -304,6 +314,16 @@ adapters/sim-os/        SimOsEnvironment - the third SIMULATED world, and the on
                         five `OS_ENV` names the application reads - a host path this machine can
                         open and the world's own spelling of the same directory, because a program
                         that passed the host path to a `run` step would be refused.
+adapters/sim-cloud/     SimCloudEnvironment - the fourth SIMULATED world, and the first whose subject
+                        is a remote provider ACCOUNT rather than a container for files. A real HTTP
+                        server speaks a provider's own routes over loopback, holds buckets, objects,
+                        queues, secrets and principals, and decides every permission question with
+                        the account's own evaluator (deny beats allow; an explicit deny beats
+                        everything). `cloud-port.ts` is the substitute, `sim-cloud-environment.ts`
+                        declares the five `CLOUD_ENV` names the application reads, and the reading
+                        carries `simulated` naming each surface that is stood in for. No cloud
+                        account, no session, no provider API and no outbound socket. This is the only
+                        adapter that performs a `call` step.
 validators/playwright/  Playwright web validators (element, visible, value, text, count, url,
                         console.clean, network.ok).
 validators/database/    Database validators (table, column, count, value). Judge a reading in
@@ -327,6 +347,15 @@ validators/os/          System validators for a machine (ran, account, setting, 
                         named account may actually do. Three facts with three different repairs, so
                         one validator judging all three would report one defect where there are
                         three.
+validators/cloud/       Provider-account validators (bucket, object, tag, policy, access, queue,
+                        secret, call, setting, probe, meter). Judge a reading in
+                        core/environment/cloud-observation.ts - the sixth family, and the fourth
+                        reason that rule holds. The family prints what an operator reads rather than
+                        raw JSON: a bucket, an object, a policy and a decision each render to a
+                        spelling a failure report can quote. `cloud.call` is the only validator in
+                        the product that makes its own request to the world rather than reading one
+                        the application made, which is why the cloud plan - and only the cloud plan -
+                        admits the `call` step.
 cli/                    The interface that exists today: arguments, support, worlds.ts (the adapter
                         register and the requirements each adapter declares), veridian.ts.
 schemas/                goal/acceptance/environment/run/result/ambiguity .schema.json - the
@@ -351,6 +380,12 @@ examples/sim-os/        The fifth demo, and the same shape one family out: the a
                         defects, seventeen criteria, with the same `run` step and the same expected
                         refusal. The `windows` family is declared, and the application **refuses**
                         any other family by name rather than adapting to it.
+examples/sim-cloud/     The sixth demo, and the fourth simulated one: the application provisions a
+                        remote provider account over routes it really calls, and is judged on the
+                        resources that account holds. Four defects, twenty-seven criteria, one of
+                        which acts in the world through a `call` step. Two identities matter and they
+                        are not the same one: `cloud.principal` is who the application runs as, and
+                        `svc-reader` is a reader account the program itself creates.
 examples/defect-text.ts One implementation of the CRLF rule for a textual overlay on a source file.
                         Two demos injecting defects is two chances to teach the rule differently;
                         a third copy is where the rule gets broken.
@@ -445,8 +480,8 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 1013 tests, 2.5s. No directory argument.
-                           # 1013 = the root's own 953 + the Cockpit's 60, because the runner walks
+node --test                # the whole suite. 1273 tests, ~4s. No directory argument.
+                           # 1273 = the root's own 1213 + the Cockpit's 60, because the runner walks
                            # the tree and reaches extension/vscode/src/*.test.ts. Neither figure is
                            # the whole story on its own: the root tsconfig EXCLUDES extension/**, so
                            # `npx tsc --noEmit` here does not typecheck the Cockpit and the root gate
@@ -515,6 +550,10 @@ npm run demo:os                             # the fifth demo, and the third simu
                                             # provisions a substitute Windows system and is judged as
                                             # `svc-audit`, which the loader refuses to let be SYSTEM.
                                             # Exit 0 when it passes.
+npm run demo:cloud                          # the sixth demo, and the fourth simulated world: the app
+                                            # provisions a substitute provider account over routes it
+                                            # really calls, judged as `svc-cart`, with no cloud account,
+                                            # no session and no outbound socket. Exit 0 when it passes.
 npm run demo:no-browser                     # the same demo with `--browser none`. Every criterion is
                                             # a browser observation, so this must end INCONCLUSIVE
                                             # (exit 2). It shows the refusal, not the aha.
@@ -1232,6 +1271,97 @@ port had none, which is why the defect reached a demo run.
   criteria - the last run in the bundle was the `--browser none` cart demo, not the `sim-os` demo. The
   figures quoted in `README.md` were re-measured after re-running the demo. *A bundle is a file; the
   verdict in it belongs to whoever wrote it last.*
+
+- **A sub-resource is a query parameter, and a router that matches only the path cannot tell two
+  requests apart.** The sixth world's defect D2 is one word: a tagging request aimed at an object
+  instead of at the bucket that owns it. The substitute's route table keyed on the path alone, so
+  `.../objects/cart.js?tagging` and `.../buckets/cart-assets?tagging` both landed on the same handler
+  and the criterion read `PASS` for both - a defect that is *invisible to the world under test* rather
+  than missed by it. The sub-resource is now part of the route (`#misplacedSubResource` answers a
+  sub-resource asked of the wrong resource with a stated reason naming both) and the log line carries
+  `routeAddress`, the request as it was actually made including its query. *A route is a request, not a
+  path - and a criterion that can only distinguish two requests by their query string is a criterion
+  the router has to be able to distinguish them for.*
+
+- **A refusal with an empty body is an observation nobody can read.** The substitute answered every
+  refusal with a status code and nothing else, so the `call` reading recorded *that* a request was
+  refused and never *why* - and a criterion about a permission decision is a criterion about the
+  reason. `refusalBody(reason, status, message)` now renders `{ kind, reason, status, message }` at
+  every refusal site, and the adapter carries it into the reading. *A status code is a verdict; the
+  body is the evidence, and a validator may only quote what it was given.*
+
+- **A meter is a count of events, so it is part of the world and has to be reset with it.** The
+  sixth world's meter describes the account's *current life*: a reset begins a new one, because a bill
+  that carries a previous world's writes into a fresh one describes two worlds with one number. The
+  rule generalises past cost: any reading that is a function of the run's own history - a counter, a
+  log, an event list - is state, and a reset that restores the resources and not the history leaves a
+  bundle whose evidence belongs to an iteration the reader is not looking at.
+
+- **A capability only one world has must be refused by name everywhere else, or a contract that means
+  nothing there is silently judged there.** `call` is the sixth step kind and the only one that puts
+  *the criterion's own* request to the world; the other four adapters refuse it by name, and the cloud
+  plan - and only the cloud plan - admits it. That refusal is the reason a cloud contract cannot drift
+  onto a world where "make this request and read the answer" has no meaning. *A vocabulary that grows
+  must grow its refusals with it: a step kind recognised by the schema and unhandled by a world is a
+  criterion reported `INCONCLUSIVE` at best and fabricated at worst.*
+
+- **A rendering pin must be measured against the source, not recalled.** The action vocabulary admits
+  `s3` as a service segment and camel-case verbs (`putBucketVersioning`, `createBucket`), so the
+  pattern that guards it is `/^[a-z][a-z0-9]*(\.[a-z][a-zA-Z0-9]*)+$/` - which the first attempt, a
+  tidy `/^[a-z]+(\.[a-z][A-Za-z]*)+$/` recalled from the *validator* naming rule, rejected outright.
+  The two rules are different because the two vocabularies are different, and the one next door looked
+  close enough to reuse. `statementSpelling` had the same shape of error in its own doc comment: it
+  described four fields and renders three (principal is deliberately absent, because a statement is
+  read for what it grants rather than for whom it happens to name). *An assertion about a message is an
+  assertion about the code's wording - read the wording from the source.*
+
+- **A defect table and the test that reads its `correct` blocks must both convert line endings, and
+  the half that fails silently is the negative one.** The sixth demo's test asserted
+  `program.includes(defect.correct)`, and `D4` is the only entry whose block is multi-line - so on this
+  Windows checkout, which holds `provision.mjs` in CRLF, that assertion could never match a block
+  authored with `\n`. `examples/defect-text.ts` exists to encode exactly this (`defectStates` converts
+  through `inStyle` before counting) and the test was written as if it did not. It now goes through
+  `occurrences(program, inStyle(block, newlineOf(program)))` and asserts an exact count of **1** for
+  the correct form and **0** for the defective one - which is stronger than the old check in the way
+  that matters, since `String.replace` edits the first match and a second occurrence would leave one
+  site unedited. And the rule is not only about the positive half: an ending-blind `!includes(defective)`
+  is **true for every file**, so the assertion that the shipped program is correct was the one that
+  could fail while the assertion that it is not defective could not. *A line-ending-blind assertion
+  measures the developer's `core.autocrlf`, and its negative half passes vacuously - which is worse
+  than failing, because it reports a rule held that nothing checked.* This is the second time this
+  repository has paid for this rule and the first time the *test* paid rather than the demo; the entry
+  above about `defects.ts` is the first.
+
+- **An assertion that every identity in a contract equals the plan's identity assumes the contract
+  holds one identity.** The sixth demo's contract names `principal/svc-cart` - the account the
+  application runs as, which the plan states - **and** `principal/svc-reader`, a reader the program
+  itself creates for the front end. Both are legitimate, and the test that asserted every name in the
+  contract equalled `cloud.principal` failed on a *correct* contract. It now derives the set from the
+  contract, asserts it is exactly those two, that neither is privileged, and that each is either the
+  plan's principal or a name the program actually creates - so a future criterion naming an account
+  nobody wrote fails, which is the check that keeps a criterion from judging a policy that does not
+  exist. *Read the document before asserting what it cannot contain: "the identity the run judges as"
+  and "the identity a criterion asks about" are two different questions, and a contract may answer
+  both.*
+
+- **When a test fails, read the failure before choosing a hypothesis - and only then decide whether
+  the product or the test is wrong.** Both failures this segment were the test's, and both were
+  diagnosed by reading the assertion rather than by re-running it: one asserted a property of the
+  developer's git configuration, the other a property the contract never had. Neither was a guess -
+  each was a reading of the failure message, which named the value and the expectation. The
+  complementary rule is the repository's older one: a green suite is evidence that nothing has broken,
+  not that a rule is held. Both fixes were therefore **falsified** - one by filing a defect against a
+  criterion no defect claims, one by putting a typo into a `correct` block - and each probe failed the
+  named subtests before being reverted. *"The test is wrong" is not a hypothesis; it is a
+  conclusion, and it needs the same evidence as the reverse.*
+
+- **A comment beside a narration line that claims what a test does becomes false the moment the test
+  changes.** The demo's `filed against: ...` line carried a comment explaining that the filed criteria
+  excluded the criteria that move *with* a defect - a claim that was true of an earlier test and
+  contradicted the one that shipped, which asserts the report names every further criterion that moves.
+  The narration and its comment are one artefact; a change to either has to be read against the other
+  in the same pass. *Prose next to code is a claim about the code, and it goes stale at exactly the
+  moment the code moves.*
 
 ## Documentation
 

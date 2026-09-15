@@ -1,7 +1,7 @@
 # How to create, start, observe and reset one environment instance.
 #
-# This is the sixth world Veridian ships and the third one that is explicitly *simulated*. It exists to
-# answer a question the other two cannot: does the environment layer admit a world whose subject is a
+# This is the sixth world Veridian ships and the fourth one that is explicitly *simulated*. It exists to
+# answer a question the other three cannot: does the environment layer admit a world whose subject is a
 # **remote provider account** rather than a cluster or a machine - a world where the interesting state
 # is a set of resources an application created over an API, and where almost nothing about the state is
 # a file on this disk?

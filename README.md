@@ -37,8 +37,8 @@ in `extension/vscode/`, if you want the same engine with a UI.
 git clone <this-repository-url> veridian
 cd veridian
 npm ci                    # runtime dependency: yaml. dev: typescript, @types/node.
-npm run gate              # tsc --noEmit, then the whole test suite. 1013 tests, about three seconds
-                          # (this tree's own 953 plus the Cockpit's 60, which the runner discovers
+npm run gate              # tsc --noEmit, then the whole test suite. 1273 tests, about three seconds
+                          # (this tree's own 1213 plus the Cockpit's 60, which the runner discovers
                           # because it walks the tree; the extension has its own gate as well).
 
 npm run e2e:install       # one-time, ~150 MB: fetch the Playwright browser
@@ -48,18 +48,22 @@ npm run demo:k8s          # the third demo: the app deploys itself into a SIMULA
 npm run demo:posix        # the fourth: the app provisions a SIMULATED Linux system it is judged on
 npm run demo:os           # the fifth: the app provisions a SIMULATED Windows system, judged as an
                           # account that is deliberately not an administrator
+npm run demo:cloud        # the sixth: the app provisions a SIMULATED provider account over HTTP,
+                          # judged as a service account rather than as the account root
 ```
 
-Run those seven in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
+Run those eight in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
 Playwright is installed **outside** the lockfile on purpose, so installing the browser before `npm ci`
 would discard it.
 
-`demo`, `demo:db`, `demo:posix` and `demo:os` need no extra setup. `demo:k8s` needs neither a cluster
-nor `kubectl`, `demo:posix` needs neither a virtual machine nor a Linux host, and `demo:os` needs
-neither a Windows guest nor a hypervisor - there is no cluster software, no guest kernel and no image
-anywhere in those runs - which is the point of them: Veridian builds worlds, and a world may be
-simulated. What a simulated world may never do is pass itself off as a real one, so each run records
-what it stood in for and a verdict a simulation cannot justify is reported `INCONCLUSIVE`.
+`demo`, `demo:db`, `demo:posix`, `demo:os` and `demo:cloud` need no extra setup. `demo:k8s` needs
+neither a cluster nor `kubectl`, `demo:posix` needs neither a virtual machine nor a Linux host,
+`demo:os` needs neither a Windows guest nor a hypervisor, and `demo:cloud` needs no cloud account, no
+`aws`/`az`/`gcloud` session and no outbound socket - there is no cluster software, no guest kernel, no
+image and no provider API anywhere in those runs - which is the point of them: Veridian builds worlds,
+and a world may be simulated. What a simulated world may never do is pass itself off as a real one, so
+each run records what it stood in for and a verdict a simulation cannot justify is reported
+`INCONCLUSIVE`.
 
 Requires **Node 22.18.0 or newer**.
 
@@ -367,7 +371,7 @@ limits:
 
 `networkPolicy` and `filesystemWrite` are **applied, not just recorded**. Under `deny` the local-web
 adapter refuses every request that is not to the application's own origin, and each refusal is
-recorded as a crossing that fails the run with `SECURITY_VIOLATION` â€” even if every criterion passed.
+recorded as a crossing that fails the run with `SECURITY_VIOLATION` â€?even if every criterion passed.
 `filesystemWrite` cannot be held by an adapter that runs the application as an ordinary child process,
 so it is reported `unsupported` rather than `enforced`. `environment.json` always pairs the policy with
 the enforcement actually achieved, so a declaration is never mistaken for a guarantee:
@@ -471,7 +475,7 @@ health: { timeoutMs: 30000, intervalMs: 100 }
 reset: { strategy: restart }
 ```
 
-`npm run demo:posix` drives this: four deliberate defects, thirteen criteria, and a `FAIL` â†’ repair â†’
+`npm run demo:posix` drives this: four deliberate defects, thirteen criteria, and a `FAIL` â†?repair â†?
 `PASS` descent in five iterations (measured, verbatim: iteration 1 fails `AC-003`, `AC-006`, `AC-008`,
 `AC-010`, `AC-011`, `AC-012` and cannot judge `AC-007`; iteration 5 is `PASS` on all thirteen with the
 reason `13/13 mandatory criteria passed, environment valid, no safety violation, evidence complete.`).
@@ -502,13 +506,64 @@ health: { timeoutMs: 30000, intervalMs: 100 }
 reset: { strategy: restart }
 ```
 
-`npm run demo:os` drives this: four deliberate defects, seventeen criteria, and a `FAIL` â†’ repair â†’
+`npm run demo:os` drives this: four deliberate defects, seventeen criteria, and a `FAIL` â†?repair â†?
 `PASS` descent in five iterations (measured, verbatim: iteration 1 fails `AC-001`, `AC-006`, `AC-007`,
 `AC-009`, `AC-010`, `AC-013` and `AC-014` and cannot judge `AC-012`; iteration 5 is `PASS` on all
 seventeen with the reason `17/17 mandatory criteria passed, environment valid, no safety violation,
 evidence complete.`). One of its criteria expects the world to **refuse** a command that names a path
 outside the sandbox, and judges the refusal rather than the exit code - a substitute that resolved the
 escaping path would be reading the developer's own tree while calling it the sandbox's.
+
+The `cloud` world is a third question again, and the one furthest from a directory. A cluster and a
+system are both *containers for state you could in principle walk to*; a provider account is not.
+Nothing interesting about it is a file: the state is a set of buckets, objects, queues, secrets and
+principals an application created by making HTTP requests, and the questions a contract asks - is this
+bucket closed to the world, may this principal delete it, what did the account charge for - are
+questions about a *provider's own records*. So this world answers them with a real HTTP server bound
+to a loopback port, holding those resources in memory and deciding every permission question with the
+account's own evaluator: deny beats allow, an explicit deny beats everything, and each decision records
+the statement that fired. The application is a real program making real requests over real loopback
+sockets; what is stood in for is the account at the other end.
+
+```yaml
+# environment.yaml, against the sim-cloud world
+adapter: sim-cloud
+app: app
+url: null                        # the app is not a server: it makes requests *to* one
+dependencyInstall: null          # the substitute is built on node:http, the app on fetch
+cloud:
+  provider: sim-provider         # visibly a substitute rather than an unnamed one
+  region: sim-region-1           # a request naming another region is refused, never silently moved
+  account: cart-account
+  principal: svc-cart            # criteria act as this account, never as the account root
+start: { command: node, args: [provision.mjs], readyPattern: 'cart-cloud provisioned: \d+ resources to .+' }
+health: { timeoutMs: 30000, intervalMs: 100 }
+reset: { strategy: restart }
+```
+
+`npm run demo:cloud` drives this: four deliberate defects, twenty-seven criteria, and a `FAIL` ->
+repair -> `PASS` descent in five iterations (measured, verbatim: iteration 1 fails `AC-003`, `AC-005`,
+`AC-009`, `AC-011`, `AC-013`, `AC-026` and `AC-027`; iteration 5 is `PASS` on all twenty-seven with the
+reason `27/27 mandatory criteria passed, environment valid, no safety violation, evidence complete.`).
+Three of the four defects are read by two criteria each: one that reads the state the defect edited and
+one that reads a fact derived from it. The fourth changes the *reason* the account refuses a request
+rather than the answer, so both of its criteria answer `FAIL` in the first pass and in the last, and it
+is the one where a contract that only asked whether the answer was right would report a pass for a rule
+that is wrong.
+
+Two identities matter here and they are not the same one. `cloud.principal` is the account the
+application runs as; the criteria ask as that account *and* as `svc-reader`, an account the program
+creates for the front end, which may read the assets and nothing else. Neither is privileged, and the
+loader refuses `root`, `account-root`, `owner`, `administrator` and `admin` by name: an account whose
+caller is the administrator passes every permission criterion for a reason that has nothing to do with
+the policy under test, so a hardening contract judged as one would be vacuous.
+
+The reading carries a `simulated` field naming each surface that is not real - the object store, the
+queue, key management, secret rotation, identity and policy evaluation, metering, and the one region -
+so a `PASS` is traceable to a named substitute rather than to unexamined reality. This is also the one
+world that performs a `call` step, which is how a criterion puts its *own* request to the account and
+judges the answer: the application's traffic cannot tell you what the account does with a request
+nobody made.
 
 ---
 
@@ -524,7 +579,8 @@ core/acceptance/        AcceptanceCriterion, and the engine that turns a contrac
 core/execution/         the run controller: state machine, bounded exits, repair gate
 core/validation/        ValidationResult, the validator registry, status semantics, verdict rollup
 core/environment/       EnvironmentAdapter, the environment manager, the shared web, database, k8s,
-                        posix and os vocabularies that keep validators from importing an adapter
+                        posix, os and cloud vocabularies that keep validators from importing an
+                        adapter
 core/evidence/          the evidence engine and the run bundle
 core/run/               run identity, history, iteration state
 core/metrics/           M1..M5, measured over the bundles on disk
@@ -536,6 +592,9 @@ adapters/sim-posix/     provisions a real tree while a substitute holds accounts
 adapters/sim-os/        the same shape as `sim-posix` one family out: a substitute holds machine
                         accounts, file modes and ACEs, packages, services and ports, and answers
                         the query forms the `windows` family reads; no Windows guest and no image
+adapters/sim-cloud/     a real HTTP server speaking a provider's own routes over loopback, holding
+                        buckets, objects, queues, secrets and principals it decides permissions
+                        for itself; no cloud account, no session and no outbound socket
 validators/playwright/  web.element, web.visible, web.text, web.value, web.count, web.url,
                         web.console.clean, web.network.ok
 validators/database/    db.table, db.column, db.count, db.value
@@ -546,6 +605,9 @@ validators/posix/       posix.file, posix.permission, posix.owner, posix.content
                         posix.ran, posix.probe
 validators/os/          os.file, os.contents, os.owner, os.access, os.acl, os.account, os.setting,
                         os.service, os.running, os.principal, os.ran, os.probe
+validators/cloud/       cloud.bucket, cloud.object, cloud.tag, cloud.policy, cloud.access,
+                        cloud.queue, cloud.secret, cloud.call, cloud.setting, cloud.probe,
+                        cloud.meter
 schemas/                goal / acceptance / environment / run / result / ambiguity
 scripts/                bootstrap and build steps that must run before anything is checked
 examples/shopping-cart/ the canonical demo: correct app, defect overlay, goal, contract, world
@@ -557,9 +619,11 @@ examples/sim-posix/     the fourth demo: the app provisions a substitute Linux s
                         it really issues, and is judged as a named account rather than as root
 examples/sim-os/        the fifth demo: the app provisions a substitute Windows system the same way,
                         judged as `svc-audit` - an account the loader refuses to let be SYSTEM
+examples/sim-cloud/     the sixth demo: the app provisions a substitute provider account over HTTP
+                        and is judged on the resources that account holds
 extension/vscode/       the VS Code Cockpit: a thin client, no validation logic. The one directory
                         with a build step, because the extension host is not Node's loader
-tests/                  1013 tests in a root `node --test` run: this tree's own 953 plus the
+tests/                  1273 tests in a root `node --test` run: this tree's own 1213 plus the
                         Cockpit's 60
 
 dist/                   GENERATED by `npm run build`. Never edited, never committed.
@@ -585,30 +649,37 @@ ValidationResult:    criterion_id, status, actual, expected, timestamp, evidence
 
 Layering is enforced by hand, and `core/*` may not import `adapters/*`, `validators/*` or `cli/*`;
 `validators/*` may not import `adapters/*` (the shared vocabulary lives in
-`core/environment/web-observation.ts`, `db-observation.ts`, `k8s-observation.ts` and
-`posix-observation.ts` for exactly that reason); `cli/*` is the only layer that may import all three.
+`core/environment/web-observation.ts`, `db-observation.ts`, `k8s-observation.ts`,
+`posix-observation.ts`, `os-observation.ts` and `cloud-observation.ts` for exactly that reason);
+`cli/*` is the only layer that may import all three.
 
 ---
 
 ## Scope
 
 **In, for the MVP:** VS Code + Veridian Core + a local application + a browser + Playwright +
-deterministic acceptance criteria + evidence + reset/replay. Five adapters exist: `local-web` and
+deterministic acceptance criteria + evidence + reset/replay. Six adapters exist: `local-web` and
 `local-db`, the second being the proof that `EnvironmentAdapter` is a seam rather than a browser
-harness with an interface bolted on - and three *simulated* worlds. `sim-k8s`: a real application
+harness with an interface bolted on - and four *simulated* worlds. `sim-k8s`: a real application
 process really deploys itself into a substitute control plane over a real HTTP surface it really
 calls, with no cluster software anywhere in the loop. `sim-posix`: a real application process really
 provisions a substitute Linux system through commands it really issues, with no virtual machine and
 no guest kernel anywhere in the loop. `sim-os`: the same shape for a Windows or macOS machine, judged
-as a named account rather than as `SYSTEM`, with no guest and no image anywhere in the loop. In all
-three, the substitution is **declared**: `environment.json` names what was stood in for and the
-reading carries a `simulated` field, so a `PASS` is traceable to a named substitute rather than to
-unexamined reality - and a verdict a substitute cannot justify is reported `INCONCLUSIVE`.
+as a named account rather than as `SYSTEM`, with no guest and no image anywhere in the loop.
+`sim-cloud`: a real application process really provisions a substitute provider account over HTTP
+routes it really calls, and is judged on the resources that account holds, with no cloud account, no
+session and no outbound socket anywhere in the loop. In all four, the substitution is **declared**:
+`environment.json` names what was stood in for and the reading carries a `simulated` field, so a
+`PASS` is traceable to a named substitute rather than to unexamined reality - and a verdict a
+substitute cannot justify is reported `INCONCLUSIVE`.
 
 **Out, deliberately:** Kubernetes, cloud deployment, VM or mobile orchestration, distributed
 execution, data lakes, multi-agent orchestration, LLM training, a plugin marketplace, a SaaS backend.
 Veridian may *integrate with* all of these; it must not *compete with* them. It is not a test
-framework, not an agent orchestrator, not a coding agent, and not a CI system.
+framework, not an agent orchestrator, not a coding agent, and not a CI system. "Cloud deployment" is
+listed out in that sense - Veridian does not deploy anything to a real provider - and the `cloud`
+world above is not an exception to it: it is a substitute account on loopback, which is why its
+readings say so.
 
 Also built, and named here rather than left for the reader to discover: the **VS Code Cockpit**
 (`extension/vscode/`) - a thin client over the same local Core interface the CLI drives, so CLI, CI

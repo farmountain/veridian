@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { nodeIo } from "../core/io.ts";
+import { CLOUD_VALIDATOR_NAMES } from "../validators/cloud/cloud-validators.ts";
 import { DB_VALIDATOR_NAMES } from "../validators/database/db-validators.ts";
 import { K8S_VALIDATOR_NAMES } from "../validators/k8s/k8s-validators.ts";
 import { OS_VALIDATOR_NAMES } from "../validators/os/os-validators.ts";
@@ -64,6 +65,7 @@ const FAMILIES: readonly (readonly [string, Record<string, string>])[] = [
   ["k8s", K8S_VALIDATOR_NAMES],
   ["posix", POSIX_VALIDATOR_NAMES],
   ["os", OS_VALIDATOR_NAMES],
+  ["cloud", CLOUD_VALIDATOR_NAMES],
 ];
 
 describe("the README's validator rosters are the ones the code exports", () => {
