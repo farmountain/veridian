@@ -20,7 +20,7 @@ the MVP, this one covers what comes after it.
 | 2 | Docker install route | Never attempted | this doc, Phase A2 |
 | 3 | VS Code extension | **Built** (Phase B) | `PLAN.md` §30, this doc, Phase B |
 | 4 | Database environment | Roadmap "Later" | `PLAN.md` §38, this doc, Phase C |
-| 5 | Linux / Kali / Windows / macOS | Roadmap Tier 2-3 | Linux/Kali built as a **simulated** world, `sim-posix` (Phase C3); Windows built as `sim-os` (Phase C4), §7 |
+| 5 | Linux / Kali / Windows / macOS | Roadmap Tier 2-3 | Linux/Kali built as a **simulated** world, `sim-posix` (Phase C3); Windows **and macOS** built as `sim-os` (Phase C4), one world with two declared families, §7 |
 | 6 | Kubernetes, cloud, data platform | Roadmap Tier 4-5 | Kubernetes built as a **simulated** world, `sim-k8s`; cloud built as `sim-cloud` (Phase C5); the container runtime built as `sim-container` (Phase C6); data planned (§5) |
 
 Nothing in this list is forbidden. `PLAN.md` §3 forbids Veridian becoming a *Kubernetes management
@@ -441,14 +441,29 @@ run ids rather than adjectives.
 | `local-web` | real child process + real browser | - | **built** (`v0.1.0`) |
 | `local-db` | real SQLite via `node:sqlite`; the app's own schema and seed code runs | - | **built** |
 | `local-api` / `local-process` | real child process, real HTTP | - | planned (Phase D) |
-| `sim-k8s` | real app process against a real HTTP control plane | scheduler, kubelet, etcd, CNI, admission | **built** |
-| `sim-cloud` | real app process against real HTTP endpoints | the AWS / Azure / GCP services | **built**, see §7 |
-| `sim-container` | real app process provisioning images and containers over a real command surface | the runtime, the image store, the namespace and cgroup semantics, the registry | **built**, see §7 |
-| `sim-posix` (linux, kali) | real process runner + real sandboxed filesystem | the kernel, the distro, the package manager; Kali's attack network | **built** (Linux/Debian; Kali is the same world with a different declared distribution) |
-| `sim-os` (windows, macos) | real process runner | the machine accounts, the ACL engine, the registry / plist store, services and ports | **built** (Windows, judged as `svc-audit`; macOS is the same world with a different declared family) |
+| `sim-k8s` | real app process against a real HTTP control plane | `scheduler`, `kubelet`, `cri`, `etcd`, `cni`, `admission`, `ingress` | **built** |
+| `sim-cloud` | real app process against real HTTP endpoints | `regions`, `object-store`, `queue`, `key-management`, `secret-rotation`, `identity`, `metering` | **built**, see §7 |
+| `sim-container` | real app process provisioning images and containers over a real command surface | `namespaces`, `cgroups`, `image-layers`, `registry`, `published-ports`, `volumes`, `user-switching` | **built**, see §7 |
+| `sim-posix` (linux, kali) | real process runner + real sandboxed filesystem | `kernel`, `distribution`, `package-manager`, `package-index`, `permissions`, `egress`, `provisioning` | **built** (Linux/Debian; Kali is the same world with a different declared distribution) |
+| `sim-os` (windows, macos) | real process runner | `kernel`, `os-identity`, `path-semantics`, `acl`, `registry`, `preferences`, `service-manager`, `egress`, `provisioning` | **built** (Windows, judged as `svc-audit`; macOS is the same world with a different declared family) |
 | `sim-data` | real app process against real protocol endpoints | the Kafka / Spark / Hadoop / Airflow runtimes | planned |
 | `sim-mobile` | real app code against a real device API surface | the device, the emulator, the touch OS | planned |
 | `vscode-host` | a real VS Code extension host process | - | planned (Phase B-adjacent) |
+
+**The Simulated column prints the world's own declared surface names, and a test holds the
+agreement.** Each cell is the members of that world's `<X>_SIMULATED_SURFACES` constant, spelled the
+way the constant spells them, so the column is a roster rather than a summary of one -
+`tests/simulated-surfaces.test.ts` reads this table and each constant and fails if either moves
+alone. That guard is not decoration. This cell said `sim-posix` substitutes *"Kali's attack
+network"*, and `POSIX_SIMULATED_SURFACES` says the opposite: its `egress` entry reads *"the sandbox
+has no network beyond its own loopback listeners; egress is refused, not routed"*, and
+`posix-port.ts` refuses the command that would need one - `this world has no egress; nothing outside
+127.0.0.1 can be reached from the sandbox`. **A Kali world with no egress has no attack network.**
+The cell named a surface the world refuses as though it were a feature, and omitted four that it
+does declare (`package-index`, `permissions`, `egress`, `provisioning`). It was found by comparing
+the two lists, not by reading the sentence - which read as complete, because three of its four
+tokens were right. *A document that names a world's surfaces is a claim about a constant, and a list
+of names in a document is read by nothing that could disagree with it.*
 
 And the rows that are genuinely blocked, which are now a much shorter list and a different kind of
 statement - each names the world it blocks, and the simulated row that answers it:

@@ -31,8 +31,8 @@ instructions file for this workspace — do not add a second one
 > anywhere in the loop. It is the world that states its own limits rather than hiding them: limits are
 > declared and never enforced, an account is recorded and never switched to, and a published port is
 > `exposed` and never `reachable`.
-> `npx tsc --noEmit` is silent and `node --test` reports 1456 passing tests -
-> Veridian's own 1396 plus the 60 the VS Code Cockpit contributes, which the root runner discovers
+> `npx tsc --noEmit` is silent and `node --test` reports 1459 passing tests -
+> Veridian's own 1399 plus the 60 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Four distribution routes ship - a clone, an npm package, the Cockpit, and
 > a container image - and there is still **no
 > build step between the source tree and the running program**: Node 22 strips types and runs `.ts`
@@ -526,8 +526,8 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 1456 tests, ~4s. No directory argument.
-                           # 1456 = the root's own 1396 + the Cockpit's 60, because the runner walks
+node --test                # the whole suite. 1459 tests, ~4s. No directory argument.
+                           # 1459 = the root's own 1399 + the Cockpit's 60, because the runner walks
                            # the tree and reaches extension/vscode/src/*.test.ts. Neither figure is
                            # the whole story on its own: the root tsconfig EXCLUDES extension/**, so
                            # `npx tsc --noEmit` here does not typecheck the Cockpit and the root gate
@@ -1470,10 +1470,32 @@ port had none, which is why the defect reached a demo run.
   register.** `README.md` said a step is "one of seven kinds" while `core/acceptance/steps.ts` holds
   **eleven** in `STEP_KINDS` - a figure that had drifted through four new worlds without anything
   reading it. The same pass found `AGENTS.md` quoting `1273` tests and `1213` of the tree's own, where
-  the measured run is `1456` and `1396`. *Both are the same defect as a roster printed in a document:
-  a number is a claim about the code, and the cheapest way to hold it is to read the code - the
-  difference is that a number cannot be pinned by a test the way a name can, so it has to be
+  the measured run was `1456` and `1396` - and the count stands at `1459` and `1399` as this is
+  written, which is the rule demonstrating itself. *Both are the same defect as a roster printed in a
+  document: a number is a claim about the code, and the cheapest way to hold it is to read the code -
+  the difference is that a number cannot be pinned by a test the way a name can, so it has to be
   re-measured at the moment the document is touched.*
+
+- **A document that names what a world *substitutes* is making a claim about a `*_SIMULATED_SURFACES`
+  constant, and a claim nothing reads drifts.** `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` §5 recorded
+  `sim-posix` as substituting *"Kali's attack network"*, and `POSIX_SIMULATED_SURFACES` says the
+  opposite in as many words: its `egress` member reads *"the sandbox has no network beyond its own
+  loopback listeners; egress is refused, not routed"*, and `posix-port.ts` refuses the one command that
+  would need one with the reason `this world has no egress; nothing outside 127.0.0.1 can be reached
+  from the sandbox`. So the cell named a surface the world deliberately refuses as though it were a
+  feature, and omitted four the world does declare (`package-index`, `permissions`, `egress`,
+  `provisioning`). It was found by comparing the two lists, not by reading the sentence - which read as
+  complete, because three of its four tokens were right and the fourth had the shape of a name. The
+  five `sim-*` cells now print their constants' members verbatim, and `tests/simulated-surfaces.test.ts`
+  reads both sides: a declared world must print exactly the declared set, and a world the document
+  calls **built** may not print a backticked surface no constant declares. Three assertions, each
+  **falsified rather than trusted**: restoring the original sentence fails subtest 1 with both sides
+  printed; reintroducing `attack-network` as a backticked member fails the same subtest with a message
+  naming the invented surface; and putting a backticked name on `local-web`'s row while camel-casing
+  one container surface fails all three, exit 1. *This file now states the rule about three different
+  vocabularies - a validator name, a step kind, and a simulated surface - and the third was still in
+  the wild because it is the one no schema carries: `STEP_KINDS` and the validator rosters have
+  `schemas/` files that re-state them, and nothing re-states a surface.*
 
 ## Documentation
 
