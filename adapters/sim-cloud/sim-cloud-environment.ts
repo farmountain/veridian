@@ -710,16 +710,22 @@ export class SimCloudEnvironment implements EnvironmentAdapter {
    *    world a contract about a complete account can be judged in;
    *  - the declared `readyPattern` really appeared, because that is the only signal the application
    *    itself gives that it finished rather than merely stopped;
-   *  - and the account holds at least one request from the application. That last one is this world's
-   *    version of `sim-k8s`'s "the registry the substitution reads is the application's own build
-   *    output": the substitute holds exactly what the provisioner put in it, so a program that exited
-   *    zero without making a single call has provisioned nothing, and every criterion would then
-   *    report an absent bucket for a reason that is not the application's fault - an environment
-   *    failure, refused here rather than left to surface as a mysterious empty account.
+   *  - and the account holds at least one request from the application **made in this run**. That last
+   *    one is this world's version of `sim-k8s`'s "the registry the substitution reads is the
+   *    application's own build output": the substitute holds exactly what the provisioner put in it, so
+   *    a program that exited zero without making a single call has provisioned nothing, and every
+   *    criterion would then report an absent bucket for a reason that is not the application's fault -
+   *    an environment failure, refused here rather than left to surface as a mysterious empty account.
+   *    *In this run* is the half that makes the check able to fail: `clear()` deliberately never clears
+   *    the call log, so a count of the account's whole history would still see the first provisioning's
+   *    activity after a `restart` reset whose re-provisioned application connected zero times - a world
+   *    that had just been emptied would pass a guard whose own message claims the application asked it
+   *    to hold something.
    */
   async #deployApplication(): Promise<void> {
     const { command, args, readyPattern } = this.#plan.start;
     const env = this.#cloudEnv();
+    const callsBefore = this.#cloud.calls().length;
     this.#logger.info("environment.deploy.application", {
       command,
       args,
@@ -766,13 +772,16 @@ export class SimCloudEnvironment implements EnvironmentAdapter {
       );
     }
 
-    const made = this.#cloud.calls().filter((record) => record.source === "application").length;
+    const made = this.#cloud
+      .calls()
+      .slice(callsBefore)
+      .filter((record) => record.source === "application").length;
     if (made === 0) {
       throw new EnvironmentError(
         `the application's provisioning program (\`${command}\`) exited successfully and put no ` +
-          "request to the account at all - the substitute holds exactly what the application asked " +
-          "it to hold, and with nothing asked every criterion about this account would report an " +
-          "absent resource that the application never tried to create",
+          "request to the account in this run - the substitute holds exactly what the application " +
+          "asked it to hold, and with nothing asked every criterion about this account would report " +
+          "an absent resource that the application never tried to create",
       );
     }
   }

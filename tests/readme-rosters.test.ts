@@ -2,16 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { nodeIo } from "../core/io.ts";
-import { API_VALIDATOR_NAMES } from "../validators/api/api-validators.ts";
-import { CLOUD_VALIDATOR_NAMES } from "../validators/cloud/cloud-validators.ts";
-import { CONTAINER_VALIDATOR_NAMES } from "../validators/container/container-validators.ts";
-import { DB_VALIDATOR_NAMES } from "../validators/database/db-validators.ts";
-import { K8S_VALIDATOR_NAMES } from "../validators/k8s/k8s-validators.ts";
-import { OS_VALIDATOR_NAMES } from "../validators/os/os-validators.ts";
-import { WEB_UI_VALIDATOR_NAMES } from "../validators/playwright/web-ui-validators.ts";
-import { POSIX_VALIDATOR_NAMES } from "../validators/posix/posix-validators.ts";
-import { PROCESS_VALIDATOR_NAMES } from "../validators/process/process-validators.ts";
-import { VSCODE_VALIDATOR_NAMES } from "../validators/vscode/vscode-validators.ts";
+import { discoverValidatorFamilies } from "./helpers/validator-families.ts";
 
 /**
  * The validator rosters `README.md` prints must be the rosters the code exports.
@@ -35,6 +26,13 @@ import { VSCODE_VALIDATOR_NAMES } from "../validators/vscode/vscode-validators.t
  * What this does **not** hold, deliberately: the order. A roster is a set, and asserting the
  * document's order against the code's would fail on an edit that changed nothing an operator can
  * observe - which is the shape of guard that gets deleted instead of obeyed.
+ *
+ * It also does not hold the *list of families* itself, any more. That list was spelled out here by
+ * hand for eleven families, which is the same defect one layer up: a guard that re-states what the
+ * register holds can only cover the families it was written with, so a twelfth directory would have
+ * been checked against nothing while these two assertions went on passing. The families are now
+ * discovered from `validators/` by `tests/helpers/validator-families.ts`, and the roster each one
+ * exports is what the document is held against.
  */
 
 const repo = nodeIo();
@@ -63,31 +61,26 @@ function rosterIn(body: string, family: string): readonly string[] {
     .filter((token) => token.length > 0);
 }
 
-const FAMILIES: readonly (readonly [string, Record<string, string>])[] = [
-  ["playwright", WEB_UI_VALIDATOR_NAMES],
-  ["database", DB_VALIDATOR_NAMES],
-  ["k8s", K8S_VALIDATOR_NAMES],
-  ["posix", POSIX_VALIDATOR_NAMES],
-  ["os", OS_VALIDATOR_NAMES],
-  ["cloud", CLOUD_VALIDATOR_NAMES],
-  ["container", CONTAINER_VALIDATOR_NAMES],
-  ["vscode", VSCODE_VALIDATOR_NAMES],
-  ["api", API_VALIDATOR_NAMES],
-  ["process", PROCESS_VALIDATOR_NAMES],
-];
+const families = await discoverValidatorFamilies(repo);
 
 describe("the README's validator rosters are the ones the code exports", () => {
   it("prints every name each family registers, one per token", async () => {
     const body = await repo.readTextFile("README.md");
     assert.ok(body !== null, "README.md could not be read");
 
-    for (const [family, names] of FAMILIES) {
-      const printed = rosterIn(body, family);
-      const exported = Object.values(names).sort();
+    for (const family of families) {
+      assert.notEqual(
+        family.names,
+        null,
+        `validators/${family.family}/index.ts exports no roster for README.md's layout block to be ` +
+          "held against",
+      );
+      const printed = rosterIn(body, family.family);
+      const exported = Object.values(family.names ?? {}).sort();
       assert.deepEqual(
         [...printed].sort(),
         exported,
-        `README.md's ${family} roster disagrees with the code. Printed: ${printed.join(", ")}. ` +
+        `README.md's ${family.family} roster disagrees with the code. Printed: ${printed.join(", ")}. ` +
           `Exported: ${exported.join(", ")}.\n` +
           "A name in the document and not in the code is a validator an operator can write and no " +
           "run can judge; a name in the code and not in the document is one nobody will find.",
@@ -104,12 +97,12 @@ describe("the README's validator rosters are the ones the code exports", () => {
     const body = await repo.readTextFile("README.md");
     assert.ok(body !== null, "README.md could not be read");
 
-    for (const [family] of FAMILIES) {
-      for (const token of rosterIn(body, family)) {
+    for (const family of families) {
+      for (const token of rosterIn(body, family.family)) {
         assert.match(
           token,
           /^[a-z0-9]+(\.[a-z0-9]+)+$/,
-          `README.md's ${family} roster prints "${token}", which is not a validator name - the ` +
+          `README.md's ${family.family} roster prints "${token}", which is not a validator name - the ` +
             "family prefix was factored out into the column, and that is how a name went missing",
         );
       }

@@ -34,6 +34,7 @@ import { LocalDbEnvironment } from "../adapters/local-db/index.ts";
 import { SimK8sEnvironment } from "../adapters/sim-k8s/index.ts";
 import { SimCloudEnvironment } from "../adapters/sim-cloud/index.ts";
 import { SimContainerEnvironment } from "../adapters/sim-container/index.ts";
+import { SimDataEnvironment } from "../adapters/sim-data/index.ts";
 import { SimOsEnvironment } from "../adapters/sim-os/index.ts";
 import { SimPosixEnvironment } from "../adapters/sim-posix/index.ts";
 import { SimVSCodeEnvironment } from "../adapters/sim-vscode/index.ts";
@@ -457,6 +458,65 @@ const WORLDS: readonly World[] = [
     ],
     build: ({ environment, io, logger, processes, stateDir }) =>
       new SimVSCodeEnvironment(environment, {
+        io,
+        clock: systemClock,
+        logger,
+        processes,
+        stateDir,
+      }),
+  },
+  {
+    kind: "sim-data",
+    summary:
+      "a simulated message broker the application publishes to and consumes from, with no broker software behind it",
+    // Two fields, and they are one declaration rather than two conveniences: the adapter refuses a
+    // plan with no `data` block outright, because this world's subject *is* the broker. A cluster is
+    // a name for the world every reading is scoped to, and a node id is the identity the broker
+    // announces and the one the application is handed through `VERIDIAN_DATA_NODE_ID` - so a run
+    // without either records evidence about a broker nothing names, and a *second* node id would be a
+    // second identity for a world that has exactly one.
+    //
+    // `host` and `port` are deliberately absent even though the adapter reads them, and they are the
+    // one pair in this table that is derivable rather than declared: `schemas/environment.schema.json`
+    // gives `host` a default of `127.0.0.1` and `port` a default of `0`, and `0` is the request that
+    // the operating system choose the listener, which is what a substitute wants. Declaring them here
+    // would make the operator answer a question the document can already answer, and a requirement is
+    // a question the operator is *forced* to answer, not a field that may be absent.
+    //
+    // Asked as two pointers rather than as one `data` object for the reason every world after
+    // `sim-k8s` records here: the ladder resolves a requirement against a *place*, so a single `data`
+    // field would report the whole block missing however much of it the document already stated.
+    //
+    // This world *does* declare a `*_SIMULATED_SURFACES` constant (`DATA_SIMULATED_SURFACES`), and it
+    // is the one place in this file where a socket world and a no-HTTP world are the same world: the
+    // broker is reached over a real TCP listener this machine can open, and it speaks a binary
+    // protocol rather than HTTP, so it is asked for no url and no health path. That is why the
+    // detector's `hasNoHttp` carries a `data` clause - the predicate asks about the *surface*, not
+    // about the transport.
+    requires: [
+      {
+        field: "data.cluster",
+        question: "What should this broker's cluster be called?",
+        why:
+          "Every reading records the cluster it came from and the broker announces it in its own " +
+          "handshake, so a criterion of the form \"this is the log we certified\" is a claim about a " +
+          "named cluster rather than about brokers in general. There is no default: `sim-data` saying " +
+          "nothing is not a declaration that it stood in for an unnamed broker, and the name is what " +
+          "lets a reader of two bundles tell which one each run was judged in.",
+      },
+      {
+        field: "data.nodeId",
+        question: "Which node identity does this broker announce?",
+        why:
+          "It is the identity the substitute answers handshakes with and the one the application is " +
+          "handed, so it is what decides whether a program connected to *this* world or to something " +
+          "else on that port. Defaulting it would put a node into the evidence that nobody chose, and " +
+          "the failure it would hide is the interesting one: a program that reached a broker other " +
+          "than the one the criteria were written about.",
+      },
+    ],
+    build: ({ environment, io, logger, processes, stateDir }) =>
+      new SimDataEnvironment(environment, {
         io,
         clock: systemClock,
         logger,

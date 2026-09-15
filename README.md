@@ -2,6 +2,8 @@
 
 **The sandbox testing and validation layer for AI coding agents.**
 
+**v0.2.0** - eleven reproducible sandbox worlds, across four distribution routes.
+
 Coding agents are good at producing code and have an *environmental* problem: they cannot tell
 whether their code actually works. An agent saying "I believe this is fixed" is not a result.
 
@@ -27,9 +29,18 @@ strategy. Veridian never decides *how* to write the code; it decides *whether th
 
 ## Getting started
 
-Three ways in: **clone it** if you want the source, the tests and the canonical demo; **install it**
-if you want the `veridian` command and nothing else; or **open the Cockpit**, the thin VS Code client
-in `extension/vscode/`, if you want the same engine with a UI.
+Four ways in: **clone it** if you want the source, the tests and the canonical demo; **install it**
+if you want the `veridian` command and nothing else; **open the Cockpit**, the thin VS Code client in
+`extension/vscode/`, if you want the same engine with a UI; or **build the image**, if you want the
+CLI in a container:
+
+```bash
+docker build -t veridian .
+docker run --rm veridian help
+```
+
+The image route is verified in CI rather than here, because this machine has no container runtime -
+and a `Dockerfile` that has never been built is a claim.
 
 ### Clone
 
@@ -37,8 +48,8 @@ in `extension/vscode/`, if you want the same engine with a UI.
 git clone <this-repository-url> veridian
 cd veridian
 npm ci                    # runtime dependency: yaml. dev: typescript, @types/node.
-npm run gate              # tsc --noEmit, then the whole test suite. 1833 tests, about five seconds
-                          # (this tree's own 1769 plus the Cockpit's 64, which the runner discovers
+npm run gate              # tsc --noEmit, then the whole test suite. 2182 tests, about five seconds
+                          # (this tree's own 2118 plus the Cockpit's 64, which the runner discovers
                           # because it walks the tree; the extension has its own gate as well).
 
 npm run e2e:install       # one-time, ~150 MB: fetch the Playwright browser
@@ -58,19 +69,22 @@ npm run demo:api          # the ninth: a real service judged through its own HTT
                           # nothing simulated and nothing rendered - the contract makes the requests
 npm run demo:local-process # the tenth: a real program run as a real child process and judged on what
                           # it printed, what it exited with and the files it wrote - nothing simulated
+npm run demo:data         # the eleventh: the app provisions a SIMULATED message broker it reaches
+                          # over a real TCP socket, judged on the topics, records and offsets it holds
 ```
 
-Run those twelve in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
+Run those thirteen in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
 Playwright is installed **outside** the lockfile on purpose, so installing the browser before `npm ci`
 would discard it.
 
 `demo`, `demo:db`, `demo:api`, `demo:local-process`, `demo:posix`, `demo:os`, `demo:cloud`,
-`demo:container` and `demo:vscode` need no
+`demo:container`, `demo:vscode` and `demo:data` need no
 extra setup. `demo:k8s` needs neither a cluster nor `kubectl`, `demo:posix` needs neither a virtual
 machine nor a Linux host, `demo:os` needs neither a Windows guest nor a hypervisor, `demo:cloud` needs
 no cloud account, no `aws`/`az`/`gcloud` session and no outbound socket, `demo:container` needs no
-Docker, no container runtime and no daemon, and `demo:vscode` needs neither VS Code nor any extension
-to be installed - there is no cluster software, no guest kernel, no image, no provider API and no
+Docker, no container runtime and no daemon, `demo:vscode` needs neither VS Code nor any extension
+to be installed, and `demo:data` needs no broker, no Kafka, no ZooKeeper and no message-broker software
+of any kind - there is no cluster software, no guest kernel, no image, no provider API, no broker and no
 editor anywhere in those runs - which is the point of them: Veridian builds worlds,
 and a world may be simulated. What a simulated world may never do is pass itself off as a real one, so
 each run records what it stood in for and a verdict a simulation cannot justify is reported
@@ -85,6 +99,14 @@ a service: a real program is started as a real child process on this machine and
 printed on stdout and stderr, the code it exited with, what a probe of it found still running, and the
 files it really wrote. Nothing is stood in - the child process is a process, the file it wrote is on
 the filesystem - so its readings carry no `simulated` field either.
+
+`demo:data` is neither of those, and it is the run where the distinction is easiest to see: the socket
+is real, the bytes are real and the frames are decoded for real, but the *broker* on the other end of
+the connection is a substitute. Its substitute holds topics, partitions, records, offsets, replication
+assignments and consumer-group state, and it answers the twelve APIs it declares - so the application
+speaks a wire protocol to something that is not message-broker software, and the criteria are judged on
+what that substitute holds. It carries a `simulated` field naming the seven surfaces it stands in for,
+and `snapshot-restore` is really performed rather than downgraded to a restart.
 
 Requires **Node 22.18.0 or newer**.
 
@@ -915,7 +937,86 @@ because the world is flaky.
 Because nothing is stood in, its reading carries **no** `simulated` field either, and this world is
 the one the register answers a question about by name: there is no `*_SIMULATED_SURFACES` constant for
 it and none is wanted, which is why it sits beside `local-web`, `local-db` and `local-api` rather than
-beside the six `sim-*` worlds.
+beside the seven `sim-*` worlds.
+
+## The eleventh world: a broker, judged on what it was told
+
+`npm run demo:data` runs the same loop against `sim-data`, the seventh simulated world and the first
+whose subject is not a document a world holds but a **request an application made**. The application
+really opens a TCP socket to a real address on loopback and really writes a broker protocol into it:
+length-prefixed frames, a CRC32C over each body, and a version negotiated through `ApiVersions` before
+anything else is sent. Twelve APIs are declared in the register, and the register is the authority on
+how each one is spelled; a condition the world reports is mapped to a fixed set of reading words rather
+than to a sentence this world invented, so a criterion compares `refused` and knows what it is
+comparing.
+
+What is stood in for is the **broker process**. Behind that socket a substitute holds topics with
+their partition counts and cleanup policies, partitions with their records at offsets beside their
+high watermark and in-sync set, consumer groups with their generations and members, the position each
+group has committed, and a meter over what it has been asked to do. No broker process, no replica
+follower, no on-disk log, no group coordinator, no rebalancer and no outbound socket exist anywhere in
+the loop, and `DATA_SIMULATED_SURFACES` names all seven of those surfaces (`broker`, `replication`,
+`group-coordination`, `log-storage`, `retention`, `transactions`, `partitioning`) so a reading states
+which parts of it were substituted instead of leaving a reader to infer it. **Sockets, bytes and the
+record the client sent are deliberately not on that list, because they are real** - a list that named
+everything would be exactly as uninformative as one that named nothing.
+
+The family's reading is `data.broker` rather than `data.cluster`, and the name is the argument: what
+is observed is **one endpoint that answers**, and `cluster` would name the thing this world does not
+have. Three limits are recorded in the goal document and answered by the world rather than left to be
+discovered. **One node**: replication is recorded and never performed - a topic created with a factor
+of one has an in-sync set of one member, and a factor above one is refused rather than accepted and
+ignored. **No rebalance**: a group is joined once and keeps the assignment that join negotiated, so a
+criterion cannot observe a rebalance because there is none to observe. **No retention**: every record
+ever produced is still there whatever policy its topic was created with, because this world deletes
+nothing - a cleanup policy here is a value the broker *records and never applies*, and the criterion
+that reads it is reading a declaration rather than a consequence.
+
+Thirteen validators judge it: `data.node`, `data.topic`, `data.layout`, `data.partition`,
+`data.record`, `data.key`, `data.value`, `data.group`, `data.member`, `data.commit`, `data.call`,
+`data.probe` and `data.meter`. A reference into the broker's inventory is split on `/` and the segment
+count is fixed by the noun, so `cart-events` names a topic, `cart-events/0` a partition,
+`cart-events/0/2` one record at an offset, `cart-indexer` a group, `cart-indexer/member-1` one member
+of it and `cart-indexer/cart-events/0` one committed position - and every other spelling is refused
+with the count it wanted, rather than resolved to an empty reading that would look like an application
+defect. A second grammar covers the world's own vocabularies: `data.call` and `data.probe` take an API
+name as the register spells it (and, for a command the world does not perform at all, the whole
+spelling the world recorded for it), while `data.meter` names one of the counters the world keeps. A
+limit is carried in the value a criterion compares rather than beside it - `data.layout` compares
+`topic 'cart-events' (3 partition(s), replication 1 recorded, isr [1], cleanup delete)`, because a
+replication factor and the in-sync membership that could honour it are one sentence about one thing.
+Three criteria act inside the world through a `run` step - the world is handed an argument vector and
+executes it against its own broker, so this family needed no step kind of its own - and one of those
+expects the world to **refuse** it. Its only evidence kind is `json`, written twice per criterion when
+there was traffic: the criterion's own observation, and the request records beside it, which is the
+artifact a reader wants when a criterion about *what the application asked for* fails, because "the
+topic was never created" leaves them guessing whether it asked and was refused or never asked.
+
+Two of the thirteen ask the same question through different doors, and keeping them apart is the
+point. **`data.call` reads the requests the application put to the broker; `data.probe` reads the
+requests the criterion itself issued** - so the application's `CreateTopics` for two fresh topics reads
+`ok` while the criterion's own `CreateTopics` for a topic the world already holds reads `refused`, and
+both readings are right. A criterion that judged one through the other's door would be reporting on
+an actor it did not observe.
+
+`npm run demo:data` drives this with four deliberate defects and twenty criteria, and it is measured
+rather than asserted: the run reaches `PASS (COMPLETED, 5 iteration(s))` with `20/20 mandatory criteria
+passed, environment valid, no safety violation, evidence complete.`, and the failing count descends
+**`5 -> 4 -> 3 -> 1 -> 0`** (the passing count rising `15 -> 16 -> 17 -> 19 -> 20`). The reach of each
+defect is what makes the table readable: `D1` (a topic created with a cleanup policy of `compact`),
+`D2` (a second topic with the same error) and `D4` (a committed position one short of the records
+delivered) are each read by **exactly one** criterion, so each is a control, and `D3` then moves
+**two** at once - one release constant carried in the four record payloads `AC-011` compares and again
+in the checkpoint payload `AC-015` compares, which are two separate true consequences of one edit
+rather than one fact counted twice. So `5 -> 4 -> 3` is three controls each clearing one criterion,
+`3 -> 1` is `D3` clearing two, and `1 -> 0` is `D4`.
+
+`D4` is the defect this world exists to make observable, and the reason it keeps a committed position
+at all. A pipeline that delivers three orders and commits `2` has written every record correctly: the
+log is complete, every key and every payload reads exactly as it should, and the one thing wrong is
+**where the group will resume** - which nothing in the data says. A criterion that read the
+application's own summary would have to trust its arithmetic; asking the broker what position the
+group committed asks a party that only records what it was told.
 
 ---
 
@@ -931,8 +1032,8 @@ core/acceptance/        AcceptanceCriterion, and the engine that turns a contrac
 core/execution/         the run controller: state machine, bounded exits, repair gate
 core/validation/        ValidationResult, the validator registry, status semantics, verdict rollup
 core/environment/       EnvironmentAdapter, the environment manager, the shared web, database, k8s,
-                        posix, os, cloud, container, extension-host and process vocabularies that
-                        keep validators from importing an adapter
+                        posix, os, cloud, container, extension-host, process and broker vocabularies
+                        that keep validators from importing an adapter
 core/evidence/          the evidence engine and the run bundle
 core/run/               run identity, history, iteration state
 core/metrics/           M1..M5, measured over the bundles on disk
@@ -963,6 +1064,10 @@ adapters/local-process/ starts a real program as a real child process and reads 
                         two streams, a probe of whether it is still up and the files it wrote under
                         a real directory. Nothing is substituted here either - the process is a
                         process and the file is a file - so no reading carries a `simulated` field
+adapters/sim-data/      the substitution and the transport are deliberately on opposite sides of the
+                        line: a real TCP listener that decodes real bytes, and a substitute holding
+                        the topics, partitions, records, offsets, replication assignments and
+                        consumer-group state a broker would. No broker, no ZooKeeper, no Kafka
 validators/playwright/  web.element, web.visible, web.text, web.value, web.count, web.url,
                         web.console.clean, web.network.ok
 validators/database/    db.table, db.column, db.count, db.value
@@ -990,6 +1095,9 @@ validators/api/         api.service, api.exchange, api.status, api.header, api.b
 validators/process/     process.host, process.probe, process.argv, process.state, process.exitcode,
                         process.run, process.stdout, process.stderr, process.file, process.kind,
                         process.contents, process.size
+validators/data/        data.node, data.topic, data.layout, data.partition, data.record, data.key,
+                        data.value, data.group, data.member, data.commit, data.call, data.probe,
+                        data.meter
 schemas/                goal / acceptance / environment / run / result / ambiguity
 scripts/                bootstrap and build steps that must run before anything is checked
 examples/shopping-cart/ the canonical demo: correct app, defect overlay, goal, contract, world
@@ -1014,10 +1122,14 @@ examples/local-process/ the tenth demo: a real program judged on its exit code, 
                         files it wrote under a real directory. Four defects, nine criteria, and the
                         failing count descending `6 -> 3 -> 2 -> 1 -> 0` - one version constant moves
                         three criteria at once, and the three controls after it move one each
+examples/sim-data/      the eleventh demo: the app provisions a substitute message broker over a real
+                        TCP socket it really writes to. Four defects, twenty criteria, and the failing
+                        count descending `5 -> 4 -> 3 -> 1 -> 0` - three of the four defects are read
+                        by exactly one criterion each, and the fourth moves two
 extension/vscode/       the VS Code Cockpit: a thin client, no validation logic. The one directory
                         with a build step, because the extension host is not Node's loader
                         (`npm run package` produces the `.vsix` you can hand to somebody else)
-tests/                  1833 tests in a root `node --test` run: this tree's own 1769 plus the
+tests/                  2182 tests in a root `node --test` run: this tree's own 2118 plus the
                         Cockpit's 64
 
 dist/                   GENERATED by `npm run build`. Never edited, never committed.
@@ -1048,7 +1160,8 @@ Layering is enforced by hand, and `core/*` may not import `adapters/*`, `validat
 `validators/*` may not import `adapters/*` (the shared vocabulary lives in
 `core/environment/web-observation.ts`, `db-observation.ts`, `k8s-observation.ts`,
 `posix-observation.ts`, `os-observation.ts`, `cloud-observation.ts`,
-`container-observation.ts`, `vscode-observation.ts`, `api-observation.ts` and `process-observation.ts`
+`container-observation.ts`, `vscode-observation.ts`, `api-observation.ts`,
+`process-observation.ts` and `data-observation.ts`
 for exactly that reason);
 `cli/*` is the only layer that may import all three.
 
@@ -1057,8 +1170,8 @@ for exactly that reason);
 ## Scope
 
 **In, for the MVP:** VS Code + Veridian Core + a local application + a browser + Playwright +
-deterministic acceptance criteria + evidence + reset/replay. Ten adapters exist: `local-web`,
-`local-db`, `local-api` and `local-process` - four worlds that substitute nothing - and six
+deterministic acceptance criteria + evidence + reset/replay. Eleven adapters exist: `local-web`,
+`local-db`, `local-api` and `local-process` - four worlds that substitute nothing - and seven
 *simulated* ones. Three of the real ones are also the argument that `EnvironmentAdapter` is a seam
 rather than a browser harness with an interface bolted on: `local-db` judges a SQLite file,
 `local-api` is that proof's mirror - a world that is **real** and reached over a socket, where the
@@ -1080,11 +1193,15 @@ daemon, no image and no namespace or cgroup anywhere in the loop. `sim-vscode`: 
 loaded by a real Node process through a module resolved in place of `vscode`, and judged on the
 contributions, commands, invocations, settings, status, output, messages, subscriptions and refusals
 that process recorded, with no editor, no window and no installed VS Code anywhere in the loop.
+`sim-data`: a real application process really opens a TCP socket and really writes a broker protocol
+to it, and is judged on the topics, partitions, records, offsets, replication assignments and
+consumer-group state the substitute behind that socket holds, with no broker, no ZooKeeper and no
+message-broker software anywhere in the loop.
 `local-api`: no substitute at all - a real service, judged through its own HTTP interface on loopback,
 with the contract's own requests as the observation. `local-process`: no substitute at all either,
 and no socket - a real program run as a real child process and judged on the text it printed, the
 code it exited with and the files it really wrote. In all
-six of the simulated ones, the substitution is
+seven of the simulated ones, the substitution is
 **declared**: `environment.json` names what was stood in for and the reading carries a `simulated`
 field, so a `PASS` is traceable to a named substitute rather than to unexamined reality - and a
 verdict a substitute cannot justify is reported `INCONCLUSIVE`.
@@ -1101,7 +1218,11 @@ register of runtime commands, and every reading says which surfaces are stood in
 `vscode` world closes the argument: Veridian does not install, launch or drive an editor. It resolves a
 module in place of the editor's API and records what a real extension did through it - which is also
 why the `extension/vscode` Cockpit below and this world are two different things that happen to share a
-name: one is a client *of* Veridian, the other is a world *for* it.
+name: one is a client *of* Veridian, the other is a world *for* it. The `data` world is the argument
+once more, on the axis that is easiest to overclaim: it does not run a broker, and it does not pretend
+the *transport* is a substitute either - the listener is a real socket, the bytes are real and the
+frame is decoded and bounds-checked for real. What is stood in is the **broker** behind that socket,
+which is why the reading names the surfaces it substitutes and not the socket it did not.
 
 Also built, and named here rather than left for the reader to discover: the **VS Code Cockpit**
 (`extension/vscode/`) - a thin client over the same local Core interface the CLI drives, so CLI, CI

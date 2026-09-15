@@ -1,0 +1,102 @@
+# The world this run is judged in: a substitute message broker.
+#
+# `sim-data` is the eleventh adapter and the seventh simulated world. The application is a real Node
+# child process that opens a real TCP socket to a real listener on loopback and speaks the Kafka wire
+# protocol to it in real frames it really encodes. What is stood in for is everything on the other side
+# of that socket: there is no Kafka, no KRaft or ZooKeeper controller, no broker process, no segment
+# file, no index, no page cache, no rebalance protocol, no replication, no ISR evaluation and no
+# outbound socket anywhere in this run. The world is one in-process listener holding maps of topics,
+# partitions, records, groups and committed offsets, plus a request log that records every frame it
+# answered and who sent it.
+#
+# ## What that obliges this world to do
+#
+#   1. The application executes for real. `app/provision.mjs` runs as a child process with this
+#      operator's privileges, reads its environment, opens a socket, writes real bytes into it and
+#      prints one real line per request it sent.
+#   2. The interfaces are real. The socket is a real socket. The request frames are real Kafka frames -
+#      length-prefixed, big-endian, with `NULLABLE_STRING` client ids and zig-zag varints where the
+#      protocol says so - and the records travel as real record batches whose CRC-32C the broker
+#      verifies and whose offsets the broker assigns, exactly as a broker does.
+#   3. The substitution is declared. Every reading carries `simulated`, naming the seven surfaces stood
+#      in for - broker, replication, group-coordination, log-storage, retention, transactions and
+#      partitioning - so a result says what was substituted rather than leaving a reader to infer it.
+#      The goal's context block says the same thing, and so does `README.md` beside this file.
+#
+# ## What is never simulated
+#
+# Whether the application's code ran; the bytes it put on the wire, frame for frame; what it asked for
+# and what the broker answered, with the result and the wording; the records the broker then held, their
+# offsets, their keys, their values and their header counts; the group it joined, the generation it was
+# given and the offsets it committed; the reading taken afterwards; and the verdict each criterion
+# reaches, including the authority to report `FAIL`. The substitution is the *broker*, and nothing else.
+#
+# ## The three limits this world states rather than hides
+#
+#   - **One node.** The register announces twelve APIs and the topology holds one broker. A topic may
+#     record `replication 3` and the reading will say so, and every partition of it will report
+#     `isr [1]` with a stated reason - because a second replica is not something one process can hold.
+#     A criterion may compare the replication factor the application *asked for*; it may not compare an
+#     ISR as though replicas existed.
+#   - **No rebalance.** A group's generation advances when a member joins and never advances again.
+#     The leader is whoever joined; no assignment is computed, no ISR is shrunk to evict a member, and
+#     a member that stops heartbeating is never reaped. `group.state` reads `Stable` because every
+#     member's assignment is non-empty, and that is the whole of the claim it makes.
+#   - **No retention.** No record is ever deleted. A criterion may compare a log's high watermark; it
+#     may not compare a log *shrinking*, because nothing here will make one shrink.
+#
+# ## Why there is no `url`, and no `browser` block
+#
+# The application reaches this world by opening a socket, so the address lives in `data:` rather than in
+# `url:` - and with no `url` the loader starts no browser, so every criterion in `acceptance.yaml` is a
+# broker reading. That is the same shape `sim-k8s` and `sim-container` use, one family out.
+#
+# ## Why the address is two fields and one of them is absent
+#
+# `host` and `port` are omitted deliberately. They are the only two fields in this block with a schema
+# default, and both defaults are the honest ones: `127.0.0.1` because the loader refuses a routable
+# address *by name* - a broker on a routable address is a real listener wearing the word simulated,
+# which is the one claim this world does not make - and `0` because the operating system choosing a port
+# is what lets two runs of this same contract coexist on one machine. Absence here is a declaration
+# rather than a hole: `0` is written down in the schema as "the OS chooses one", so a reader of the
+# reading gets the port the world really took.
+
+adapter: sim-data
+app: app
+
+# The world has no HTTP surface, so there is nothing for a browser or a probe to address. Both are
+# declared absent rather than left out, because "this world is not reached over HTTP" and "nobody filled
+# the field in" are different documents and only one of them is true here.
+url: null
+dependencyInstall: null
+
+# The substitute broker. `cluster` is what every reading names, and `nodeId` is the identity the world
+# answers as and the only member of every ISR it reports.
+data:
+  cluster: veridian-data
+  nodeId: 1
+
+start:
+  command: node
+  args: [provision.mjs]
+  # The application's own completeness line, and the numbers are a pattern rather than literals on
+  # purpose: a pattern pinning `12 requests, 2 topics, 5 records` would pass for a run that sent a
+  # different set of any of the three, and the line exists to say what this run did rather than what
+  # some run once did. `\d+` is the whole of the claim the readiness check is entitled to make.
+  readyPattern: 'cart-broker provisioned: \d+ requests, \d+ topics, \d+ records'
+
+# No `path` and no `expectStatus`: both are HTTP concepts and this world has no HTTP surface to probe.
+# Readiness is the application's own line above, which is the only honest readiness signal a world with
+# no status code can offer.
+health:
+  timeoutMs: 30000
+  intervalMs: 100
+
+reset:
+  # `restart` rather than `snapshot-restore`, and the adapter refuses the latter **by name** rather than
+  # downgrading it silently. A broker's state is a function of the traffic it answered - the records, the
+  # group's generation, the committed offsets and the meter that counts them - so the only way to begin a
+  # new life is to close the listener, drop every map and everything the request log recorded, and let
+  # the application provision it again from nothing. A strategy that restored a snapshot of the *maps*
+  # while keeping the request log would leave a bundle holding two runs' traffic under one meter.
+  strategy: restart

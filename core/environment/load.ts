@@ -13,6 +13,7 @@ import {
   type CloudPlan,
   type ClusterPlan,
   type ContainerPlan,
+  type DataPlan,
   type EnvironmentPlan,
   type HealthPolicy,
   type OsPlan,
@@ -597,6 +598,93 @@ function readApplication(raw: unknown): { readonly command: string; readonly arg
   return { command, args: asStringArray(raw["args"]) };
 }
 
+/**
+ * The broker declaration, resolved.
+ *
+ * The seventh time the rule of {@link readCluster}, {@link readPosix}, {@link readOs},
+ * {@link readCloud}, {@link readContainer} and {@link readVSCode} is written out - absent means not
+ * this world, present-but-incomplete is **refused** - and the first time the rule meets a block that
+ * carries an address.
+ *
+ * `cluster` and `nodeId` are refused when blank for the reason every identity before them is: a
+ * defaulted cluster name would be a name the plan and every reading agree on by construction and that
+ * nothing in the document ever said, so the one question these fields exist to answer - *which log is
+ * this verdict about* - would be answered with a value nobody chose and no reader could check.
+ *
+ * `host` and `port` are the interesting half. They default, and each default is a *statement* rather
+ * than a convenience: `127.0.0.1` is the only host that keeps a substitute off the network, and `0`
+ * is the declaration that the operating system picks the port. A host that is not loopback is
+ * therefore refused by name rather than honoured - a broker listening on a routable address is a real
+ * listener, and the one thing this world must not become is a claim to be simulated while holding a
+ * port the rest of the machine can reach.
+ *
+ * The port is validated for the same class of reason `container.platform` and `vscode.apiVersion`
+ * are: it is not a label, it is a value the world acts on. A fractional or out-of-range port would
+ * reach `listen()` and come back as a host-level socket error naming neither the document nor the
+ * field, which sends the reader to inspect the machine rather than their file.
+ */
+const LOOPBACK_HOSTS = ["127.0.0.1", "::1", "localhost"] as const;
+
+function readData(raw: unknown): DataPlan | null {
+  if (raw === undefined || raw === null) return null;
+  if (!isPlainObject(raw)) {
+    throw defect(
+      "$.data",
+      "data must be an object naming the cluster this world stands in for, the broker id it answers " +
+        "as, and optionally the address it listens on",
+    );
+  }
+  const cluster = asString(raw["cluster"]).trim();
+  if (cluster === "") {
+    throw defect(
+      "$.data.cluster",
+      "the data declaration names no cluster. Every reading this world produces says which log it is " +
+        "about, and a cluster name is the only thing that answers it - the address cannot, because " +
+        "the same address serves whichever process happens to hold the port.",
+    );
+  }
+  const nodeId = raw["nodeId"];
+  if (typeof nodeId !== "number" || !Number.isInteger(nodeId) || nodeId < 0) {
+    throw defect(
+      "$.data.nodeId",
+      "the data declaration does not name a broker id. A reading reports the node that answered " +
+        "beside the cluster it belongs to, and a node id that is missing, fractional or negative is " +
+        "one this world cannot answer as - so it is refused here, before a world exists, rather than " +
+        "reported as an identity nobody can act on.",
+    );
+  }
+  const host = asString(raw["host"], "127.0.0.1").trim();
+  if (host === "") {
+    throw defect(
+      "$.data.host",
+      "the data declaration names an empty host. `host` defaults to 127.0.0.1, which is the only " +
+        "spelling that keeps this substitute off the network; an explicit empty string would be " +
+        "refused by the socket layer with a message naming neither this document nor this field.",
+    );
+  }
+  if (!(LOOPBACK_HOSTS as readonly string[]).includes(host)) {
+    throw defect(
+      "$.data.host",
+      `this world binds a substitute broker on ${LOOPBACK_HOSTS.join(", ")}, and the document names ` +
+        `${JSON.stringify(host)}. A broker on a routable address is a real listener rather than a ` +
+        "simulated one, and this world's entire claim is that it stands in for a cluster without " +
+        "becoming one - so the host is refused here, where the operator's own document is in hand, " +
+        "rather than bound and reported as a substitute.",
+    );
+  }
+  const port = raw["port"] === undefined || raw["port"] === null ? 0 : raw["port"];
+  if (typeof port !== "number" || !Number.isInteger(port) || port < 0 || port > 65535) {
+    throw defect(
+      "$.data.port",
+      "the data declaration names a port outside 0..65535. `0` means the operating system chooses " +
+        "one and the reading records the port really bound; any other value is the port this world " +
+        "will try to hold, and a value the socket layer cannot accept would surface as a host error " +
+        "naming neither this document nor this field.",
+    );
+  }
+  return { cluster, nodeId, host, port };
+}
+
 function readBoundary(limits: GoalLimits): BoundaryPolicy {
   return {
     network: limits.networkPolicy,
@@ -682,6 +770,7 @@ export function finalizeEnvironment(
     container: readContainer(raw["container"], appPath),
     vscode: readVSCode(raw["vscode"], appPath),
     process: readProcess(raw["process"], appPath),
+    data: readData(raw["data"]),
     health: readHealth(raw["health"], url !== "", readyPattern),
     reset: { strategy: strategy as ResetStrategy, command: resetCommand },
     browser: readBrowser(raw["browser"], url !== ""),

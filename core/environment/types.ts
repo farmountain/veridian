@@ -335,6 +335,33 @@ export interface EnvironmentDefinitionShape {
     readonly root?: unknown;
     readonly settings?: unknown;
   };
+  /**
+   * The message broker this world stands in for, when the world is one.
+   *
+   * Four facts, and the last two are what make this block different in kind from the eight before it.
+   * `cluster` and `nodeId` are the pair every reading names - a stream store is judged by *which log*
+   * a record landed in *on which node* - and they are declared for the reason a cluster's name and a
+   * host's name are: a reading could report them and could never promise them.
+   *
+   * `host` and `port` are an *address*, and this is the first world block to carry one. It carries it
+   * because the address is the one fact that makes the substitution observable: the application opens
+   * a real socket to whatever this world bound, and a plan that did not say where would leave every
+   * reading describing a listener the document never mentioned. `port: 0` is a declaration rather
+   * than a hole - it means "the operating system chooses" - and the reading records the port that was
+   * really bound, so a criterion reads the address the world took rather than the one it was told.
+   *
+   * There is deliberately no path and no principal. A broker holds a log rather than a tree, so there
+   * is no directory for a reset to rebuild; and a broker answers every client that connects, so a
+   * contract judged "as" somebody would be a contract about an authorisation model this world does
+   * not implement. Both absences are recorded where the world is registered rather than left to be
+   * inferred from this block's silence.
+   */
+  readonly data?: {
+    readonly cluster?: unknown;
+    readonly nodeId?: unknown;
+    readonly host?: unknown;
+    readonly port?: unknown;
+  };
   readonly health?: {
     readonly path?: unknown;
     readonly expectStatus?: unknown;
@@ -530,6 +557,16 @@ export interface EnvironmentPlan {
    * since a criterion that performed its own `run` steps never starts the program at all.
    */
   readonly process: ProcessPlan | null;
+  /**
+   * The message broker this world stands in for, or `null` when the world is not one.
+   *
+   * The tenth of the same field, one per kind of world, and read for the same reason as the other
+   * nine: the first question asked of a result is *which world produced it*. A broker reading answers
+   * that with four facts - which cluster the log belongs to, which node answered, and the address the
+   * socket really reached - and the address is the one of the four that could not be recovered from
+   * the document afterwards, because `port: 0` means the port is decided at bind time.
+   */
+  readonly data: DataPlan | null;
   readonly health: HealthPolicy;
   readonly reset: { readonly strategy: ResetStrategy; readonly command: string | null };
   readonly browser: BrowserPolicy;
@@ -752,4 +789,41 @@ export interface ProcessPlan {
   readonly application: { readonly command: string; readonly args: readonly string[] } | null;
   /** Absolute, resolved against `appPath` on the same rule `databasePath` follows. */
   readonly root: string;
+}
+
+/**
+ * A message broker's resolved declaration.
+ *
+ * The first world block in this file to carry an address, and that is the whole reason it has four
+ * fields where the two before it have three.
+ *
+ * `cluster` and `nodeId` are identity, on the same footing as `CloudPlan.account` and
+ * `VSCodePlan.host`: a stream store is judged by which log a record landed in and which node
+ * answered, and neither fact can be supplied by the reading that reports it.
+ *
+ * `host` and `port` are different in kind. They are where the substitute really listens, and they
+ * are the reason this world is one a criterion can *act* in: the application is told this address and
+ * opens a socket to it, while a criterion's own command is performed in process by the port and
+ * filed `source: "criterion"`. It acts through a `run` step rather than a `call` step - a `call` is
+ * the sixth world's and puts an HTTP request to a service, and the command words this world understands
+ * (`create-topic`, `produce`, `fetch`, `metadata`, `commit`) are a register of its own rather than a
+ * provider's routes. `port: 0` is not a missing value - it is
+ * the declaration that the operating system picks the port, which is the only spelling that lets two
+ * runs of the same contract coexist on one machine - and the adapter reports the port it really
+ * bound, so the plan and the reading never disagree about the address even when the number was not
+ * decided in advance.
+ *
+ * Because the substitute binds a socket, the loader holds it to loopback and refuses anything else
+ * by name. A substitute broker reachable from off this machine would be a *real* listener wearing the
+ * word simulated, which is the one claim this project does not make.
+ */
+export interface DataPlan {
+  /** The cluster the readings name, e.g. `veridian-data`. Declared, never inferred. */
+  readonly cluster: string;
+  /** The broker id the world answers as, reported beside the cluster in every reading. */
+  readonly nodeId: number;
+  /** The host the substitute binds. Loopback only; the loader refuses anything else by name. */
+  readonly host: string;
+  /** The port the substitute binds, or `0` for "the operating system chooses one". */
+  readonly port: number;
 }

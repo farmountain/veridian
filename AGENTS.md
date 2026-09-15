@@ -4,7 +4,7 @@ Agent instructions for the **Veridian** repository. This is the single always-on
 instructions file for this workspace — do not add a second one
 (`.github/copilot-instructions.md`) alongside it.
 
-> **Status: the MVP is implemented and green, and six more sandbox worlds have landed.** Core, the
+> **Status: the MVP is implemented and green, and nine more sandbox worlds have landed.** Core, the
 > `local-web` adapter, the Playwright validators, the CLI, the schemas and the canonical demo all exist.
 > `local-db` - a second adapter and a second validator family, against a SQLite file with no browser -
 > exists beside them, and is the proof that `EnvironmentAdapter` is a seam. `sim-k8s` is the third, and
@@ -20,9 +20,10 @@ instructions file for this workspace — do not add a second one
 > account**: a real HTTP server speaking a provider's own routes over loopback, holding buckets,
 > objects, queues, secrets and principals and deciding every permission question with the account's
 > own evaluator, judged as `svc-cart` rather than as an account root, with no cloud account, no
-> session, no provider API and no outbound socket anywhere in the loop. It is also the only world that
-> performs a `call` step, so a criterion can put its own request to the account rather than infer the
-> account's answer from the application's traffic.
+> session, no provider API and no outbound socket anywhere in the loop. It is one of three worlds that
+> perform a `call` step, so a criterion can put its own request to the account rather than infer the
+> account's answer from the application's traffic - `local-api` does it for every criterion, and
+> `sim-data` for the ones that ask the broker a question of its own.
 > `sim-container` is the seventh and the fifth simulated one, and its subject is a **container
 > runtime**: a real application process really provisioning images and containers through commands it
 > really issues, answered in process by a store of image and container records beside a register of
@@ -53,9 +54,24 @@ instructions file for this workspace — do not add a second one
 > question, so it carries two target grammars - `app` or a bare 1-based position names a command, and
 > a world-relative path names a file - and a path that leaves the root is **refused and recorded as a
 > boundary crossing** rather than resolved, because opening the developer's own filesystem while
-> calling it the sandbox's is the one thing this world must not do.
-> `npx tsc --noEmit` is silent and `node --test` reports 1833 passing tests -
-> Veridian's own 1769 plus the 64 the VS Code Cockpit contributes, which the root runner discovers
+> calling it the sandbox's is the one thing this world must not do. Its family was the first asked two
+> different kinds of question, and the eleventh world's family is the second - which is why neither
+> claim is written as "the only one" any more.
+> `sim-data` is the eleventh and the seventh **simulated** one, and its subject is not a document a
+> world holds but a **request an application made**: the application really opens a TCP socket on
+> loopback and really writes a broker protocol into it - length-prefixed frames, a CRC32C over each
+> body, a version negotiated through `ApiVersions` before anything else is sent - and the substitution
+> and the transport sit deliberately on opposite sides of that line, because `wire.ts` decodes and
+> bounds-checks those bytes for real. No broker process, no replica follower, no on-disk log, no group
+> coordinator, no rebalancer and no outbound socket. Its three limits are stated rather than hidden:
+> replication is recorded and never performed, a group is joined once and never rebalanced, and a
+> cleanup policy is a value the broker records and never applies. Its only evidence kind is `json`,
+> written twice per criterion when there was traffic. Its family carries the same `call`/`probe` pair
+> the sixth world's does, and the pair means the same inverted thing there: `data.call` reads the
+> requests the **application** put to the broker, `data.probe` the ones the **criterion** itself
+> issued, so a criterion's own request cannot be mistaken for evidence about the application.
+> `npx tsc --noEmit` is silent and `node --test` reports 2182 passing tests -
+> Veridian's own 2118 plus the 64 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Four distribution routes ship - a clone, an npm package, the Cockpit (as
 > a development install and as a `.vsix`), and a container image - and there is still **no
 > build step between the source tree and the running program**: Node 22 strips types and runs `.ts`
@@ -429,6 +445,22 @@ adapters/local-process/ LocalProcessEnvironment - the tenth world, and the secon
                         no step kind: a contract provisions a tree with the `run` steps the second
                         world introduced. There is no `*_SIMULATED_SURFACES` constant for this world
                         and none is wanted, which is why its reading carries no `simulated` field.
+adapters/sim-data/      SimDataEnvironment - the eleventh world and the seventh SIMULATED one, aimed
+                        not at a document a world holds but at a REQUEST AN APPLICATION MADE. The
+                        application really opens a TCP socket on loopback and really writes a
+                        broker protocol into it - length-prefixed frames, a CRC32C over each body,
+                        and a version negotiated through `ApiVersions` before anything else is
+                        sent - and the substitution and the transport are deliberately on opposite
+                        sides of that line: `data-port.ts` holds topics, partitions with their
+                        records and offsets, high watermarks and in-sync sets, consumer groups with
+                        generations and members, committed positions and a meter, while `wire.ts`
+                        decodes and bounds-checks the bytes for real. `protocol.ts` is the register
+                        of twelve APIs, and it is the authority on how each is spelled. No broker
+                        process, no replica follower, no on-disk log, no group coordinator, no
+                        rebalancer and no outbound socket. `sim-data-environment.ts` declares the two
+                        `DATA_ENV` names the application reads, of the five it declares. Its only
+                        evidence kind is `json`, and it writes two of them per criterion when there
+                        was traffic.
 validators/playwright/  Playwright web validators (element, visible, value, text, count, url,
                         console.clean, network.ok).
 validators/database/    Database validators (table, column, count, value). Judge a reading in
@@ -457,10 +489,14 @@ validators/cloud/       Provider-account validators (bucket, object, tag, policy
                         core/environment/cloud-observation.ts - the sixth family, and the fourth
                         reason that rule holds. The family prints what an operator reads rather than
                         raw JSON: a bucket, an object, a policy and a decision each render to a
-                        spelling a failure report can quote. `cloud.call` is the only validator in
-                        the product that makes its own request to the world rather than reading one
-                        the application made, which is why the cloud plan - and only the cloud plan -
-                        admits the `call` step.
+                        spelling a failure report can quote. Two of the eleven are distinguished by
+                        WHO ASKED, and the names read the way a reader does not expect: `cloud.call`
+                        reads the request the **application** made and `cloud.probe` the one the
+                        **criterion** made, which is why a criterion's own request cannot be
+                        mistaken for evidence about the application. `cloud.call` is not the only
+                        validator that makes its own request and the cloud plan is not the only plan
+                        that admits the `call` step - `local-api` does too, for the whole of every
+                        one of its criteria.
 validators/container/   Runtime validators (runtime, image, tag, digest, label, env, state, alive,
                         exitcode, command, user, mount, port, limit, health, logs, stderr, call,
                         probe). Judge a reading in core/environment/container-observation.ts - the
@@ -502,8 +538,9 @@ validators/process/     Program validators (host, probe, argv, state, exitcode, 
                         stderr, file, kind, contents, size). Judge a reading in
                         core/environment/process-observation.ts - the tenth family, and the eighth
                         reason that rule holds. It has no new step kind: a criterion acts in the
-                        world with `run`, and a program's own output is read as a stream. It is the
-                        only family asked two different kinds of question, so it carries two target
+                        world with `run`, and a program's own output is read as a stream. Its family
+                        was the first asked two different kinds of question - the eleventh world's
+                        is the second - so it carries two target
                         grammars and the *validator* chooses between them rather than the spelling:
                         a target naming a command is `app` (the program the world started) or a
                         bare 1-based position (the criterion's own `run` steps, which is why
@@ -518,6 +555,29 @@ validators/process/     Program validators (host, probe, argv, state, exitcode, 
                         and `process.contents` read their target as a place and `process.exitcode`
                         reads its target as a selector, so neither can misread the other's
                         spelling.
+validators/data/        Broker validators (node, topic, layout, partition, record, key, value,
+                        group, member, commit, call, probe, meter). Judge a reading in
+                        core/environment/data-observation.ts - the eleventh family, and the ninth
+                        reason that rule holds. It has no new step kind: a criterion acts in the
+                        world through a `run` step, and one of them expects the world to **refuse**
+                        it rather than resolve it. Two of the thirteen are distinguished by WHO
+                        ASKED, and the pair inverts the way a reader does not expect: `data.call`
+                        reads the requests the **application** put to the broker and `data.probe`
+                        the requests the **criterion** issued, so a contract cannot earn its own
+                        pass with a request it made itself - and one criterion exists precisely to
+                        depend on the two disagreeing, because the application's `CreateTopics` for
+                        two fresh topics reads `ok` while the criterion's own for a topic the world
+                        already holds reads `refused`. It carries two target grammars on purpose,
+                        one per kind of question: a topic-shaped reference is split on `/` and each
+                        noun fixes its own segment count (`cart-events`, `cart-events/0`,
+                        `cart-events/0/2`, `cart-indexer`, `cart-indexer/member-1`,
+                        `cart-indexer/cart-events/0`), with every other spelling refused and told
+                        the count it wanted, while `data.call` and `data.probe` take an API name as
+                        `protocol.ts` spells it and `data.meter` names a counter. `data.layout`
+                        compares the topic's whole rendering, which carries the world's own limit
+                        inside the value it compares - `replication 1 recorded` beside `isr [1]` -
+                        because a substitute that is honest about its boundary has to carry that
+                        honesty into the comparison rather than beside it.
 cli/                    The interface that exists today: arguments, support, worlds.ts (the adapter
                         register and the requirements each adapter declares), veridian.ts.
 schemas/                goal/acceptance/environment/run/result/ambiguity .schema.json - the
@@ -585,6 +645,23 @@ examples/local-process/ The tenth demo, and the second whose world is entirely R
                         Its repair agent walks the table in array order, so the failing count
                         descends `6 -> 3 -> 2 -> 1 -> 0` over five iterations - the figures are the
                         run's own, and the demo's narration asserts them.
+examples/sim-data/     The eleventh demo, and the seventh simulated one: the application opens a
+                        real TCP socket on loopback and really writes a broker protocol into it, and
+                        is judged on the topics, partitions, records, groups and committed offsets
+                        the substitute holds. Four defects, twenty criteria. D1 (a cleanup policy),
+                        D2 (the same error on the second topic) and D4 (a committed position one
+                        short) are the controls, each read by exactly one criterion, so a reader
+                        watches one edit move one reading; D3 then moves **two** at once, because one
+                        release constant is printed in the four record payloads `AC-011` compares and
+                        again in the checkpoint payload `AC-015` compares. The failing count
+                        descends `5 -> 4 -> 3 -> 1 -> 0` over five iterations - read off the run's
+                        own `iterations`, where the failing criteria per iteration are
+                        `[AC-004, AC-005, AC-011, AC-014, AC-015]` then `[AC-005, AC-011, AC-014,
+                        AC-015]` then `[AC-011, AC-014, AC-015]` then `[AC-014]` then none. D4 is the
+                        defect this world exists to make observable: the pipeline delivers three
+                        orders and commits `2`, so every record is correct, the log is complete, and
+                        the one thing wrong is where the group will resume - a fact no record in the
+                        data states, which is why the reading had to be about the request.
 examples/defect-text.ts One implementation of the CRLF rule for a textual overlay on a source file.
                         Two demos injecting defects is two chances to teach the rule differently;
                         a third copy is where the rule gets broken.
@@ -616,12 +693,13 @@ dropped: at the time, the only registered adapter was `local-web` and all eight 
 were browser observations, so a contract about a CLI would have made every criterion `INCONCLUSIVE`
 and exited 2 - the same defect as `--browser none` on the canonical demo.
 
-**That reason is now spent, and the file has to say so rather than keep quoting it.** Ten adapters
-are registered, nine of them need no browser, and `local-api` and `local-process` are precisely the
-"non-web adapter" this paragraph said the scope boundary forbade building speculatively - they were not
-built speculatively, they were built because a world whose subject is an HTTP contract is inside the
-boundary and a world whose subject is a program is too, and once `local-api` existed a non-browser
-contract about a program became expressible. So the honest statement is no
+**That reason is now spent, and the file has to say so rather than keep quoting it.** Eleven adapters
+are registered, ten of them need no browser, and `local-api`, `local-process` and `sim-data` are
+precisely the "non-web adapter" this paragraph said the scope boundary forbade building
+speculatively - they were not built speculatively, they were built because a world whose subject is an
+HTTP contract is inside the boundary, a world whose subject is a program is too, and a world whose
+subject is a request an application made is inside it as well, and once `local-api` existed a
+non-browser contract about a program became expressible. So the honest statement is no
 longer "it cannot be written" but **"it has not been written"**. Veridian's own self-validation is
 still its `node --test` suite, which `npm run gate` runs, and a `acceptance/veridian-mvp.yaml` remains
 the next piece of dogfooding rather than a blocked one.
@@ -687,8 +765,8 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 1833 tests, ~5s. No directory argument.
-                           # 1833 = the root's own 1769 + the Cockpit's 64, because the runner walks
+node --test                # the whole suite. 2182 tests, ~7s. No directory argument.
+                           # 2182 = the root's own 2118 + the Cockpit's 64, because the runner walks
                            # the tree and reaches extension/vscode/src/*.test.ts. Neither figure is
                            # the whole story on its own: the root tsconfig EXCLUDES extension/**, so
                            # `npx tsc --noEmit` here does not typecheck the Cockpit and the root gate
@@ -718,7 +796,7 @@ npm run smoke:out          # alone: resolve the manifest's `main`, activate it t
                            # registered commands equal the six the manifest declares. Exit 1 if the
                            # compiled file the manifest names is not there.
 npm run package            # vsce package --no-dependencies --out veridian-cockpit.vsix
-                           # 11 files, 24.15 KB, at the extension root. Deliberately NOT in `gate`:
+                           # 11 files, 24.39 KB, at the extension root. Deliberately NOT in `gate`:
                            # a packaging tool's output is not part of the source tree's contract,
                            # and making the local gate depend on `vsce` would make every local run
                            # need it. CI runs it, and runs the check below against it.
@@ -961,7 +1039,7 @@ npx tsc --noEmit    silent (exit 0)
 node --test         64 tests, 0 failing
 npm run build       out/, 6 files
 npm run smoke:out   15 checks, exit 0
-npm run package     veridian-cockpit.vsix, 11 files, 24.15 KB
+npm run package     veridian-cockpit.vsix, 11 files, 24.39 KB
 npm run smoke:vsix  32 checks, exit 0
 npm run gate        exit 0
 ```
@@ -1686,7 +1764,7 @@ port had none, which is why the defect reached a demo run.
   register.** `README.md` said a step is "one of seven kinds" while `core/acceptance/steps.ts` holds
   **eleven** in `STEP_KINDS` - a figure that had drifted through four new worlds without anything
   reading it. The same pass found `AGENTS.md` quoting `1273` tests and `1213` of the tree's own, where
-  the measured run was `1456` and `1396` - and the count stands at `1833` and `1769` as this is
+  the measured run was `1456` and `1396` - and the count stands at `2182` and `2118` as this is
   written, which is the rule demonstrating itself. *Both are the same defect as a roster printed in a
   document: a number is a claim about the code, and the cheapest way to hold it is to read the code -
   the difference is that a number cannot be pinned by a test the way a name can, so it has to be
@@ -2063,3 +2141,114 @@ already has a style is a second rulebook rather than a description.
   yields `undefined` for every provisioner vector, which presents as a world that reports "no command
   was issued" for a program that issued fifteen. *The schema is the half a contract author reads and the
   type is the half the engine reads, and neither one can see the other's spelling.*
+
+- **A guard that counts a world's whole history while its message claims to describe one run is a guard
+  that can pass on a run it should refuse.** `sim-cloud`'s `#deployApplication()` refuses a provisioner
+  that exited zero without asking the account anything - *"the substitute holds exactly what the
+  application asked it to hold"* - and it read `this.#cloud.calls().filter(...)`, a count of the
+  account's **entire life**. `clear()` deliberately never clears the call log (it moves the meter's
+  baseline instead, because the meter is a reading of the current life and the log is the record of
+  every request the account ever answered), so after a `restart` reset whose re-provisioned application
+  connected **zero** times, the *first* provisioning's call still satisfied the count: the world had
+  just been emptied, the guard's own message claimed the application had asked it to hold something,
+  and every criterion afterwards would have named an absent bucket for a reason the application was not
+  responsible for - an environment failure wearing the application's clothes. The fix is a **watermark**
+  read before the child runs (`const callsBefore = this.#cloud.calls().length;`) and applied in the
+  read (`.slice(callsBefore)`), the same shape `sim-container` already used for its escape tally and
+  `sim-data` was written with from the start. *The second occurrence is the one that proves the rule was
+  not learned - and the third is the one that shows the corrected form spreading.* Two things about how
+  it was found, both of which are the reason this entry exists rather than being folded into the
+  previous one: the defect was **invisible to the suite**, and the first version of the test that was
+  written to hold the fix after it **passed with the defect deliberately reintroduced**. The cause was
+  the test **double**, not the test and not the product: `tests/sim-cloud-environment.test.ts`'s
+  `fakePort().clear()` did `records.length = 0`, wiping the very log the real port keeps, so a double
+  that reset the log agreed with a watermark and with a cumulative count alike. *A double that does not
+  reproduce the property the guard is about makes the guard untestable - and a test that passes whether
+  or not the rule holds is not a test.* The double now moves a `meterFrom` baseline exactly as
+  `cloud-port.ts` does, and the probe - reverting `.slice(callsBefore)` in the adapter - fails exactly
+  one named subtest, `counts the request the application made in this run, not the one the last run
+  made`. Its sibling defect is in the probe harness itself and is worth keeping: the scraper matched
+  `/^not ok \d+ - /` at column zero, and a subtest's line is **indented under its suite's**, so it
+  printed the *suite* name and declared the probe unfired - **a verdict computed over a probe that had
+  fired**. `^\s*` is the fix. *A skipped probe silently reduces coverage, and a badly scraped one
+  silently reports the reverse; both are the harness claiming something it did not measure.*
+
+- **A member of a vocabulary must be looked up through the world's own spelling, and a world may hold
+  two spellings of one member that are both correct.** `adapters/sim-data/protocol.ts`'s `DATA_APIS`
+  names an API `"ApiVersions"` and registers it at key `18` with versions `[0]`, and the function two
+  lines below renders that same member for a reading as `ApiVersions(18) v0` -
+  `` `${api.name}(${api.key}) v${api.versions.join(", v")}` ``. So a contract names the API the way the
+  register spells it, and the world answers with the version list it advertises: **two different
+  strings about one member, and neither is a typo.** *A vocabulary with a lookup form and a display form
+  has two spellings of every member, and the wrong one does not look wrong - it reads as the member's
+  name.*
+
+- **A register's array field can answer a different question from the one its name suggests.**
+  `DATA_APIS` registers `Fetch` at key `1` with `versions: [0, 2]`, and that array lists **every version
+  this world can read**. `data-port.ts`'s `#versionOf(key)` returns `versions[0] ?? 0` - the lowest -
+  and it is what both `run()` and `#fetch()` use to choose the shape the answer is encoded in. So the
+  register answers *which versions can arrive*, the accessor answers *which version will be answered
+  at*, and a reader who takes the first array for the second has a fact about the world that is true and
+  a conclusion that is not. *A field named for a set answers a question about the set; the question
+  "which one does this use" is a different question and needs a different name.*
+
+- **A spelled-number table is a vocabulary, and a document's capitalisation is a fact about the
+  document.** `examples/sim-data/acceptance.yaml` states AC-013's figure in words - *"Thirty-three is
+  the figure the encoder really produces for one topic named `cart-events` with three partitions"* -
+  while the expectation eleven lines below pins `equals: member-1 (range) handed 33 byte(s)`, and other
+  criteria in the same file say `one`. The prose and the value are the same claim written twice, and
+  **only the numeric half is read by anything.** *A number written as a word is a number no test can
+  compare - which is exactly why it is the half that drifts, and exactly why the prose has to be
+  re-measured whenever the value is.*
+
+- **A runtime pattern cannot be matched against a template source, so the check has to compare the two
+  shapes rather than the two strings.** `examples/sim-data/environment.yaml` waits for
+  `cart-broker provisioned: \d+ requests, \d+ topics, \d+ records`, and the program it waits for prints
+  that sentence by interpolation - `` say(`cart-broker provisioned: ${String(requests)} requests,
+  ${String(TOPICS.length)} topics, ${String(produced)} records`) ``. The pattern describes what the
+  program **prints**; the source holds the expression that will print it, so applying one to the other
+  compares a number against the code that computes one and **can never match**. `tests/sim-data-demo.test.ts`
+  therefore splits both sides on their own placeholder - `/\\d\\+/` and `/\$\{String\([^)]*\)\}/` - and
+  asserts the word lists are equal. *A test that applies a regex to a template asserts a mismatch and
+  calls it a defect; the claim was that the pattern is this sentence's own words with each figure
+  replaced, and that is the claim the assertion has to make.*
+
+- **An expectation that contradicts a render helper's own branches is the expectation that is wrong,
+  because the helper is the code that produces the string.** `renderPartition` in
+  `core/environment/data-observation.ts` has two shapes: `partition 0: 3 record(s), offsets 0..2, hw 3,
+  isr [1]` for a partition that holds records, and `partition 1: 0 record(s), empty, hw 0, isr [1]` for
+  one that holds none. `examples/sim-data/acceptance.yaml` pins both - and writing the `offsets a..b`
+  form where the `empty` branch belongs is a claim about the helper that the helper contradicts, so the
+  failure lands on the **criterion** rather than on the application. *Read the helper before writing
+  the expectation: a rendering function with two branches has two correct strings, and the second is the
+  one the reader who saw only the first case will get wrong.*
+
+- **`allValidators()` returns objects, not strings, so a roster compared against it has to read a
+  property.** `cli/validators.ts` declares `export function allValidators(): Validator[]` and returns
+  the eleven families' arrays - each member an object with a `.name` beside its `targetNoun`, its
+  `validate` and the rest. A guard that did `list.includes("data.record")` would be false for a
+  registered validator, and a guard that iterated the array and printed each member would print
+  `[object Object]` in a message meant to name a family. Measured: the roster is **123** members
+  (`8+4+7+12+12+11+19+17+8+12+13`). *A vocabulary is a list of things, and whether a member is a string
+  or a record is the first fact to read - a comparison against the wrong one is false for every member
+  and reads as an empty register.*
+
+- **An evidence-kind claim must be read off the writes, not off the design.** `sim-data` was described
+  as producing `json` **and** `log` artifacts, and `adapters/sim-data/sim-data-environment.ts`'s
+  `#captureEvidence` writes exactly two files and passes `"json"` for both - one per criterion, written
+  twice when there was traffic, and there is **no `log` write anywhere in the file**. So the claim named
+  a kind the world cannot produce and omitted the count that is the real fact. *This is the same shape
+  as the adapter that warned for every evidence kind including the `json` it had just written, one
+  document out instead of one statement out: a capability is what the code did, and a list beside the
+  code is free to disagree with it.*
+
+- **One name in several vocabularies has to be read at each definition, never carried across.**
+  `call` is a **step kind** (`core/acceptance/steps.ts`, the eleventh) that puts the criterion's own
+  request to a world, admitted by three adapters - and it is also a **validator name** in two families,
+  `cloud.call` and `data.call`, where it answers a different question entirely: not "make this request"
+  but "read the request the **application** made". The two are not the same concept wearing one word;
+  they are two concepts that happen to share a spelling, and the pair inverts where a reader expects it
+  (`data.call` reads the application's traffic, `data.probe` reads the criterion's own). *A vocabulary
+  that grows by reusing a word has to have each use read at its own definition - carrying the meaning of
+  one across to the other produced three false "only the cloud plan admits `call`" claims in this
+  repository's documentation, each of which read as complete.*

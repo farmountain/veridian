@@ -141,6 +141,18 @@
       "required": ["host", "root"],
       "additionalProperties": false
     },
+    "data": {
+      "type": ["object", "null"],
+      "description": "The message broker this world stands in for, when the world is one. Present for a simulated broker such as `sim-data`; absent for every other world. Same reasoning as `process`: stated here rather than as an adapter-private option, so the plan every reader sees names the same cluster, broker id and address the run measured, and so that 'this world is not a broker' stays distinguishable from 'nobody filled the field in'. A world declaring `data` has no url, no cluster, no posix, no os, no cloud, no container, no vscode and no process, exactly as a database world has no url. It is the first world block with an `address` in it, and that is deliberate: the application reaches this world by opening a real socket, so the plan has to say where the socket goes - while every block before this one either had a url or had nothing to connect to at all.",
+      "properties": {
+        "cluster": { "type": "string", "minLength": 1, "description": "The cluster the readings name, so a result says which log produced it. A free string rather than an enumeration: a cluster name decides nothing a criterion can observe, and enumerating it would let a label act as a rule." },
+        "nodeId": { "type": "integer", "minimum": 0, "description": "The broker id this world answers as, reported beside the cluster in every reading. An integer rather than a label because it is a broker's own addressing scheme, and a criterion comparing a partition's leader against it is a criterion about a number." },
+        "host": { "type": "string", "minLength": 1, "default": "127.0.0.1", "description": "The host the substitute binds. Defaults to loopback, and the loader refuses anything else by name: a broker on a routable address is a real listener wearing the word simulated, which is the one claim this world does not make. It is a field rather than a constant so that the address is readable out of the document a bundle is stored beside." },
+        "port": { "type": "integer", "minimum": 0, "maximum": 65535, "default": 0, "description": "The port the substitute binds, or `0` for 'the operating system chooses one'. `0` is a declaration rather than a hole: it is the only spelling that lets two runs of the same contract coexist on one machine, and the reading records the port really bound, so a criterion reads the address the world took rather than the one it was told." }
+      },
+      "required": ["cluster", "nodeId"],
+      "additionalProperties": false
+    },
     "health": {
       "type": "object",
       "properties": {

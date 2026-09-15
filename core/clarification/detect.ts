@@ -179,6 +179,18 @@ export interface EnvironmentLike {
    * exactly as it would for `vscode`.
    */
   readonly process?: unknown;
+  /**
+   * Present when the world stands in for a message broker.
+   *
+   * It is the first declaration in this list whose subject is reached over a **socket**, and the
+   * distinction it draws is the whole reason the predicate next to it is named for the surface
+   * rather than the transport: a broker is a real TCP listener this machine can open, and the
+   * questions gated on `hasNoHttp` are the address, the health path, the health status and whether
+   * to drive a browser. A broker answers none of them, so it carries a host and a port of its own
+   * and no url - and `load.ts` derives `browser.enabled: false` for it for the same reason it does
+   * for a database file.
+   */
+  readonly data?: unknown;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -214,14 +226,22 @@ const statesComparison = (key: string, value: unknown): boolean =>
  * Whether the document describes a world with no HTTP surface of its own.
  *
  * Decided from the *document*, not from the adapter name, because `core/clarification` is the lowest
- * layer and may not import an adapter to ask it. Eight shapes have no HTTP: a world reached by
+ * layer and may not import an adapter to ask it. Nine shapes have no HTTP: a world reached by
  * opening a file (`databasePath`), one whose address is a substitute control plane (`cluster`), one
  * that is a system rather than a service (`posix`), one that is a machine (`os`), one whose subject
  * is an account rather than a host or a system (`cloud`), one whose subject is a runtime holding
  * images and containers (`container`), one whose subject is the editor host that loads an
- * extension (`vscode`), and one whose subject is the process boundary itself, where a command runs
- * and a file exists but nothing is listening (`process`). Anything else is a socket world, and is
- * still asked for its URL.
+ * extension (`vscode`), one whose subject is the process boundary itself, where a command runs
+ * and a file exists but nothing is listening (`process`), and one whose subject is a broker holding
+ * topics, partitions and records, reached over a real socket that speaks neither HTTP nor anything
+ * a browser can render (`data`). Anything else is a socket world, and is still asked for its URL.
+ *
+ * `data` is the clause worth reading twice, because it is the first shape that is **not** a world
+ * with no socket. Its address is a real TCP listener this machine can open; what it has no HTTP
+ * surface of is the point - the questions gated below are the address, the health path, the health
+ * status and whether to drive a browser, and a broker answers *none* of them. The predicate is
+ * named for the surface, not for the transport, and `local-api` is its mirror image: a world reached
+ * over a socket that *does* speak HTTP, and is asked for a url on exactly that basis.
  *
  * Getting this wrong is not cosmetic, and each new shape is how the cost was measured. Every question
  * gated below is an HTTP question - the address, the health path, the health status, whether to drive
@@ -248,7 +268,8 @@ const hasNoHttp = (environment: EnvironmentLike): boolean =>
     !isMissing(environment.cloud) ||
     !isMissing(environment.container) ||
     !isMissing(environment.vscode) ||
-    !isMissing(environment.process));
+    !isMissing(environment.process) ||
+    !isMissing(environment.data));
 
 const asArray = <T>(value: readonly T[] | undefined): readonly T[] => value ?? [];
 

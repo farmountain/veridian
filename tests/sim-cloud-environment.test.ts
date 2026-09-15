@@ -95,6 +95,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => ({
   container: null,
   vscode: null,
   process: null,
+  data: null,
   health: { path: null, expectStatus: null, timeoutMs: 5_000, intervalMs: 10, readyPattern: null },
   reset: { strategy: "restart", command: null },
   browser: { enabled: false, viewport: { width: 1280, height: 720 }, locale: null, timezoneId: null },
@@ -173,6 +174,8 @@ function fakePort(options: FakePortOptions = {}): FakePort {
   let closes = 0;
   let clears = 0;
   let dumps = 0;
+  /** Where the current life of the account began in the call log. See `clear()` below. */
+  let meterFrom = 0;
 
   const read = (): CloudSnapshot => {
     const held = options.snapshot;
@@ -223,10 +226,15 @@ function fakePort(options: FakePortOptions = {}): FakePort {
       calls: () => records,
       decisions: () => decisions,
       snapshot: read,
-      meters: (): CloudMeterReading => ({ ...EMPTY_METERS, requests: records.length }),
+      // The meter is a *reading* of the account's current life and the call log is the *record* of every
+      // request it ever answered - one field per concept, which is why `clear()` moves the baseline and
+      // leaves `records` alone. The double does the same, and that faithfulness is load-bearing rather
+      // than tidy: the "asked nothing *in this run*" guard is a count that has to survive a reset, so a
+      // double that wiped the log here would agree with a watermark and with a cumulative count alike.
+      meters: (): CloudMeterReading => ({ ...EMPTY_METERS, requests: records.length - meterFrom }),
       clear() {
         clears += 1;
-        records.length = 0;
+        meterFrom = records.length;
       },
       dump() {
         dumps += 1;
@@ -295,6 +303,15 @@ interface Harness {
   readonly io: ReturnType<typeof memoryIo>;
   readonly processes: ProcessRunner & { readonly calls: readonly ProcessRequest[] };
   readonly logger: ReturnType<typeof capableLogger>;
+  /**
+   * Whether the *next* provisioning run asks the account anything.
+   *
+   * Mutable on purpose, and the reason is one test: the guard that refuses a provisioner which asked
+   * nothing has to be shown able to fail on a **second** start, because `clear()` deliberately never
+   * clears the call log. A harness that could only be configured once would make that test impossible
+   * to write, and a guard nothing can make fail is not a guard.
+   */
+  readonly control: { provision: boolean };
 }
 
 interface HarnessOptions {
@@ -310,25 +327,23 @@ interface HarnessOptions {
 function harness(environment: EnvironmentPlan, options: HarnessOptions = {}): Harness {
   const port = fakePort();
   const cloud = options.cloud ?? port.port;
+  const control = { provision: options.provision !== false };
   const io = memoryIo({
     // A snapshot from an earlier run, so the restore assertions address a file that exists rather
     // than one this test invented.
     ".veridian/snapshots/prior/account.json": '{"account":"acct-cart","n":0}',
     ...options.files,
   });
-  const processes = fakeProcesses(
-    options.answers,
-    options.delayMs ?? 0,
-    options.provision === false
-      ? undefined
-      : () => void cloud.call(PROVISION_REQUEST, "application"),
-  );
+  const processes = fakeProcesses(options.answers, options.delayMs ?? 0, () => {
+    if (control.provision) cloud.call(PROVISION_REQUEST, "application");
+  });
   const logger = capableLogger();
   return {
     port,
     io,
     processes,
     logger,
+    control,
     subject: new SimCloudEnvironment(environment, {
       io,
       clock: fixedClock("2026-01-01T00:00:00.000Z"),
@@ -613,6 +628,29 @@ describe("the application provisions the world, and the world refuses a run that
         assertEnvironmentError(error, /exited successfully and put no request to the account/),
     );
     assert.equal(built.port.asked.length, 0, "the refusal is about a real absence, not a guess");
+  });
+
+  it("counts the request the application made in this run, not the one the last run made", async () => {
+    // The watermark, and the reason it is a watermark rather than a count. `clear()` deliberately never
+    // clears the call log - a reader of the bundle can see every request the account ever answered -
+    // so an adapter that asked "has the application ever spoken to this account" would report a
+    // correctly rebuilt, entirely empty account as provisioned, and every criterion after it would
+    // name an absent resource the application never tried to create. That is an application-looking
+    // failure for a world reason, which is the class this guard exists to refuse.
+    const built = await ready();
+    assert.equal(built.port.listenCount(), 1);
+    built.control.provision = false;
+    await assert.rejects(
+      () => built.subject.reset(built.id),
+      (error: unknown) =>
+        assertEnvironmentError(error, /put no request to the account in this run/),
+    );
+    assert.equal(built.port.listenCount(), 2, "the rebuild really began before the check refused it");
+    assert.equal(
+      built.port.asked.filter((entry) => entry.source === "application").length,
+      1,
+      "the earlier run's request is still in the log - that is exactly what the watermark ignores",
+    );
   });
 
   it("records deploy as an explicit no-op naming the command, rather than leaving it empty", async () => {

@@ -1,8 +1,8 @@
 {
   "name": "veridian-cockpit",
   "displayName": "Veridian Cockpit",
-  "description": "A thin client for Veridian - run a sandbox validation, see the verdict, open the evidence.",
-  "version": "0.1.0",
+  "description": "A thin client for Veridian - run a sandbox validation, see the verdict, open the evidence. Veridian builds eleven reproducible sandbox worlds and decides whether the software works; the agent stays external.",
+  "version": "0.2.0",
   "type": "module",
   "license": "BSD-2-Clause",
   "repository": {

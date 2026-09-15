@@ -1,0 +1,424 @@
+# The acceptance contract: what the world must hold when the application is right.
+#
+# Twenty criteria over all thirteen validators, judged against a *simulated* message broker. Three of
+# them act inside the world through a `run` step - the world is handed an argument vector and executes
+# it against its own broker - and one of those expects the world to **refuse** it.
+#
+# Both of those counts are read off *this document* by `tests/sim-data-demo.test.ts`, because a count
+# in prose drifts at exactly the rate at which nothing reads it: the header of the seventh world's
+# contract claimed five and two and both numbers were wrong about the file they were describing.
+#
+# Every one of the thirteen names in `validators/data/data-validators.ts` is used by at least one
+# criterion here, and that is a property a test holds rather than a claim: a family of thirteen whose
+# contract exercised eleven would have two names nothing had ever run.
+#
+# ## How to read the targets
+#
+# A target is a *reference into the broker's own inventory*, never a path on this machine:
+# `cart-events` names a topic, `cart-events/0` names a partition, `cart-events/0/2` names a record at
+# an offset, `cart-indexer` names a consumer group, `cart-indexer/member-1` names one member of it and
+# `cart-indexer/cart-events/0` names one committed position. `core/environment/data-observation.ts`
+# resolves each one through `parseDataRef`, which counts the segments the noun demands and refuses
+# every other spelling - so a criterion and the world agree about which object is being judged, or the
+# criterion is told why they do not, rather than being handed an empty reading that looks like an
+# application defect.
+#
+# One validator needs no target at all, because the question is about the world rather than about
+# anything in it: `data.node` asks which broker this was.
+#
+# Four other targets are *names from the world's own vocabularies* rather than references into its
+# inventory, which is why the family has more than one target grammar: `data.meter` names one of the
+# counters the world keeps, and `data.call` and `data.probe` take an API name as the register spells
+# it (`ApiVersions`, `Metadata`, `CreateTopics`, `Heartbeat`) or, for a command the world does not
+# perform at all, the whole spelling the world recorded for it.
+#
+# ## The three questions that are deliberately different
+#
+#   - `data.call` reads the requests the **application** put to the broker over the socket;
+#     `data.probe` reads the requests the **criterion** itself issued. The two may disagree about the
+#     same API and both be right, and AC-017 is the criterion that shows it: the application's
+#     `CreateTopics` for two fresh topics is answered `ok`, and the criterion's `CreateTopics` for a
+#     topic the world already holds is answered `refused`. A criterion that read the application's
+#     traffic as evidence about its own command - or the reverse - would be judging one of them through
+#     the other's door.
+#   - `data.topic` and `data.record` ask whether something is there. What it is *like* is a separate
+#     question with its own validator, asked below: an object that exists and is empty is a different
+#     finding from an object that was never created, and they have different repairs.
+#   - `data.layout` prints the factor a topic *recorded* beside the in-sync membership that could honour
+#     it - `replication 1 recorded, isr [1]` - because those are one sentence about one thing. This world
+#     holds one node, so the two agree here; the sentence is the same one a world with three brokers
+#     would print, and the criterion that pins it would still be honest.
+#
+# ## What no criterion here may do
+#
+# Write to state another criterion reads. A `run` step is a real command against a real log, so a
+# criterion that produced a record would move every other criterion reading that partition - and a
+# contract whose readings depend on the order its criteria happen to be listed in is a contract that
+# reports a pass it cannot attribute. The three acting criteria here therefore command only what leaves
+# the inventory as it found it: a read (`metadata`), a create that the world refuses for an existing
+# topic, and a command the world does not perform. AC-006, AC-007 and AC-008 pin the exact record count
+# and offset range of all three partitions of `cart-events`; not one of them could survive a criterion
+# that appended to the log, which is why none does.
+#
+# Claim that the log is copied onto a second machine, that a follower is caught up, that a partition has
+# been rebalanced between two consumers, or that a record has been trimmed by retention. This world
+# holds one node, runs no rebalance and deletes nothing, and each of those is written down rather than
+# left to be discovered - the goal document's context names all three as stated limits.
+
+version: 1
+
+# The goal these criteria belong to, so the loader's own cross-check can run: `core/acceptance/load.ts`
+# compares this against the goal document it is evaluated with and refuses the pairing when they
+# disagree. A contract that does not name its goal cannot be paired with the wrong one at all, which is
+# how the guard's null branch stayed dormant for the fifth world until it was declared there - so it is
+# declared here from the start.
+goal_id: sim-data
+
+criteria:
+  - id: AC-001
+    description: >-
+      The application was run by a substitute for a real broker, and the world says which one it stood
+      in for. Judged against the identity the *environment document* declared - the cluster name and the
+      node the broker bound - rather than against anything the application printed: a program that
+      asserted its own broker would be describing the world it believed it was in, and this criterion is
+      about the world it was actually in. The port is compared as a shape rather than as a value,
+      because the document asks for `port: 0`: the world binds whichever port the machine has free and
+      records the one it really got, so a criterion pinning a number would be pinning this machine's
+      ephemeral port allocation.
+    expect:
+      - validator: data.node
+        matches: '^veridian-data \(node 1 at 127\.0\.0\.1:[0-9]{1,5}\)$'
+    evidence: [json]
+
+  - id: AC-002
+    description: >-
+      Two questions about the run rather than about the log: that the client asked the broker anything
+      at all, and that the broker answered the version negotiation. The first is the meter - a count of
+      the requests the broker has answered in its current life - and it is written as `atLeast` because
+      the exact figure depends on how many criteria have already acted in the world by the time this one
+      is observed. The second is the application's own request for the API versions the world speaks,
+      which is the one request every conforming client makes first; a run in which it was refused would
+      have a client guessing at a protocol version.
+    expect:
+      - validator: data.meter
+        target: requests
+        atLeast: 1
+      - validator: data.call
+        target: ApiVersions
+        equals: ok
+    evidence: [json]
+
+  - id: AC-003
+    description: >-
+      The application created both topics. Presence only - how each one is laid out, what it holds and
+      what it is configured to do with old data are separate questions asked below, and collapsing them
+      into one comparison would let a topic that exists and is empty read as a topic that was
+      provisioned.
+    expect:
+      - validator: data.topic
+        target: cart-events
+        equals: present
+      - validator: data.topic
+        target: cart-index
+        equals: present
+    evidence: [json]
+
+  - id: AC-004
+    description: >-
+      The order log is laid out as three partitions with one replica a piece and the default cleanup
+      policy. The whole sentence is compared because it is one statement about one topic: the partition
+      count is what makes a partition number mean anything, the replication factor is what the
+      application asked for, the in-sync set is what actually stands behind that request on a world
+      holding one node, and the policy is what will happen to old segments in a world that never
+      deletes anything. Three of those four could be right while the fourth was wrong, which is exactly
+      why they are printed together.
+    expect:
+      - validator: data.layout
+        target: cart-events
+        equals: "topic 'cart-events' (3 partition(s), replication 1 recorded, isr [1], cleanup delete)"
+    evidence: [json]
+
+  - id: AC-005
+    description: >-
+      The index topic is laid out the same way, except that it is one partition: the index is looked up
+      by key and read in order, so a second partition would order two halves of one sequence
+      independently. It carries the same cleanup policy as the order log, and that is the half of this
+      sentence a reader is most likely to skim - an index whose old records were compacted away would
+      still exist, still be one partition and still be in sync, and a criterion comparing only its shape
+      would report a pass over a topic that had quietly been given a different lifecycle.
+    expect:
+      - validator: data.layout
+        target: cart-index
+        equals: "topic 'cart-index' (1 partition(s), replication 1 recorded, isr [1], cleanup delete)"
+    evidence: [json]
+
+  - id: AC-006
+    description: >-
+      The first partition holds the three order events, at offsets 0, 1 and 2, with a high watermark of
+      3. The range and the count are both compared, and they are not the same statement: a log holding
+      three records that started at offset 4 would satisfy the count and would tell a consumer that
+      three records had been lost, which is the finding this criterion exists to produce. The high
+      watermark is compared rather than derived because it is the number a consumer uses to decide when
+      it has caught up, and this world advances it as records are appended.
+    expect:
+      - validator: data.partition
+        target: cart-events/0
+        equals: "partition 0: 3 record(s), offsets 0..2, hw 3, isr [1]"
+    evidence: [json]
+
+  - id: AC-007
+    description: >-
+      The second partition is empty, and that is a reading rather than an absence. A topic created with
+      three partitions holds a log for each of them from the moment it exists, so "partition 1 has no
+      records" is a fact about a log that is there - which is why this asks `data.partition` and not
+      `data.topic`. An empty partition and a partition that was never created print differently here,
+      and the difference is the whole reason the reference grammar carries the index.
+    expect:
+      - validator: data.partition
+        target: cart-events/1
+        equals: "partition 1: 0 record(s), empty, hw 0, isr [1]"
+    evidence: [json]
+
+  - id: AC-008
+    description: >-
+      The third partition holds the one order event that was routed to it, at offset 0. This is what
+      makes the partitioner's decision observable: the application chose a partition per order, and a
+      reader can see that the choice was made rather than that everything landed in the first log. It
+      also proves the log really has three independent partitions rather than one log printed three
+      times - an offset of 0 here beside an offset of 2 in the first partition is a fact no single-log
+      substitute could produce.
+    expect:
+      - validator: data.partition
+        target: cart-events/2
+        equals: "partition 2: 1 record(s), offsets 0..0, hw 1, isr [1]"
+    evidence: [json]
+
+  - id: AC-009
+    description: >-
+      Every order event is at the offset its partition assigned it: three in the first log and one in
+      the third. Presence only, and asked of each record rather than of the log as a whole, because the
+      offset is part of the reference - so this is the criterion that says the application's four
+      records landed where its own offsets said they would, while AC-010 and AC-011 ask what those four
+      records are.
+    expect:
+      - validator: data.record
+        target: cart-events/0/0
+        equals: present
+      - validator: data.record
+        target: cart-events/0/1
+        equals: present
+      - validator: data.record
+        target: cart-events/0/2
+        equals: present
+      - validator: data.record
+        target: cart-events/2/0
+        equals: present
+    evidence: [json]
+
+  - id: AC-010
+    description: >-
+      Every order event carries the order's own key. The key is what decides which partition a record
+      is routed to and what an index is built on, so a record whose key is wrong is a record that
+      belongs somewhere else in the log even when its offset is exactly where it should be. Compared
+      as the raw text the application wrote rather than as a rendering, because the key is the string a
+      consumer groups by and quoting it would judge a presentation instead of a payload.
+    expect:
+      - validator: data.key
+        target: cart-events/0/0
+        equals: ord-1001
+      - validator: data.key
+        target: cart-events/0/1
+        equals: ord-1002
+      - validator: data.key
+        target: cart-events/0/2
+        equals: ord-1003
+      - validator: data.key
+        target: cart-events/2/0
+        equals: ord-1004
+    evidence: [json]
+
+  - id: AC-011
+    description: >-
+      Every order event carries its own payload, naming the order and the release that produced it. A
+      key alone is not an event: it says which order the record is about and nothing about what
+      happened to it, and a log of correctly keyed empty records would pass every criterion above this
+      one. The payload is compared whole because that is the unit a consumer reads, and it is compared
+      as the exact text rather than as parsed JSON, because a serializer that changed its spacing would
+      be a contract nobody could write down.
+    expect:
+      - validator: data.value
+        target: cart-events/0/0
+        equals: '{"order":"ord-1001","release":"1.0.0"}'
+      - validator: data.value
+        target: cart-events/0/1
+        equals: '{"order":"ord-1002","release":"1.0.0"}'
+      - validator: data.value
+        target: cart-events/0/2
+        equals: '{"order":"ord-1003","release":"1.0.0"}'
+      - validator: data.value
+        target: cart-events/2/0
+        equals: '{"order":"ord-1004","release":"1.0.0"}'
+    evidence: [json]
+
+  - id: AC-012
+    description: >-
+      The indexer's consumer group exists, is at its first generation, has reached a stable state with
+      one member, and holds one committed position. The whole sentence is compared because these are
+      four readings of one group and each of them fails differently: a group at generation 0 was created
+      and never joined, a group in `CompletingJoin` has a member that has not been handed anything, and
+      a group with no committed offsets is one that has read the log and told nobody where it got to.
+      The generation is written as `1` rather than as `atLeast 1` because this world advances it exactly
+      once, when a member joins - it never rebalances, and a group that had reached generation 2 here
+      would be a group something had moved.
+    expect:
+      - validator: data.group
+        target: cart-indexer
+        equals: "group 'cart-indexer' generation 1, Stable, 1 member(s), 1 committed offset(s)"
+    evidence: [json]
+
+  - id: AC-013
+    description: >-
+      The group's one member holds a non-empty assignment of the size the indexer's own partition list
+      composes to. The size is compared because the assignment is a byte blob that this world stores and
+      hands back verbatim: it never parses it, never validates it and never reconciles it against the
+      topics it actually holds, so the only thing a criterion can say about it is what the protocol's
+      own encoder makes of the list the application wrote. A member handed no bytes is a member that
+      joined and was assigned nothing; a member handed bytes of the wrong length was handed a different
+      list.
+
+      Thirty-three is the figure the encoder really produces for one topic named `cart-events` with
+      three partitions - an `INT32` count, a length-prefixed name, an `INT32` partition count and three
+      `INT32` indices, which is 4 + 13 + 4 + 12 - and it was read off a real run of this contract
+      rather than composed from that arithmetic. An earlier revision of this line said fifty-three,
+      which no encoder in this tree has ever produced: a number in a contract is a claim about the
+      code, and the only way to hold it is to measure the run.
+    expect:
+      - validator: data.member
+        target: cart-indexer/member-1
+        equals: member-1 (range) handed 33 byte(s)
+    evidence: [json]
+
+  - id: AC-014
+    description: >-
+      The pipeline's position is committed as `cart-events/0` at offset 3. The offset of a committed
+      position is where the *next* record to deliver sits, not the index of the last one delivered, so
+      three records read from a log starting at 0 leave the position at 3 - and a commit of 2 is the
+      classic off-by-one, a pipeline that will re-deliver its third order on every restart. This is
+      compared and not derived: the world stores whatever the application told it, and a broker that
+      second-guessed a committed offset would be a broker that could not report this defect at all.
+    expect:
+      - validator: data.commit
+        target: cart-indexer/cart-events/0
+        equals: cart-events/0 committed 3 (no metadata)
+    evidence: [json]
+
+  - id: AC-015
+    description: >-
+      The index topic holds the indexer's own checkpoint record, keyed by the topic it indexes. The
+      partition is read first so that a reader can see the log exists and holds exactly one record -
+      which is what makes the checkpoint a state rather than a stream of updates - and then the record's
+      key and payload are read. The payload deliberately carries no offset: the position the group has
+      committed is AC-014's question and is answered by the group, and a checkpoint that repeated it
+      would be a second copy of one fact that the application could keep in step or fail to.
+    expect:
+      - validator: data.partition
+        target: cart-index/0
+        equals: "partition 0: 1 record(s), offsets 0..0, hw 1, isr [1]"
+      - validator: data.key
+        target: cart-index/0/0
+        equals: index-cart-events
+      - validator: data.value
+        target: cart-index/0/0
+        equals: '{"checkpoint":"cart-events","partition":0,"release":"1.0.0"}'
+    evidence: [json]
+
+  - id: AC-016
+    description: >-
+      A criterion can put its own request to the broker, and this is the one that reads a plain
+      inventory question. The step is a real command against the real world: the adapter executes the
+      argument vector through the same parser the protocol's own client path uses, records it as the
+      criterion's request, and then reads the log back - so both halves of this criterion are readings
+      of something that happened rather than predictions about what would happen. The two halves are
+      deliberately read through the two different doors: `data.probe` reads the command this criterion
+      issued, and `data.call` reads the application's own discovery request from its provisioning run.
+      They are the same API and they are two different facts.
+    steps:
+      - run: ['metadata', 'cart-events']
+    expect:
+      - validator: data.probe
+        target: Metadata
+        equals: ok
+      - validator: data.call
+        target: Metadata
+        equals: ok
+    evidence: [json]
+
+  - id: AC-017
+    description: >-
+      The world refuses a command that is well formed and cannot succeed, and this is the criterion that
+      shows why the two doors are two questions. The command is a `create-topic` for a topic the
+      application has already created: the argument vector parses, the request reaches the broker, and
+      the broker answers that this world already holds that name. The application's own `CreateTopics`
+      for two fresh topics is answered `ok` in the same run, so the two expectations on this criterion
+      disagree about one API - and both are correct, because one was asked for a name that was free and
+      one was asked for a name that was taken. The word `refused` is the reading the world recorded, not
+      a phrase invented here: every error code a socket-borne answer carries is mapped to one of a fixed
+      set, and only a fully successful response reads `ok`.
+    steps:
+      - run: ['create-topic', 'cart-events', '1', '1']
+    expect:
+      - validator: data.probe
+        target: CreateTopics
+        equals: refused
+      - validator: data.call
+        target: CreateTopics
+        equals: ok
+    evidence: [json]
+
+  - id: AC-018
+    description: >-
+      The world refuses a command it does not perform at all, and says so by name. The word is not in
+      this world's vocabulary of commands, so the request never becomes a protocol request: the parser
+      answers with the spelling it refused and the usage it does implement, and the reading records both.
+      This is a different finding from AC-017 - there the command was understood and the *world* said no,
+      here the command was not understood - and the two are worth separating because their repairs are
+      different: one is a contract asking for state that cannot exist, the other is a contract asking a
+      question this world cannot answer.
+    steps:
+      - run: ['leavegroup', 'cart-indexer', 'member-1']
+    expect:
+      - validator: data.probe
+        target: "refused command 'leavegroup'"
+        equals: invalid-request
+    evidence: [json]
+
+  - id: AC-019
+    description: >-
+      The broker's own meter agrees with the traffic: the application produced five records - three
+      orders, one order routed to the third partition, and the indexer's checkpoint - and read five back
+      in its inventory pass. This is the only criterion in the contract that reads a count *the world
+      kept* rather than a count derived from the log, which is what makes it a check on the world
+      instead of a restatement of AC-006, AC-008 and AC-015. Both are written as `atLeast`, because the
+      meter describes the broker's current life and a criterion's own commands are counted in it too.
+    expect:
+      - validator: data.meter
+        target: recordsProduced
+        atLeast: 5
+      - validator: data.meter
+        target: recordsFetched
+        atLeast: 5
+    evidence: [json]
+
+  - id: AC-020
+    description: >-
+      The member's heartbeat was accepted. A heartbeat carries the generation the broker gave the member
+      at the join, and a broker refuses one whose generation has moved on - which is how a client learns
+      that its membership is gone before it silently reads a log nobody is coordinating. This is the one
+      criterion in the contract that reads a request whose only effect is to be answered: nothing in the
+      world's inventory changes when a heartbeat succeeds, so there is no other reading that could
+      report it.
+    expect:
+      - validator: data.call
+        target: Heartbeat
+        equals: ok
+    evidence: [json]

@@ -1,0 +1,134 @@
+# The goal the `sim-data` demo is judged against: a shopping cart's event stream, provisioned on a
+# substitute message broker.
+#
+# The statement names an **observable end state** and not an activity, and that distinction is the whole
+# of what makes it testable. "The application publishes its orders to a broker" is an activity, and a
+# program that sent one `Produce` and read nothing back would satisfy it. What is written below is the
+# state a reader can check without watching anything run: two topics held with the layouts the
+# application asked for, four orders in the log with their own keys and values, one group joined and one
+# offset committed under it, and every question the application put to the broker answered `ok`.
+
+version: 1
+id: sim-data
+statement: >-
+  A cart-broker provisioner runs against a substitute message broker and leaves it holding exactly the
+  stream the order pipeline needs: a `cart-events` topic with three partitions - the three order events
+  in partition 0 at offsets 0, 1 and 2, a fourth event alone in partition 2, and partition 1 empty so
+  that an empty log is a reading and not an absence - and a single-partition `cart-index` topic holding
+  the indexer's own checkpoint record. Every order record carries its own key and its own JSON value
+  naming the order and the release that wrote it. The `cart-indexer` group is held at
+  generation 1 with one member whose assignment has been stored, and the pipeline's position is
+  committed under that group as `cart-events/0` at offset 3 - the offset of the next record to deliver,
+  not the last one delivered. Every request the application put to the broker was answered `ok`.
+acceptance: acceptance.yaml
+environment: environment.yaml
+
+# The context block: what a reader of this goal needs in order to judge a result honestly.
+context: |-
+  ## This world is simulated, and what that obliges it to do
+
+  `sim-data` is a `sim-*` world: a substitute message broker reached over a real socket. Three
+  obligations follow, and where this run meets each one:
+
+  1. **The application executes for real.** `app/provision.mjs` is a real Node child process run with
+     this operator's own privileges. It reads its environment, opens a real TCP connection, encodes real
+     Kafka frames, sends them, reads the answers and prints one real line per request it sent. Nothing
+     about its execution is staged.
+
+  2. **The interfaces are real.** The listener is a real `node:net` server on loopback. The frames are
+     real Kafka frames: an `INT32` length, an `INT16` API key, an `INT16` API version, an `INT32`
+     correlation id and a `NULLABLE_STRING` client id, followed by the body that API declares. The
+     records travel as a real record batch - magic 2, a zig-zag varint per record, and a CRC-32C that the
+     broker recomputes and refuses the batch over if it disagrees. The broker assigns the offsets and
+     hands them back in the `Produce` response, exactly as a broker does, and the application's own
+     `Fetch` reads them back out of the batch it wrote.
+
+  3. **The substitution is declared.** Every reading carries `simulated`, naming the seven surfaces
+     stood in for: `broker`, `replication`, `group-coordination`, `log-storage`, `retention`,
+     `transactions` and `partitioning`. `tests/sim-data-environment.test.ts` asserts that list against
+     the constant the adapter reads, and it is asserted there rather than by a criterion **deliberately**:
+     no validator in this family reads the `simulated` field, and inventing one whose only purpose was to
+     agree with the world would be a criterion that cannot fail.
+
+  ## What is never simulated
+
+  Whether the application's code ran. The bytes it put on the wire, frame for frame, including the
+  record batch's own CRC. What it asked for and what the broker answered, with the result word and the
+  stated reason. The records the broker then held, their offsets, their keys, their values and their
+  header counts. The group it joined, the generation the broker gave it, the assignment bytes it stored
+  and the offsets it committed. The reading taken afterwards. The verdict each criterion reaches,
+  including the authority to report `FAIL`. And the reset between iterations - and the fact that it
+  happened.
+
+  ## The three limits this world states rather than hides
+
+  - **One node.** The register announces twelve APIs; the topology holds one broker. A topic may record
+    `replication 1` and the reading says so, and every partition reports `isr [1]` with a stated reason
+    naming the single node. Nothing here can hold a second replica, so no criterion in this contract
+    compares an ISR as though replicas existed.
+  - **No rebalance.** A group's generation advances when a member joins and never advances again. No
+    assignment is computed, no dead member is reaped, and the leader is whoever joined. `group.state`
+    reads `Stable` because the member's assignment is non-empty, and that is the whole of the claim.
+  - **No retention.** No record is ever deleted and no log ever shrinks. A criterion may compare a high
+    watermark; it may not compare a log being trimmed.
+
+  ## The one property of this stream that no criterion states
+
+  The records carry no headers, and that fact is deliberately **not** in the statement above - because
+  no criterion in this family could fail over it. `renderRecord` is the only rendering that prints a
+  record's header count, and it is a criterion's *subject line* rather than the value compared: `data.key`
+  compares the key, `data.value` compares the value, and neither can see the count. A validator that
+  existed only to compare `renderRecord` would be comparing the whole record to prove one clause of it.
+  So the property is checked where it can actually be checked - `tests/sim-data-demo.test.ts` reads the
+  batch the broker stored, where every header list is present and empty - and it is named here as a
+  *fact about what the application writes* rather than written into the statement as a clause no criterion
+  could refuse. A statement that promised something nothing reads would be the same defect as a validator
+  that reported a pass it did not observe, one layer out.
+
+  ## Why the boundary is reported as `unsupported` and not as `enforced`
+
+  The application is an ordinary child process with this operator's privileges, so it can open any socket
+  it likes: nothing in this world can stop it, and reporting `network: enforced` would name a guard that
+  does not exist. `networkPolicy` and `filesystemWrite` are therefore **declared** in `limits` below and
+  reported `unsupported` by the adapter, which also reports an empty crossings list - a statement about
+  this world rather than a report with a field left out. There is nothing here for a boundary guard to
+  hold: a `run` step carries a command vector whose operands are a topic name, a partition index, a key,
+  a value, a group id and an offset, and every one of them resolves against the world's own held state,
+  so `metadata /etc/passwd` asks about a *topic* with that name. The one address in the world is the
+  socket, and the loader holds its host to loopback **by name**, before a world exists.
+
+  ## How a criterion's own command differs from the application's traffic
+
+  A `run` step is performed in process rather than sent over the socket, and every record it files
+  carries `source: "criterion"`. That single field is what keeps the two doors separate: `data.call`
+  reads only the traffic that arrived on the socket and `data.probe` reads only what a criterion asked
+  for, and each names the other when the reading holds requests of the wrong origin. A criterion cannot
+  prove the application created a topic by creating it itself, and cannot prove the world refuses
+  something by asking about the application's traffic.
+
+tags:
+  - data-world
+  - simulated
+  - eleventh-adapter
+  - kafka-protocol
+  - message-broker
+
+limits:
+  # Four defects, one repaired per iteration, so the run needs five iterations: the first pass fails,
+  # and each repair buys one more. Ten is the schema's ceiling and the honest bound on a loop that must
+  # not be able to run forever - and it is deliberately not five, because a ceiling that equals the run
+  # it bounds is not a ceiling, it is a fixture: the next defect added to the table would silently make
+  # the demo unable to finish.
+  maxIterations: 10
+  maxRuntimeMs: 300000
+  maxCriterionMs: 30000
+  # `deny` is the true declaration and not an enforced one: the application reaches loopback and nothing
+  # here stops it reaching anywhere else. Writing `allow` would be the opposite claim - that a boundary
+  # was requested and honoured - and neither word makes the policy real, which is why the adapter reports
+  # this one `unsupported` rather than quoting the value back as a guarantee.
+  networkPolicy: deny
+  # The provisioner writes no file at all: the only thing it produces is bytes on a socket, and the world
+  # it produces them into is a table of maps in the adapter's own process. So this is the loosest true
+  # declaration rather than a boundary anyone is holding, and the adapter says the same thing in its own
+  # boundary report.
+  filesystemWrite: sandbox

@@ -157,7 +157,7 @@ What exists instead is the nearest thing that can be run here, and the two are n
 | Decisions, headless | `node --test` | 64 tests, 0 failing |
 | Build | `npm run build` | `out/` - 6 files |
 | **Compiled artifact** | `npm run smoke:out` | 15 checks, exit 0 |
-| Package | `npm run package` | `veridian-cockpit.vsix` - 11 files, 24.15 KB |
+| Package | `npm run package` | `veridian-cockpit.vsix` - 11 files, 24.39 KB |
 | **Packaged archive** | `npm run smoke:vsix` | 32 checks, exit 0 |
 | All of the above | `npm run gate` | exit 0 |
 
@@ -193,7 +193,7 @@ opposite - that packaging needs `@vscode/vsce`, that the output had never been p
 machine, and that adding a package script nobody had run would be the same unverified claim this
 document refuses for a Dockerfile. That reasoning was right, and the fix was to run it rather than to
 keep declining: `@vscode/vsce` is now a dev dependency, `npm run package` produces
-`veridian-cockpit.vsix` (11 files, 24.15 KB) and `npm run smoke:vsix` reads it back as a zip - by
+`veridian-cockpit.vsix` (11 files, 24.39 KB) and `npm run smoke:vsix` reads it back as a zip - by
 hand, with `node:zlib`, because this tree has no runtime dependency and adding one to read an archive
 would be the tail wagging the dog. The archive is a **fourth** artifact that nothing else here can
 load, so the same discipline `smoke:dist` and `smoke:out` follow one runtime further out applies:
@@ -556,6 +556,92 @@ sharpest distinction in the series.
 **Acceptance:** four deliberate defects, nine criteria, the same `FAIL` -> repair -> `PASS` descent,
 and a reading that names no substitute because there is none. Measured in §7.
 
+### Phase C8 - the eleventh adapter: `sim-data`, the message-broker world
+
+The last of the data-infrastructure Tier, and the first world whose subject is a **wire protocol**
+rather than a document shape: the application is a real child process, it is handed an address through
+its environment, and it speaks a real length-prefixed request/response protocol over a real TCP socket
+on loopback. What is substituted is the **broker** - topics, partitions, records, groups, committed
+offsets, a coordinator and a meter - and there is no Kafka, no ZooKeeper, no on-disk commit log and no
+second machine anywhere in the loop.
+
+**Three things are deliberately not on that list, because they are not substituted at all:** the
+socket, the bytes, and the record the client sent. That is the line this world is drawn along, and it
+is the same line `sim-cloud` drew: a broker's interface *is* a socket, so a provisioning program that
+printed command vectors would be *describing* requests rather than making them, and a world that
+accepted the description would be judging the description. The application negotiates versions,
+sends batches, and reads offsets back - and everything the world answers is computed from bytes it
+actually received.
+
+**Why it was still worth building despite adding no capability.** Three arguments, and the first is
+the one that matters most.
+
+1. **It is the first world that is no-HTTP and socket-bearing at once.** Every world before it
+   divided cleanly: a browser world has a `url`, and every world with no `url` had no socket either -
+   a database file, a command surface, a resolved module. `sim-data` has a listening TCP port and
+   **no HTTP route and no health path**, so the detector's `hasNoHttp` predicate needed a `data`
+   clause: the question that predicate asks is about the *surface*, not about the *transport*.
+   Without that clause the ladder would have asked this world for a `url` and handed it
+   `expectStatus: 200`, derived `browser.enabled: true`, and the loader would then have refused the
+   pair it had just been handed - before the run ever reached the broker.
+2. **It is the second adapter in the tree that performs a real `snapshot-restore`,** and it does so
+   for a reason that is a *property of the substitute*: an account's state is **pure** - topics,
+   records, groups and committed offsets, all in this process's memory, with no live child behind any
+   of them - so copying it and putting it back really is a restore. `sim-container` refuses the same
+   strategy by name, because it holds a live child and half a world is not a world. The two worlds
+   disagree about the same reset strategy and both are right, which is the clearest statement the
+   series has made that a reset strategy is a fact about a world rather than a setting on a framework.
+3. **It settles what a substitute does when it can only hold part of what it was asked for.** The
+   contract asks for `replication 3`; one substitute node cannot hold three copies of anything. So the
+   reading prints `replication 3 recorded, isr [1]` - the factor is what the application *asked for*,
+   reported as recorded, and the isr is what the world actually has. That is the same class of
+   question `sim-container` settles with `(exposed)` and `(declared, not enforced)`: the honest
+   rendering carries the limit into the value the criterion compares, because a value that omitted it
+   would say a factor *held* when it was only *declared*.
+
+**What makes it different from `sim-cloud`, its closest sibling.** Both are socket worlds; both have a
+`call` step; both are judged partly through the application's own traffic. Three differences, each of
+which the design turned on.
+
+- **A binary protocol rather than HTTP.** The requests are length-prefixed frames on a TCP stream, not
+  method/route/body triples, so the world needs a frame codec (`wire.ts`) and an API table
+  (`protocol.ts`) beside its request log rather than a router. The API table is what makes version
+  negotiation a *reading* rather than a hope: `dataApiSpelling(api)` renders `ApiVersions(18) v0`, and
+  a criterion comparing an api name is comparing the world's own spelling of it.
+- **No HTTP at all, which is a fact the clarification ladder reads.** See argument 1 above. `sim-cloud`
+  is asked for nothing HTTP-shaped either, but it answers over real routes; `sim-data` answers over
+  neither, and the two are encoded as one `hasNoHttp` clause rather than as a special case in the
+  adapter.
+- **It answers `snapshot-restore` where the nearest substitute refuses it.** See argument 2 above.
+
+- `core/` gains `core/environment/data-observation.ts` and one more plan field (`DataPlan`), and
+  nothing else a validator could have reached through an adapter. That file carries the reference
+  grammar, the renderings the validators compare, the request/result vocabulary the substitute and the
+  validators share, and the seven-member `DATA_SIMULATED_SURFACES` constant.
+- An eleventh validator family - `data.node`, `data.topic`, `data.layout`, `data.partition`,
+  `data.record`, `data.key`, `data.value`, `data.group`, `data.member`, `data.commit`, `data.call`,
+  `data.probe`, `data.meter` - needs no change to `core/validation` or `core/execution`. That is the
+  **ninth** demonstration of the claim this series exists to make, and the first made by a world whose
+  subject is a protocol rather than a resource.
+- **Seven results rather than a boolean, because each is a different repair.** `ok` is the pass;
+  `unknown-api` sends the reader to version negotiation, `unsupported-version` to the version,
+  `unreadable` to the framing, `invalid-request` to the fields, `corrupt-message` to the bytes inside
+  the batch, and `refused` is the world saying no on purpose with a reason. Collapsing any two of them
+  produces a report naming a cause the world did not observe.
+- `DATA_ENV` declares the **five** names this world publishes to the application it starts -
+  `VERIDIAN_DATA_CLUSTER`, `VERIDIAN_DATA_NODE_ID`, `VERIDIAN_DATA_HOST`, `VERIDIAN_DATA_PORT`,
+  `VERIDIAN_DATA_BROKER` - three of which are one address in three spellings, all read off the same
+  `listen()` call, and of which the shipped application reads **`HOST` and `PORT` and nothing else**.
+- **A repairable defect may not sit on the readiness line.** This is the first demo whose defect table
+  needed that rule enforced by a guard rather than by a comment, and the guard is the shape the
+  tenth world's test already used: apply each defect to the source, assert the edited program differs
+  from the shipped one (the positive control that stops a stale anchor passing vacuously), and only
+  then assert the readiness literal survives.
+
+**Acceptance:** four deliberate defects, twenty criteria, thirteen validators, three criteria acting
+in the world through a `run` step and **one of those expecting the world to refuse it**, and the same
+`FAIL` -> repair -> `PASS` descent. Measured in §7.
+
 ---
 
 ## 5. Simulated worlds, and what "blocked" actually means
@@ -614,7 +700,7 @@ run ids rather than adjectives.
 | `sim-posix` (linux, kali) | real process runner + real sandboxed filesystem | `kernel`, `distribution`, `package-manager`, `package-index`, `permissions`, `egress`, `provisioning` | **built** (Linux/Debian; Kali is the same world with a different declared distribution) |
 | `sim-os` (windows, macos) | real process runner | `kernel`, `os-identity`, `path-semantics`, `acl`, `registry`, `preferences`, `service-manager`, `egress`, `provisioning` | **built** (Windows, judged as `svc-audit`; macOS is the same world with a different declared family) |
 | `sim-vscode` | a real extension loaded by a real Node process through a resolved module | `extension-host`, `module-resolution`, `activation-events`, `command-registry`, `window`, `configuration`, `workspace` | **built**, see §7 |
-| `sim-data` | real app process against real protocol endpoints | the Kafka / Spark / Hadoop / Airflow runtimes | planned |
+| `sim-data` | real app process issuing real broker-protocol requests over a real TCP socket | `broker`, `replication`, `group-coordination`, `log-storage`, `retention`, `transactions`, `partitioning` | **built**, see §7 |
 | `sim-mobile` | real app code against a real device API surface | the device, the emulator, the touch OS | planned |
 
 **The Simulated column prints the world's own declared surface names, and a test holds the
@@ -1221,3 +1307,94 @@ and a table written from the defects' own names agreed with the names. It now ed
 narration, and the guard that holds it is a row probe: apply the block, run the program, read what the
 world answers. A defect's `criterionId` is a claim that its block sits on that criterion's code path,
 and the only way to hold that claim is to compile, inject, run and watch.
+
+### Phase C8: the message-broker world, and what the eleventh adapter proved
+
+The first world whose subject is a **wire protocol** rather than a document shape, and the first that
+is no-HTTP and socket-bearing at once. A real application process is started as a real child process,
+it is handed an address through its environment, and it speaks a real length-prefixed request/response
+protocol over a real TCP socket on loopback. What is substituted is the **broker** - topics,
+partitions, records, groups, committed offsets, a coordinator and a meter. **Three things are
+deliberately not on that list, because they are not substituted at all: the socket, the bytes, and the
+record the client sent.** That is the line `sim-cloud` drew, drawn again for the same reason: a
+broker's interface *is* a socket, so a provisioning program that printed command vectors would be
+*describing* requests rather than making them.
+
+| Step | Status | Evidence |
+|------|--------|----------|
+| Frame layer | built | `adapters/sim-data/wire.ts` codes and decodes the length-prefixed frames the client really writes, so a malformed frame is rejected as **bytes** rather than as a JSON field. Every read is bounds-checked and every failure is a `WireError` naming the byte offset it stopped at, because reading past the end and producing `undefined` arithmetic is how a truncated frame becomes a criterion that passes for the wrong reason. 30 tests. |
+| Protocol table | built | `adapters/sim-data/protocol.ts` holds `DATA_APIS` - twelve APIs by key and version: `Produce 0 v0,v2`, `Fetch 1 v0,v2`, `ListOffsets 2 v0,v1`, `Metadata 3 v0`, `OffsetCommit 8 v2`, `OffsetFetch 9 v1`, `FindCoordinator 10 v0`, `JoinGroup 11 v0`, `Heartbeat 12 v0`, `SyncGroup 14 v0`, `ApiVersions 18 v0`, `CreateTopics 19 v0`. `dataApiSpelling(api)` renders one as `${name}(${key}) v${versions}`, which is the spelling the reading carries - so a criterion's expectation reads `ApiVersions(18) v0` and never the bare `ApiVersions`. **A member of a vocabulary has to be looked up through the world's own spelling.** 43 tests. |
+| The substitute | built | `adapters/sim-data/data-port.ts` - a real TCP listener, a register of five command words (`create-topic`, `produce`, `fetch`, `metadata`, `commit`), and **seven results rather than a boolean**: `ok`, `unknown-api`, `unsupported-version`, `unreadable`, `invalid-request`, `corrupt-message`, `refused`. Each is a different repair and each names a different place to look, and collapsing any two produces a report naming a cause the world did not observe. 48 tests. |
+| Adapter lifecycle | built | `adapters/sim-data/sim-data-environment.ts` implements all ten `EnvironmentAdapter` methods, performs `run` steps, and waits for the readiness line the application prints - `cart-broker provisioned: N requests, N topics, N records`. `DATA_ENV` names **five** variables (`VERIDIAN_DATA_CLUSTER`, `VERIDIAN_DATA_NODE_ID`, `VERIDIAN_DATA_HOST`, `VERIDIAN_DATA_PORT`, `VERIDIAN_DATA_BROKER`), three of which are one address in three spellings taken from one `listen()` call. The shipped application reads exactly two of the five - `VERIDIAN_DATA_HOST` and `VERIDIAN_DATA_PORT`, both with defaults - and never reads stdin, which it could not: `nodeProcessRunner` spawns with `stdio: ["ignore", "pipe", "pipe"]`, so a program that prompted would get an immediate EOF rather than a hang. **`snapshot-restore` is really performed** here, and refused by name in `sim-container` for the opposite reason: an account's state is *pure* - topics, records, groups and offsets, all in this process's memory, with no live child behind any of them - so copying it and putting it back really is a restore. |
+| Observation vocabulary | built | `core/environment/data-observation.ts` carries the request record (api, result, source), the topic and partition readings with the renderings the validators compare, and `DATA_SIMULATED_SURFACES` - seven declared surfaces (`broker`, `replication`, `group-coordination`, `log-storage`, `retention`, `transactions`, `partitioning`). The eleventh family needed **no core change** beyond this file, a `DataPlan` and a name registration: the **ninth** sample of that claim, and the first whose reading begins with bytes the world had to decode before it could name anything at all. |
+| Validator family | built | `validators/data/` - thirteen validators: `node`, `topic`, `layout`, `partition`, `record`, `key`, `value`, `group`, `member`, `commit`, `call`, `probe`, `meter`. 121 tests, falsified rather than trusted: changing one character of `renderPartition` (`record(s)` to `records`) fails **3** subtests there and **1** in the demo suite. It adds no new step kind - the three criteria that act in the world do so with `run`, the kind the second world introduced - and one of those expects the world to **refuse** it. |
+| Evidence, honestly bounded | built | Its only evidence kind is `json`, written twice per criterion: `<id>.observation.json` for the reading, and `<id>.requests.json` for the traffic the application really sent - written only when there is one, because a world nothing has spoken to has no traffic and an empty file would be an artifact that says nothing while counting as one. The reading **does** carry `simulated`, naming the seven declared surfaces, because this world stands seven things in. A substitute that states its own limits in a constant and carries them into the reading is the same discipline as `replication 3 recorded, isr [1]` and `(declared, not enforced)`: a value that omitted the parenthetical would say a factor *held* when this world has one node. |
+| Demo | built | `examples/sim-data/` - four deliberate defects, twenty criteria, `npm run demo:data`, exit 0. Measured: iteration 1 `FAIL`s exactly five criteria (`AC-004`, `AC-005`, `AC-011`, `AC-014`, `AC-015`) and passes fifteen; the defects are repaired in criterion order, so the failing count descends **`5 -> 4 -> 3 -> 1 -> 0`** over five iterations and four repairs, while the passed count ascends `15 -> 16 -> 17 -> 19 -> 20`; the final run is `PASS (COMPLETED, 5 iteration(s))` with `20/20 mandatory criteria passed, environment valid, no safety violation, evidence complete.` The bundle holds **51 files**, including `artifacts/repair-1.log` through `repair-4.log`. |
+| Regression tests | built | Seven suites under and beside the world: `adapters/sim-data/wire.test.ts` (30), `adapters/sim-data/protocol.test.ts` (43), `adapters/sim-data/data-port.test.ts` (48), `tests/sim-data-environment.test.ts` (65), `tests/sim-data-demo.test.ts` (27), `tests/data-plan.test.ts` (9) and `validators/data/data-validators.test.ts` (121) - **343 tests**. Plus a `data` clause in `tests/environment-gaps.test.ts`, the `data` roster entry in `tests/readme-rosters.test.ts` and the world-table row in this document, which `tests/simulated-surfaces.test.ts` reads on both sides. |
+
+**What the eleventh world settled.** `core/` changed by an observation vocabulary and a name, for the
+ninth time, and this time what has to be described to a validator is not a document a world holds but a
+**request an application made** - an api spelling, a result word and the record that came back. The
+ninth and tenth worlds made the claim about worlds that are real; this one makes it about a world that is
+simulated *and* whose substitution is not a document store, which is the combination the first eight had
+not covered. The seam is still "how a world is described to a validator", and the description a
+broker-shaped world needs is a decoded frame and a result vocabulary rather than a page, a table or a
+byte range.
+
+**Why it is a world at all, given that it adds no capability.** It adds one clause to the detector and
+one strategy to the reset register, and nothing to the step register. The clause was necessary: `hasNoHttp`
+now carries `data`, because **the question that predicate asks is about the surface, not about the
+transport** - without it the ladder would have asked a socket world for a `url`, handed it
+`expectStatus: 200`, derived `browser.enabled: true`, and the loader would have refused the pair it had
+just been handed. And the strategy was the interesting half: the second adapter in the tree that can
+really `snapshot-restore`, and the one that proves the register is a decision rather than a default.
+
+**Why `replication 3 recorded, isr [1]` prints both halves.** This world has one node. A replication
+factor of three cannot be honoured, so what the application *asked for* is reported as recorded and the
+isr is what the world actually holds. Printing only the factor would claim a redundancy that does not
+exist; printing only the isr would hide what the application requested and make the topic look
+misconfigured. The pair is the honest reading, and it is carried into the comparison rather than into a
+comment - a value that dropped the parenthetical would assert a guarantee.
+
+**Why the defect table needs three controls before it can have a headline.** `D1` (`AC-004`, a topic's
+`cleanup` policy read as `compact` where it was created `delete`), `D2` (`AC-005`, the same one
+character in a second topic) and `D4` (`AC-014`, a committed offset written one short) are each read by
+exactly **one** criterion. `D3` (`AC-011`, a release constant) moves **two** - `AC-011` and `AC-015` -
+because the version the provisioner prints and the version it writes into the topics it creates come
+from the same constant. So the failing count falls by one, one, two, one - `5 -> 4 -> 3 -> 1 -> 0` - and
+the reader watches three single-cause movements before watching one edit move two readings. Fifteen of
+the twenty criteria never move at all, which is what makes the five that do attributable to the edits
+rather than to a flaky world: a descent that is one edit one reading, three times over, is the control
+the fourth defect is read against.
+
+**Why a repairable defect may not sit on the readiness line.** The line this world waits for is
+`cart-broker provisioned: N requests, N topics, N records`, and a defect aimed at it would time out
+`probe()` and report `INCONCLUSIVE` for a defect whose intent was to be observable - the world would
+never come up, so the criterion it was filed against would never get the chance to move. The guard is a
+test that applies each defect in turn, asserts the edited program **differs** from the shipped one (the
+positive control that stops a stale anchor passing vacuously), and only then asserts the readiness
+literal survives. A comment saying "do not aim a defect here" is not a guard; the guard is a test that
+applies the defect and re-reads the line.
+
+**Why every roster in this pass was falsified rather than trusted.** Three vocabularies name members of
+this world, and each is held by a test that reads both sides - so each was **broken on purpose** before
+being believed:
+
+- `tests/readme-rosters.test.ts` reads `README.md`'s layout block and compares every family's printed
+  roster against the constant the code exports. It covers `data` **by discovery** - it derives the
+  family list from `validators/` through `tests/helpers/validator-families.ts` rather than holding it -
+  so the eleventh family needed no entry, which is the fix made one family earlier after a hand-written
+  list had gone stale. Deleting `data.meter` from the README failed the comparison naming the missing
+  name and exited 1; restoring it returned `2/2/0`.
+- `tests/simulated-surfaces.test.ts` reads `DATA_SIMULATED_SURFACES`, this document's world table and
+  the row's `Status` cell, and requires all three to agree. Dropping `retention` and inventing a surface
+  failed it twice, each with both sides printed.
+- The family's own rendering was falsified at its source: changing one character of `renderPartition`
+  (`record(s)` to `records`) failed **3** subtests in `validators/data/data-validators.test.ts` and
+  **1** in `tests/sim-data-demo.test.ts`, and reverting returned `148/148/0`.
+
+**A list of names in a document is a claim about the code, and a number in prose is one too.** That is
+why the counts in this section are the run's own figures rather than figures remembered from the
+plan, and why the two falsifications above are recorded beside the numbers they license rather than
+stated as intentions.
+
