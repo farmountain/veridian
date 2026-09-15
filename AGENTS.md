@@ -999,8 +999,11 @@ need compiling.
 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) has six jobs. `gate` runs `npm run gate` on
 `ubuntu-latest` and `windows-latest` (both resolving Node from `.nvmrc`). `demo` runs the canonical
 demo on ubuntu, asserts that `--browser none` really exits 2, and uploads `.veridian/` as an artifact.
-`simulated worlds` runs the seven browserless demos and names the world that regressed, because
-before that job existed no CI ran any of them. `distribution` runs `npm run smoke:dist` and then a
+`browserless worlds` runs eleven of the thirteen declared demos and names the world that regressed,
+because before that job existed no CI ran any of them - it ran seven under the name `simulated
+worlds` until the name stopped describing its own membership, and `demo:api`, `demo:local-process`,
+`demo:data` and `demo:cockpit` were declared, shipped, documented and run by nothing.
+`distribution` runs `npm run smoke:dist` and then a
 full `npm pack` -> install into a clean directory -> run round trip, because that is the only check
 that reads `files` and `bin` the way a consumer does. `container image` builds the Dockerfile and
 requires the container to run the CLI **and** to resolve its own schemas from a browserless run, and
@@ -1933,8 +1936,10 @@ port had none, which is why the defect reached a demo run.
   carried the same vocabulary a second time, by hand, as `NO_HTTP_KEYS`, and its derived assertion
   named the six non-HTTP worlds it expected to cover - so the *test* had fallen one world behind the
   *detector*. Nothing failed, because the detector was right: the world was skipped correctly and the
-  test simply did not know it had been. The list now names seven shapes and the derived set names
-  seven worlds, and the test is what proves the detector has not quietly lost one. *A test that
+  test simply did not know it had been. The list names **nine** shapes and the derived set names the
+  nine worlds that declare one, and the test is what proves the detector has not quietly lost one - a
+  figure re-measured rather than recalled, and one that had already drifted to `seven` in this very
+  paragraph by the time the two worlds after the eighth landed. *A test that
   re-states a predicate rather than iterating the register can only cover the worlds it was written
   with* - the same rule the `hasNoHttp` `||`-chain entry already records one layer up, arriving this
   time at the test rather than at the code.

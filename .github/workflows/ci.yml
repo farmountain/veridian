@@ -10,7 +10,7 @@
 #   gate   - does the source still hold? Runs on both platforms that matter.
 #   demo   - does the product still do the thing it exists to do? Needs a
 #            browser, so it is separate and does not slow the gate down.
-#   worlds - do the seven browserless worlds still demo green? None of them
+#   worlds - do the browserless worlds still demo green? None of the eleven
 #            needs Playwright, and before this job existed no CI ran any of
 #            them: "passes on a developer's machine" is a claim about a machine.
 #   dist   - does the artifact we would publish actually work? Compiled
@@ -103,7 +103,7 @@ jobs:
           retention-days: 7
 
   worlds:
-    name: simulated worlds
+    name: browserless worlds
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -112,25 +112,43 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      # Seven worlds, seven demos, and until this job existed **none of them was run by CI** - the
-      # `demo` job above covers the canonical browser demo and nothing else. Every one of these passes
-      # on a developer's machine, and "passes on a developer's machine" is a claim about one machine:
-      # this project has already paid twice for a check that had never run (the workflow that had never
-      # executed, and the upload step that uploaded nothing for every green build before it).
+      # The one demo whose application is a *build product*: the twelfth demo stages the compiled
+      # Cockpit out of `extension/vscode` into the extension host world, so `out/` has to exist before
+      # the loop reaches `cockpit`. `demo:cockpit` refuses by name when it is absent rather than
+      # skipping, because a skipped check reports a green suite - which is why the build is a step the
+      # workflow owns and not something the demo quietly does for its reader.
+      - name: build the Cockpit, so the one demo with a build prerequisite has an artifact
+        run: npm ci && npm run build
+        working-directory: extension/vscode
+      # Eleven of the thirteen declared demos, and until this job existed **none of them was run by
+      # CI** - the `demo` job above covers the canonical browser demo and `--browser none`, and nothing
+      # else. Every one of these passes on a developer's machine, and "passes on a developer's machine"
+      # is a claim about one machine: this project has already paid twice for a check that had never run
+      # (the workflow that had never executed, and the upload step that uploaded nothing for every green
+      # build before it).
       #
-      # None of the seven needs Playwright, which is why this job does not install it. That is a real
-      # property of the eight worlds and not a convenience: the browser is the *first* world's
-      # observation port, and the other seven declare their own.
+      # The job was named `simulated worlds` and ran seven, which was the number of `sim-*` worlds when
+      # it was written. It is now named for the property it actually tests - that none of them needs a
+      # browser - because that name had stopped describing its own membership twice over: `local-api`
+      # and `local-process` stand nothing in at all, and `api`, `local-process`, `data` and `cockpit`
+      # were declared, shipped, documented and run by nothing. That is this repository's oldest shape,
+      # one layer out: *a roster and the thing that executes it are two lists of the same thing, and
+      # only one of them can be executed.* A name that states the wrong property is the same defect as
+      # a step whose name states an outcome it does not check.
+      #
+      # None of the eleven needs Playwright, which is why this job does not install it. That is a real
+      # property of the worlds and not a convenience: the browser is the *first* world's observation
+      # port, and every other world declares its own.
       #
       # `set +e` around each run because Actions runs bash with `-e`, which would abort on the first
       # non-zero before the assertion could name the world that produced it. A failure here has to say
-      # *which* world regressed - a job that only says "a demo failed" sends the reader to run seven
+      # *which* world regressed - a job that only says "a demo failed" sends the reader to run eleven
       # commands to find out which one.
       - name: every world must demo green, and say which one did not
         run: |
           set +e
           failed=""
-          for world in db k8s posix os cloud container vscode; do
+          for world in db k8s posix os cloud container vscode api local-process data cockpit; do
             echo "::group::npm run demo:$world"
             npm run "demo:$world"
             code=$?
@@ -147,8 +165,8 @@ jobs:
           fi
       # The bundle is single-slot - `.veridian/runs` is the layout, not a per-world directory - so what
       # travels here is the *last* world's bundle, and the step says so rather than implying it carries
-      # seven. `vscode` is ordered last above precisely so the artifact a reader opens is the newest
-      # world's, which is also the one with no CI job of its own before this one.
+      # eleven. `cockpit` is ordered last above precisely so the artifact a reader opens is the newest
+      # demo's, which is also the only one whose application is Veridian's own client.
       - name: upload the last world's evidence bundle
         if: always()
         uses: actions/upload-artifact@v4
