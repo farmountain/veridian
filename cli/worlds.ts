@@ -34,6 +34,7 @@ import { SimCloudEnvironment } from "../adapters/sim-cloud/index.ts";
 import { SimContainerEnvironment } from "../adapters/sim-container/index.ts";
 import { SimOsEnvironment } from "../adapters/sim-os/index.ts";
 import { SimPosixEnvironment } from "../adapters/sim-posix/index.ts";
+import { SimVSCodeEnvironment } from "../adapters/sim-vscode/index.ts";
 import type { AdapterDescriptor, AdapterRequirement } from "../core/clarification/detect.ts";
 import type { Logger } from "../core/clarification/types.ts";
 import type { EnvironmentAdapter, EnvironmentPlan } from "../core/environment/index.ts";
@@ -388,6 +389,72 @@ const WORLDS: readonly World[] = [
     ],
     build: ({ environment, io, logger, processes, stateDir }) =>
       new SimContainerEnvironment(environment, {
+        io,
+        clock: systemClock,
+        logger,
+        processes,
+        stateDir,
+      }),
+  },
+  {
+    kind: "sim-vscode",
+    summary:
+      "a simulated editor host an extension is installed into and activated by, with no editor and no extension host behind it",
+    // Three fields, and the third is why this world is a *kind of subject* rather than a directory the
+    // application writes into. A host name is what every reading names - a criterion asserting the
+    // engine it was judged against is asserting a declared fact, and a world that invented one would
+    // make every such criterion unfalsifiable. An `apiVersion` is the number an extension's own
+    // `engines.vscode` floor is compared against, which is the one *decision* this world makes rather
+    // than records: a real host refuses to load an extension whose floor does not admit it, and this
+    // repository has already paid for a quiet version of that defect once (the Cockpit declared a floor
+    // six minor releases below the first host that could load its entry point, so it installed cleanly
+    // and never started). And a `root` is a **sandbox** directory rather than the application's own:
+    // the world is rebuilt on every reset, so pointing it at the extension's source would delete the
+    // code under test on the first iteration.
+    //
+    // Asked as three pointers rather than as one `vscode` object for the reason `sim-container` records
+    // here and `sim-k8s` paid for: the ladder resolves a requirement against a *place*, so a single
+    // `vscode` field would report the whole block missing however much of it the document already
+    // stated, and the operator's answer would be written over the fields they had already written
+    // correctly.
+    //
+    // `activationEvent` is deliberately *not* required. Its absence is a third answer - the manifest
+    // decides - and the reading records which event was really fired, so a criterion asserting one
+    // asserts something the world observed rather than something the plan assumed. Asking for it would
+    // turn "let the extension declare itself" into a question the operator has to answer.
+    requires: [
+      {
+        field: "vscode.host",
+        question: "Which editor host is this world standing in for?",
+        why:
+          "Every reading records it, and the identity is what makes a run bundle traceable to a named " +
+          "substitute rather than to unexamined reality. There is no default: this adapter substitutes " +
+          "an editor host, and a substituted host that will not say which one it stands in for cannot " +
+          "be judged against anything.",
+      },
+      {
+        field: "vscode.apiVersion",
+        question: "Which editor API version should this world answer as?",
+        why:
+          "It is the number an extension's `engines.vscode` floor is compared against, and that " +
+          "comparison decides whether the extension is loaded at all. A plan that defaulted it would " +
+          "silently admit or refuse a manifest against a host nobody chose, and the failure mode is " +
+          "the quiet one: the extension is present, nothing errors, and it never activates.",
+      },
+      {
+        field: "vscode.root",
+        question: "Where should this world keep the installed extensions, its host and the extension's own state?",
+        why:
+          "This is the sandbox the world builds and rebuilds, and it is a *different* directory from " +
+          "the application's own source - which the adapter states in so many words, because a program " +
+          "that installs its extension out of the wrong one would have every criterion report the " +
+          "extension absent for a reason that is not the extension's fault. There is no default: a " +
+          "sandbox that drifted from the directory the adapter installs into would make every reading " +
+          "describe a host the criteria never acted on.",
+      },
+    ],
+    build: ({ environment, io, logger, processes, stateDir }) =>
+      new SimVSCodeEnvironment(environment, {
         io,
         clock: systemClock,
         logger,

@@ -9,6 +9,7 @@ import { K8S_VALIDATOR_NAMES } from "../validators/k8s/k8s-validators.ts";
 import { OS_VALIDATOR_NAMES } from "../validators/os/os-validators.ts";
 import { WEB_UI_VALIDATOR_NAMES } from "../validators/playwright/web-ui-validators.ts";
 import { POSIX_VALIDATOR_NAMES } from "../validators/posix/posix-validators.ts";
+import { VSCODE_VALIDATOR_NAMES } from "../validators/vscode/vscode-validators.ts";
 
 /**
  * The validator rosters `README.md` prints must be the rosters the code exports.
@@ -68,6 +69,7 @@ const FAMILIES: readonly (readonly [string, Record<string, string>])[] = [
   ["os", OS_VALIDATOR_NAMES],
   ["cloud", CLOUD_VALIDATOR_NAMES],
   ["container", CONTAINER_VALIDATOR_NAMES],
+  ["vscode", VSCODE_VALIDATOR_NAMES],
 ];
 
 describe("the README's validator rosters are the ones the code exports", () => {

@@ -1,0 +1,25 @@
+{
+  "name": "cart-web",
+  "publisher": "veridian",
+  "version": "1.0.0",
+  "displayName": "Cart Web",
+  "main": "extension.js",
+  "engines": { "vscode": "^1.100.0" },
+  "contributes": {
+    "commands": [
+      { "command": "cart.add", "title": "Add an item", "category": "Cart" },
+      { "command": "cart.preview-json", "title": "Preview the cart as JSON", "category": "Cart" }
+    ],
+    "activationEvents": ["onCommand:cart.add", "onCommand:cart.preview-json"],
+    "configuration": {
+      "title": "Cart Web",
+      "properties": {
+        "cart-web.limit": {
+          "type": "number",
+          "default": 10,
+          "title": "How many items a cart holds"
+        }
+      }
+    }
+  }
+}

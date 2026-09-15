@@ -1,0 +1,369 @@
+# What the eighth demo accepts, and what it deliberately does not.
+#
+# ## The split this file is built on
+#
+# There are two parties in this world and they leave two different kinds of record. The application's
+# own provisioning program issues command vectors - `install`, `configure`, `activate`, `invoke`,
+# `uninstall` - and the world answers each one; that is what `vscode.call` reads. Everything else here
+# reads what the world *holds*: which commands the extension registered, what its output channel says,
+# which handles it released, what its durable store contains. Collapsing the two is the classic
+# shortcut and it is a false pass with a longer name, so AC-009 through AC-013 are explicitly about the
+# application's traffic and every criterion after them is about the world's state.
+#
+# ## One host process per action, and what that makes true
+#
+# This world has no editor to keep an extension resident in, so every action that needs the extension
+# running starts a fresh Node process and every such process activates the extension. Three
+# consequences, and a criterion has to respect all three:
+#
+#   - `activation.runs` counts host processes, so it counts activations.
+#   - Output channels, messages and invocations are a *cumulative transcript across runs*: each run
+#     appends its own activation. A good question is "does this appear" or "what is the newest entry".
+#     A bad one is "does this list equal that list" - which is why every assertion against those
+#     surfaces below is `contains`, never `equals` on a whole list.
+#   - Durable state is the one surface genuinely shared between processes. `globalState` written by one
+#     host process is read by the next, which is why AC-014 can ask about a two-item cart at all.
+#
+# ## Two refusals, and they are not the same refusal
+#
+# The world refuses in two places and this contract exercises both. AC-019 reads the application's
+# own refusal: the provisioning program issues `uninstall cart-web`, and this world's register does not
+# hold that action, so the answer is a record naming the command it could not normalise rather than a
+# silent success. AC-020 reads the *criterion's* own refusal: a step the criterion issues itself. They
+# are judged by different validators on purpose - `vscode.call` reads the application's traffic and
+# `vscode.probe` reads the criterion's - because judging either through the other would let a run pass
+# on the strength of the run's own questions.
+#
+# ## Why the refusal criterion activates for itself
+#
+# Refusals are recorded per host process and cleared whenever the world is rebuilt, which happens on
+# every reset. So a criterion cannot inherit one from an earlier criterion: AC-023 runs `activate`
+# itself, because the read it makes must come from a host process *this criterion* started. It also
+# asserts with `contains` rather than `equals`, because the sentence is this host's own wording
+# ("this host does not implement vscode.env") and a contract that pins the spelling of a shim's sentence
+# would fail the next time the sentence is improved.
+#
+# ## What is never asked here
+#
+# `vscode.file` answers how many bytes a file in the workspace holds and not what it contains - reading
+# the contents is what `posix.contents` and `os.contents` do for their worlds, and it is deliberately
+# absent from this one. So AC-018 measures the report the provisioning program wrote and does not quote
+# it. Nothing here compares a cumulative list for equality, nothing names a status bar id other than the
+# one this world derives, and every criterion declares `json` evidence, which is the only artifact kind
+# this world produces.
+
+version: 1
+goal_id: sim-vscode
+
+criteria:
+  # --- the world names itself ---------------------------------------------------------------------
+
+  - id: AC-001
+    description: >-
+      The host this build ran against is the substitute this world declares, so that a PASS is
+      traceable to a named stand-in rather than to unexamined reality.
+    expect:
+      - validator: vscode.host
+        equals: veridian-vscode-sim
+        message: >-
+          The reading names a host other than the one this world declares. Every verdict below was
+          reached inside that host, so a run against a different one describes a different world.
+    evidence: [json]
+
+  - id: AC-002
+    description: >-
+      The extension the world holds is the application, at the version its manifest declares and under
+      the name it publishes under.
+    expect:
+      - validator: vscode.identity
+        contains: cart-web 1.0.0
+      - validator: vscode.identity
+        contains: Cart Web
+        message: >-
+          The manifest's display name did not reach the world's identity reading, so the record of what
+          ran is incomplete even though the run itself happened.
+    evidence: [json]
+
+  - id: AC-003
+    description: >-
+      The manifest's engine floor was admitted by the API this host reports, which is the difference
+      between an extension that installs and one that installs and then never runs.
+    expect:
+      - validator: vscode.engine
+        equals: admitted
+        message: >-
+          The engine floor was refused. This is the failure mode that reports nothing at install time
+          and everything at activation time, so it is judged before anything is activated.
+    evidence: [json]
+
+  # --- what the manifest declares, before anything runs -------------------------------------------
+
+  - id: AC-004
+    description: >-
+      The world read both of the commands the manifest declares, with the palette titles a user would
+      read - a contribution the world never harvested is a command nobody can invoke.
+    expect:
+      - validator: vscode.contribution
+        target: cart.add
+        contains: Add an item
+    evidence: [json]
+
+  - id: AC-005
+    description: >-
+      The second declared command reached the world under its own id, so the two contributions are held
+      apart rather than folded into one.
+    expect:
+      - validator: vscode.contribution
+        target: cart.preview-json
+        contains: Preview the cart as JSON
+    evidence: [json]
+
+  # --- activation, and what activation registered --------------------------------------------------
+
+  - id: AC-006
+    description: >-
+      The extension really activated in a real Node process. This is the first criterion that describes
+      work rather than a declaration.
+    expect:
+      - validator: vscode.activation
+        equals: true
+        message: >-
+          The extension did not activate. Nothing below it can hold, and the activation reading names
+          the error the host caught rather than leaving a reader to infer one.
+    evidence: [json]
+
+  - id: AC-007
+    description: >-
+      The command the extension registered on activation is registered as far as the world can see.
+    expect:
+      - validator: vscode.command
+        target: cart.add
+        equals: present
+        message: >-
+          The first command was not registered. A declared contribution is not a registration: the
+          manifest promises the command exists, and only `activate` makes it answer.
+    evidence: [json]
+
+  - id: AC-008
+    description: >-
+      The second command was registered too, so the extension's call to `registerCommand` reached the
+      world twice rather than once.
+    expect:
+      - validator: vscode.command
+        target: cart.preview-json
+        equals: present
+    evidence: [json]
+
+  # --- the application's own traffic --------------------------------------------------------------
+
+  - id: AC-009
+    description: >-
+      The provisioning program asked the world to install the extension from its manifest, and the world
+      answered. This is the application's request, not a fact about the world.
+    expect:
+      - validator: vscode.call
+        target: install extension/package.json
+        equals: answered
+        message: >-
+          The world holds no answered install for that command line. The command line is the target on
+          purpose: an install the world refused and an install it never received are two different
+          observations, and this criterion is about the one the program actually made.
+    evidence: [json]
+
+  - id: AC-010
+    description: >-
+      The program configured the extension's settings key before activating it, which is the step that
+      makes AC-011 answer with the configured value rather than the manifest's default.
+    expect:
+      - validator: vscode.call
+        target: configure cart-web.limit 12
+        equals: answered
+    evidence: [json]
+
+  - id: AC-011
+    description: >-
+      The settings key the manifest declares resolves to the value the program configured, so a
+      configuration change reached the extension rather than only the world's override table.
+    expect:
+      - validator: vscode.setting
+        target: cart-web.limit
+        equals: "12"
+        message: >-
+          The key resolved to something other than the configured value. The reading keeps the source
+          beside the value (`override`, `default` or `unset`) so a failure report says whether the
+          configuration was lost or merely never written.
+    evidence: [json]
+
+  - id: AC-012
+    description: >-
+      The program invoked the cart's add command with an item, and the world answered it. The
+      invocation's *effect* is judged by AC-014 and AC-017; this criterion is about the request.
+    expect:
+      - validator: vscode.call
+        target: invoke cart.add widget
+        equals: answered
+    evidence: [json]
+
+  - id: AC-013
+    description: >-
+      The extension's own command handler ran and returned. `vscode.invocation` is judged against the
+      world's four-word result vocabulary rather than against a return value, because what a command
+      returns is the extension's business and what the host observed is the world's.
+    expect:
+      - validator: vscode.invocation
+        target: cart.add
+        equals: answered
+        message: >-
+          The newest invocation of this command did not end in an answer. An invocation of a command
+          that was never registered ends `absent` - a different observation from a handler that failed.
+    evidence: [json]
+
+  # --- what the extension did with what it was given ----------------------------------------------
+
+  - id: AC-014
+    description: >-
+      The cart's durable store holds exactly the two items the two invocations appended. This is the
+      one surface genuinely shared between host processes, so it is the only reading that can
+      distinguish "the second invocation ran" from "the second invocation saw the first one's work" -
+      and a cart that is never written back is read as empty by the next process it meets.
+    expect:
+      - validator: vscode.state
+        target: global/cart.items
+        equals: '["widget","gizmo"]'
+        message: >-
+          The durable cart is not the two items in order. Each invocation runs in its own host process,
+          so a store that is not written back is a store the next process reads as empty - and the
+          symptom is a cart that never grows past one.
+    evidence: [json]
+
+  - id: AC-015
+    description: >-
+      The extension's output channel records the second item it was asked to add. The channel is a
+      cumulative transcript across host processes, so this asks whether the line appears rather than
+      what the channel equals - the second invocation is a separate process and appends its own lines.
+    expect:
+      - validator: vscode.output
+        target: Cart
+        contains: added 2
+        message: >-
+          The channel the extension created does not record the second add. The line it writes carries
+          the running count, so a count that never reached two is visible here before it is visible in
+          the cart's own store.
+    evidence: [json]
+
+  - id: AC-016
+    description: >-
+      The extension told the user it was ready. A message is a self-declaration by the application, and
+      it is judged here because it is the one observation that nothing else in the world depends on -
+      which is exactly what makes it a control for the criteria around it.
+    expect:
+      - validator: vscode.message
+        contains: cart-web ready
+        message: >-
+          The notification the extension shows on activation was not observed. Either activation did
+          not reach it, or the message it shows says something else.
+    evidence: [json]
+
+  - id: AC-017
+    description: >-
+      The status bar item the extension created carries the cart's current size as its text. The id is
+      derived by this world - each host process creates its own item - so the criterion names the id the
+      reading holds rather than one the extension chose.
+    expect:
+      - validator: vscode.status
+        target: status#1
+        contains: $(cart) 2
+        message: >-
+          The status bar text does not show a cart of two. The count is written after every add and on
+          activation from the durable store, so a wrong number here means the store and the handler
+          disagree about what the cart holds.
+    evidence: [json]
+
+  # --- what the application left behind, and the refusals -----------------------------------------
+
+  - id: AC-018
+    description: >-
+      The provisioning program wrote its report into the workspace folder. The size is what is measured,
+      not the contents: reading what a file says is what `posix.contents` and `os.contents` do for their
+      worlds, and this world's reading lists the files the application touched.
+    expect:
+      - validator: vscode.file
+        target: report.json
+        atLeast: 1
+        message: >-
+          The workspace holds no report. The program writes it while it provisions, so an absent report
+          means the program stopped before its own last steps rather than that it wrote nothing.
+    evidence: [json]
+
+  - id: AC-019
+    description: >-
+      The application asked the world for an action it does not hold, and the world refused it by name
+      instead of reporting a success for a command it never performed. This is the application's refusal.
+    expect:
+      - validator: vscode.call
+        target: uninstall cart-web
+        equals: refused
+        message: >-
+          The uninstall the program issued was not refused. Either the world answered an action its
+          register does not hold - the false success this criterion exists to refuse - or the command
+          line never reached it.
+    evidence: [json]
+
+  - id: AC-020
+    description: >-
+      A step this criterion issues itself is refused by the world, by name. This is the criterion's own
+      refusal, and it is judged by `vscode.probe` rather than `vscode.call` because it is the criterion's
+      traffic and not the application's.
+    steps:
+      - run: ['strip', 'cart-web']
+    expect:
+      - validator: vscode.probe
+        target: strip cart-web
+        equals: refused
+        message: >-
+          The world did not refuse the step. A substitute that answers a command it does not implement
+          is a substitute whose verdicts cannot be trusted, because the world under test would have been
+          told it succeeded.
+    evidence: [json]
+
+  - id: AC-021
+    description: >-
+      The command handle the extension was handed was released. Every host process ends in `deactivate`,
+      so a handle still held after the extension ran is a registration that outlived the code that made
+      it - which is a leak, and the reading names its kind so a failure report says which kind.
+    expect:
+      - validator: vscode.subscription
+        target: cart.add
+        equals: true
+        message: >-
+          The command handle was still held when the host finished with the extension. A registration
+          that is never released survives everything the extension does afterwards.
+    evidence: [json]
+
+  - id: AC-022
+    description: >-
+      The output channel was released too, so the leak check is not passing by looking at one kind of
+      handle while another kind is abandoned.
+    expect:
+      - validator: vscode.subscription
+        target: Cart
+        equals: true
+    evidence: [json]
+
+  - id: AC-023
+    description: >-
+      The extension read an editor API this host deliberately does not implement, and the host refused
+      it on the record rather than throwing - which is why a real extension can be judged in a
+      substitute host at all. The criterion activates for itself: refusals are recorded per host process
+      and cleared whenever the world is rebuilt, so one cannot be inherited from an earlier criterion.
+    steps:
+      - run: ['activate']
+    expect:
+      - validator: vscode.refusal
+        target: vscode.env
+        contains: does not implement
+        message: >-
+          Nothing was refused for that API. The sentence is asserted with `contains` rather than
+          `equals` because it is this host's own wording, and a contract that pinned it would fail the
+          next time the sentence is improved.
+    evidence: [json]

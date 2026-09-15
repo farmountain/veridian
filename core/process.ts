@@ -13,6 +13,7 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
+import { isAbsolute } from "node:path";
 
 export interface ProcessRequest {
   readonly command: string;
@@ -61,6 +62,19 @@ export interface ProcessRunner {
 const decode = (chunk: Buffer): string => chunk.toString("utf8");
 
 /**
+ * Whether a command has to be handed to the platform's shell.
+ *
+ * On Windows a *bare* name has to be, because `npm` and every other shim is a `.cmd` that only the
+ * shell will resolve. An **absolute path must not be**, and that half was measured the hard way: with
+ * `shell: true`, Node joins the file and its arguments into one string for `cmd.exe` *without quoting
+ * the file*, so `C:\Program Files\nodejs\node.exe` - the interpreter Veridian's own tests run under -
+ * arrives as `'C:\Program' is not recognized as an internal or external command`. A command that is a
+ * path needs no resolution, so asking the shell for one can only lose the command.
+ */
+const wantsShell = (command: string): boolean =>
+  process.platform === "win32" && !isAbsolute(command);
+
+/**
  * A spawn failure is reported as an exit with code `null`, so that every caller has one shape to
  * handle. ENOENT for a missing command is the common case and must read as "the environment could
  * not be started", never as "the application is broken".
@@ -101,8 +115,9 @@ export const nodeProcessRunner: ProcessRunner = {
         cwd: request.cwd,
         env: { ...process.env, ...(request.env ?? {}) },
         // Windows resolves `npm` and other `.cmd` shims only through a shell. Veridian is a Windows
-        // -first tool, so this is not optional; it costs nothing on POSIX.
-        shell: process.platform === "win32",
+        // -first tool, so this is not optional for a bare name; it costs nothing on POSIX. An absolute
+        // path is deliberately excluded - see `wantsShell`.
+        shell: wantsShell(request.command),
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -209,18 +224,18 @@ export const nodeProcessRunner: ProcessRunner = {
 };
 
 /**
- * Run a process to completion, stopping it at the deadline.
+ * Wait for a handle to exit, stopping it at the deadline.
  *
- * `timedOut` is returned rather than thrown because a timeout is a *result* here: the command repair
- * gate reports it as a failed repair attempt, and `local-web` reports it as an environment that never
- * became ready. Neither is an exception in the sense of a programming error.
+ * Split out of {@link runToCompletion} because a caller can need the deadline rule *and* the handle.
+ * `sim-vscode` starts a real extension host and must be able to kill it if the run is abandoned, which
+ * means it cannot let `runToCompletion` keep the handle to itself. Two implementations of one deadline
+ * is the defect this repository has paid for more than once - the second one is always the one that
+ * forgets to stop a process - so there is one, and `runToCompletion` is written on top of it.
  */
-export async function runToCompletion(
-  runner: ProcessRunner,
-  request: ProcessRequest,
+export async function withDeadline(
+  handle: ProcessHandle,
   timeoutMs: number,
 ): Promise<ProcessResult> {
-  const handle = runner.run(request);
   let timedOut = false;
 
   const timer = setTimeout(() => {
@@ -235,4 +250,19 @@ export async function runToCompletion(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Run a process to completion, stopping it at the deadline.
+ *
+ * `timedOut` is returned rather than thrown because a timeout is a *result* here: the command repair
+ * gate reports it as a failed repair attempt, and `local-web` reports it as an environment that never
+ * became ready. Neither is an exception in the sense of a programming error.
+ */
+export async function runToCompletion(
+  runner: ProcessRunner,
+  request: ProcessRequest,
+  timeoutMs: number,
+): Promise<ProcessResult> {
+  return withDeadline(runner.run(request), timeoutMs);
 }

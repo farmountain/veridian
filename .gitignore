@@ -82,6 +82,17 @@ examples/sim-container/app/sandbox/
 # the demo would report a repair the world never observed.
 examples/sim-container/app/context/
 
+# The sandbox tree the `sim-vscode` example's world builds. The reasoning is the `sim-posix`,
+# `sim-os` and `sim-container` one, and the thing stored in it is different again: this tree is the
+# installed extension directory, the workspace folder, and - because extensions are stateful across the
+# host processes that load them - the durable store an extension writes through `globalState` and
+# `workspaceState`. A committed copy would let a criterion read a command registration the run never
+# made, a workspace file the run never wrote, or a stored value the run never saved, and the bundle
+# would then hold a PASS for a host this machine did not stand up. It sits under `app/` because
+# `core/environment/load.ts` resolves `vscode.root` against this document's own `app:` value, so the
+# tree the world creates and the tree this rule excludes are the same one by construction.
+examples/sim-vscode/app/sandbox/
+
 # Editors / OS
 .DS_Store
 Thumbs.db

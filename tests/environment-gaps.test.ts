@@ -162,12 +162,12 @@ describe("environment gaps: HTTP questions are not asked of a world with no HTTP
   /**
    * The document keys that stand for a shape with no HTTP surface of its own.
    *
-   * This is the detector's own vocabulary - the six clauses of `hasNoHttp` in
+   * This is the detector's own vocabulary - the seven clauses of `hasNoHttp` in
    * `core/clarification/detect.ts` - written once here so the *members* can be derived rather than
-   * listed. A world named below is one whose own declaration says which of the six it is; a world
+   * listed. A world named below is one whose own declaration says which of the seven it is; a world
    * that names none of them is asked every HTTP question, which is the other half.
    */
-  const NO_HTTP_KEYS = ["databasePath", "cluster", "posix", "os", "cloud", "container"];
+  const NO_HTTP_KEYS = ["databasePath", "cluster", "posix", "os", "cloud", "container", "vscode"];
 
   it("skips them for every world whose own declaration says it has no socket", () => {
     // **Derived from the register, not listed here, and that is the half that cost a defect.** The
@@ -201,7 +201,7 @@ describe("environment gaps: HTTP questions are not asked of a world with no HTTP
     // dropping a clause from the predicate - fails here rather than silently covering less.
     assert.deepEqual(
       [...covered].sort(),
-      ["local-db", "sim-cloud", "sim-container", "sim-k8s", "sim-os", "sim-posix"],
+      ["local-db", "sim-cloud", "sim-container", "sim-k8s", "sim-os", "sim-posix", "sim-vscode"],
       "one registered world per no-HTTP shape, and the register no longer names them all",
     );
   });

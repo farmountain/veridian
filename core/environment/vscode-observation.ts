@@ -87,8 +87,15 @@ export type VSCodeResult = (typeof VSCODE_RESULTS)[number];
  * The extension itself can call `commands.executeCommand`, and a criterion can invoke one through an
  * `invoke` step. Keeping the two apart is what makes "the command works when the extension calls it"
  * and "the command works when the user asks for it" two observations instead of one.
+ *
+ * `provisioner` is the third party and it is not either of those: the application this world is asked to
+ * run is the program that installs the extension and activates it, and its commands are issued by code
+ * that is *not* the extension under test. Folding them into `extension` would let a criterion read a
+ * command the extension never issued - the same mistake `sim-container` avoids by naming the party that
+ * prints command vectors, and it is also what lets the adapter report the *application's* escapes as
+ * safety events without reporting the criterion's own probes as the application's behaviour.
  */
-export const VSCODE_CLIENTS = ["extension", "criterion"] as const;
+export const VSCODE_CLIENTS = ["extension", "criterion", "provisioner"] as const;
 
 export type VSCodeClient = (typeof VSCODE_CLIENTS)[number];
 
@@ -122,6 +129,62 @@ export type VSCodeMessageLevel = (typeof VSCODE_MESSAGE_LEVELS)[number];
 export const VSCODE_SUBSCRIPTION_KINDS = ["command", "status", "output", "api"] as const;
 
 export type VSCodeSubscriptionKind = (typeof VSCODE_SUBSCRIPTION_KINDS)[number];
+
+/**
+ * Every action this world's register holds.
+ *
+ * The register is the *host's* vocabulary, not the extension's: it is what a provisioning program and a
+ * criterion's `run` step both issue to bring an extension into a substitute host and to act on it once
+ * it is there. Declared here rather than in the adapter because a criterion may name one and the
+ * registry's guard has to be able to refuse a name it does not hold - and a vocabulary written twice is
+ * the defect this repository has paid for three times.
+ *
+ * `activate` and `invoke` both start a real host process: this world is a host, and a host that had an
+ * extension loaded in a process that had already exited would be a host holding nothing.
+ */
+export const VSCODE_ACTIONS = [
+  "install",
+  "activate",
+  "invoke",
+  "configure",
+  "unconfigure",
+  "reveal",
+  "reload",
+] as const;
+
+export type VSCodeAction = (typeof VSCODE_ACTIONS)[number];
+
+/** Whether a normalised word is an action this world's register holds. */
+export function isVSCodeAction(value: string): value is VSCodeAction {
+  return (VSCODE_ACTIONS as readonly string[]).includes(value);
+}
+
+/**
+ * One command line this world performed, exactly as it was filed.
+ *
+ * Every command is recorded, not only the refused ones, because the transcript is what a reader holds
+ * when a criterion about a missing command fails: the reading says the command is not registered, and
+ * the transcript says which commands the run issued and which of them this world would not answer.
+ */
+export interface VSCodeCallRecord {
+  /**
+   * The action this world's register resolved the command line to, or `null` when it holds none.
+   *
+   * `null` is the field that says this world was asked for something it does not implement, which is a
+   * different fact from an action that ran and failed. Collapsing the two would leave a contract unable
+   * to observe the refusal - and a contract about a substitute is exactly a contract about what the
+   * substitute does and does not answer.
+   */
+  readonly action: VSCodeAction | null;
+  readonly client: VSCodeClient;
+  /** The command line as it was spelled, so a refusal can be quoted without paraphrasing. */
+  readonly command: string;
+  /** What the command was about - a command id, a settings key, a channel name - or `null`. */
+  readonly resource: string | null;
+  readonly result: VSCodeResult;
+  readonly status: number;
+  readonly reason: string | null;
+}
 
 /** What an extension is, as its own manifest declares it. */
 export interface VSCodeIdentityReading {
@@ -317,6 +380,8 @@ export interface VSCodeObservationData {
   readonly subscriptions: readonly VSCodeSubscriptionReading[];
   readonly files: readonly VSCodeFileReading[];
   readonly refusals: readonly VSCodeRefusalReading[];
+  /** Every command line this world performed, in the order it arrived. */
+  readonly calls: readonly VSCodeCallRecord[];
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -419,6 +484,16 @@ const isRefusal = (value: unknown): value is VSCodeRefusalReading =>
   typeof value["client"] === "string" &&
   typeof value["reason"] === "string";
 
+const isCall = (value: unknown): value is VSCodeCallRecord =>
+  isRecord(value) &&
+  optionalString(value["action"]) &&
+  typeof value["client"] === "string" &&
+  typeof value["command"] === "string" &&
+  optionalString(value["resource"]) &&
+  typeof value["result"] === "string" &&
+  typeof value["status"] === "number" &&
+  optionalString(value["reason"]);
+
 const every = <T>(value: unknown, guard: (entry: unknown) => entry is T): boolean =>
   Array.isArray(value) && value.every(guard);
 
@@ -450,6 +525,7 @@ export function isVSCodeObservationData(value: unknown): value is VSCodeObservat
   if (!every(value["subscriptions"], isSubscription)) return false;
   if (!every(value["files"], isFile)) return false;
   if (!every(value["refusals"], isRefusal)) return false;
+  if (!every(value["calls"], isCall)) return false;
   return true;
 }
 
@@ -483,8 +559,24 @@ const resolved = <T>(value: T): VSCodeTargetResult<T> => ({ kind: "target", valu
  */
 const COMMAND_PATTERN = /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$/;
 
-/** A settings key is `section.property`, both lower case, at least one dot. */
-const SETTING_PATTERN = /^[a-z][a-z0-9]*(\.[a-z0-9]+)+$/;
+/**
+ * A settings key is `section.property`: at least one dot, and the editor's own character set otherwise.
+ *
+ * The first version of this pattern was lower case only - `^[a-z][a-z0-9]*(\.[a-z0-9]+)+$` - written
+ * from the validator naming rule one screen up, and it was wrong about the editor in exactly the way the
+ * command pattern's doc comment above warns about. `editor.codeActionsOnSave` is a real, documented
+ * setting with capitals in it; `rust-analyzer.check.command` is a real one with a hyphen; and every
+ * section this world's own demo declares is `cart-web.something`. A lower-case-only rule refuses all
+ * three, and the *family* refused to admit it: `vscode.setting`'s own target noun is spelled
+ * `` `cart-web.limit` ``, a key this pattern refused. So a target noun and the grammar beside it
+ * disagreed, and the grammar was the one that was wrong.
+ *
+ * The dot requirement is kept, and it is a fact about *this* world rather than about the editor: the
+ * substitute composes the key it records as `section + "." + key` from `getConfiguration(section)`, so a
+ * full key always carries a section. A bare word would name a key no reading here can hold, and refusing
+ * it by name is more useful than an `INCONCLUSIVE` that lists the keys that do exist.
+ */
+const SETTING_PATTERN = /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)+$/;
 
 /** A status bar id, an output channel name or a state key: any non-empty text without a newline. */
 const textNameProblem = (kind: string, name: string): string | null => {
@@ -524,8 +616,9 @@ export function resolveVSCodeSettingKey(target: string): VSCodeTargetResult<stri
   }
   if (!SETTING_PATTERN.test(target)) {
     return refused(
-      `a settings key is lower case and dotted - "section.property" - because that is how a manifest ` +
-        `declares one and how an extension reads one; this key is ${JSON.stringify(target)}`,
+      `a settings key is "section.property" - at least one dot, and letters, digits, "_" and "-" ` +
+        `between them, as a manifest declares one and an extension reads one; this key is ` +
+        `${JSON.stringify(target)}`,
     );
   }
   return resolved(target);
@@ -580,6 +673,43 @@ export function resolveVSCodeFilePath(target: string): VSCodeTargetResult<string
     );
   }
   return resolved(target);
+}
+
+/** A store and a key, as a criterion named them. */
+export interface VSCodeStateRef {
+  readonly scope: VSCodeStateScope;
+  readonly key: string;
+}
+
+/**
+ * The store and key a criterion named, as `global/cart.items`.
+ *
+ * The scope is part of the reference rather than a second field on the expectation, because a target is
+ * the only place a criterion has to say *which* thing it means, and "the value stored under
+ * `cart.items`" is not a question this world can answer - there are two stores and an extension may use
+ * both keys in both. Made a reference rather than a separate validator per store for the reason the
+ * container family gives about images and containers: two stores are not two objects, they are one
+ * question asked of one of two places, and a second validator would double every name in the family.
+ */
+export function resolveVSCodeStateRef(target: string): VSCodeTargetResult<VSCodeStateRef> {
+  const slash = target.indexOf("/");
+  if (slash <= 0 || slash === target.length - 1) {
+    return refused(
+      `a state reference is "<global|workspace>/<key>", so that a criterion says which store it means; ` +
+        `this one is ${JSON.stringify(target)}`,
+    );
+  }
+  const scope = target.slice(0, slash);
+  if (scope !== "global" && scope !== "workspace") {
+    return refused(
+      `a state reference names "global" or "workspace" - the two stores the editor hands an extension - ` +
+        `and this one names ${JSON.stringify(scope)}`,
+    );
+  }
+  const key = target.slice(slash + 1);
+  const problem = textNameProblem("state key", key);
+  if (problem !== null) return refused(problem);
+  return resolved({ scope, key });
 }
 
 // ---- lookups, so a validator reads the reading rather than re-deriving it -------------------------

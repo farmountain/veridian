@@ -69,6 +69,7 @@ import { posixValidators } from "../validators/posix/index.ts";
 import { osValidators } from "../validators/os/index.ts";
 import { cloudValidators } from "../validators/cloud/index.ts";
 import { containerValidators } from "../validators/container/index.ts";
+import { vscodeValidators } from "../validators/vscode/index.ts";
 
 import type { CliArguments } from "./arguments.ts";
 import {
@@ -113,6 +114,7 @@ function allValidators() {
     ...osValidators(),
     ...cloudValidators(),
     ...containerValidators(),
+    ...vscodeValidators(),
   ];
 }
 

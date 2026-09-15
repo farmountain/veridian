@@ -1,0 +1,61 @@
+# The world this contract is judged in.
+#
+# `adapter: sim-vscode` selects an extension host that stands in for the editor: a real Node process
+# loads a real extension through a module resolved in place of `vscode`, and every fact a criterion reads
+# is recorded by that process as it runs. See `goal.yaml` for what is substituted and what is not - this
+# file names the parts, and the parts are what a reader compares against the run's own `environment.json`.
+#
+# Nothing here restates a fact about the application. The manifest's engine floor, the commands it
+# declares and the settings key it reads all live in `app/extension/package.json`, because a document
+# that copied them here would be a third place for them to disagree with the extension's own source.
+
+adapter: sim-vscode
+app: app
+url: null
+dependencyInstall: null
+
+# The host this world stands in for.
+#
+# `host` and `apiVersion` are the identity the substitute answers as, and the identity a manifest's
+# `engines.vscode` is evaluated against. `apiVersion` is a *record* rather than an installation: this
+# world never fetches an editor and never boots one, and the version is the number the substitute
+# reports so that a floor written for a real editor can be judged here.
+#
+# `activationEvent` is the event a bare `activate` command uses. A real host activates on one of the
+# manifest's `activationEvents`; the world's `activate` command can name `--event` to choose another,
+# and this value is the fallback.
+#
+# `settings` are operator overrides, in the shape `settings.json` has on a real machine. The manifest's
+# own `contributes.configuration.properties` defaults are read from the manifest and are the *other*
+# source - which is why a criterion can distinguish a value that reached the extension as an override
+# from one it read as a packaged default.
+vscode:
+  host: veridian-vscode-sim
+  apiVersion: "1.100.0"
+  activationEvent: onCommand:cart.add
+  root: sandbox
+  settings: {}
+
+start:
+  command: node
+  args:
+    - provision.mjs
+  # The count is `\d+` rather than the literal this program prints, so that a repair which changed the
+  # number of commands would be judged by the pattern this world matches rather than by a number copied
+  # into a document. The line is printed last, on stderr, and it is a *claim* about the work rather than
+  # an instruction: the world reads it to decide that provisioning finished, and reads nothing else
+  # from it. No state in this world is derived from it.
+  readyPattern: 'cart-web provisioned: \d+ commands'
+
+# There is no HTTP here to wait for. `path` and `expectStatus` are HTTP concepts, and a host that
+# answers over a process's stdout has no status code to return - so the readiness question is the
+# pattern above, and `probe()` reports `statusCode: null` rather than inventing a 200.
+health:
+  timeoutMs: 30000
+  intervalMs: 100
+
+# `restart` rather than `snapshot-restore`: this world rebuilds its sandbox from the generated sources on
+# every reset, and it refuses `snapshot-restore` **by name** rather than quietly downgrading it to a
+# restart, because a photograph it cannot take is not a photograph it may pretend to have taken.
+reset:
+  strategy: restart

@@ -99,6 +99,63 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  worlds:
+    name: simulated worlds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # Seven worlds, seven demos, and until this job existed **none of them was run by CI** - the
+      # `demo` job above covers the canonical browser demo and nothing else. Every one of these passes
+      # on a developer's machine, and "passes on a developer's machine" is a claim about one machine:
+      # this project has already paid twice for a check that had never run (the workflow that had never
+      # executed, and the upload step that uploaded nothing for every green build before it).
+      #
+      # None of the seven needs Playwright, which is why this job does not install it. That is a real
+      # property of the eight worlds and not a convenience: the browser is the *first* world's
+      # observation port, and the other seven declare their own.
+      #
+      # `set +e` around each run because Actions runs bash with `-e`, which would abort on the first
+      # non-zero before the assertion could name the world that produced it. A failure here has to say
+      # *which* world regressed - a job that only says "a demo failed" sends the reader to run seven
+      # commands to find out which one.
+      - name: every world must demo green, and say which one did not
+        run: |
+          set +e
+          failed=""
+          for world in db k8s posix os cloud container vscode; do
+            echo "::group::npm run demo:$world"
+            npm run "demo:$world"
+            code=$?
+            echo "::endgroup::"
+            if [ "$code" -ne 0 ]; then
+              echo "demo:$world exited $code"
+              failed="$failed $world"
+            fi
+          done
+          set -e
+          if [ -n "$failed" ]; then
+            echo "these worlds did not demo green:$failed"
+            exit 1
+          fi
+      # The bundle is single-slot - `.veridian/runs` is the layout, not a per-world directory - so what
+      # travels here is the *last* world's bundle, and the step says so rather than implying it carries
+      # seven. `vscode` is ordered last above precisely so the artifact a reader opens is the newest
+      # world's, which is also the one with no CI job of its own before this one.
+      - name: upload the last world's evidence bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: veridian-sim-evidence
+          path: .veridian/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
   dist:
     name: distribution
     runs-on: ubuntu-latest

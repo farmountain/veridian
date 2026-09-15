@@ -407,6 +407,46 @@ own stdout and the substitute really executes them, exactly as `sim-posix` and `
 descent, and a bundle whose reading names the seven surfaces standing in for something. Measured in
 §7.
 
+### Phase C7 - the eighth adapter: `sim-vscode`, the extension-host world
+
+C6 proved a world can be the thing that *produces* an application's filesystem view. This one attacks
+a subject no other world has: an **editor's extension API**. Here the application does not provision
+anything into the world and is not judged as an account inside it - it ships an *extension*, and the
+world is the host that loads and runs it. Every fact a criterion reads is something that host recorded
+while the extension was running, which is a stronger form of the same claim the other simulations
+make: the reading is not a record of what the application said, it is a record of what the application
+did to a host it never sees.
+
+The world resolves a module in place of `vscode`, and every action that needs the extension running
+starts a **fresh host process** - so an activation count is a count of host processes, and output
+channels, messages and command invocations are a cumulative transcript across them, while durable
+state is the one surface genuinely shared.
+
+- `core/` gains `core/environment/vscode-observation.ts` and one more plan field (`VSCodePlan`), and
+  nothing else a validator could have reached through an adapter. That file carries the reference
+  grammar (`command/...`, `setting/...`, `contribution/...`), the renderings the validators compare,
+  the seven simulated surfaces, and the vocabulary for a call the world **refuses** - which is what
+  lets a criterion judge a refusal rather than an error.
+- An eighth validator family - `vscode.host`, `vscode.identity`, `vscode.engine`, `vscode.activation`,
+  `vscode.contribution`, `vscode.command`, `vscode.invocation`, `vscode.setting`, `vscode.status`,
+  `vscode.output`, `vscode.message`, `vscode.state`, `vscode.subscription`, `vscode.file`,
+  `vscode.refusal`, `vscode.call`, `vscode.probe` - needs no change to `core/validation` or
+  `core/execution`. That is the sixth demonstration.
+- **This world adds no step kind, and no new evidence kind either.** It is acted on with `run`, so the
+  provisioner's vectors are the interface; the criterion reaches *into* the host through the `activate`
+  and `invoke` vectors rather than through a step of its own. Its only evidence kind is `json` -
+  there is no page to screenshot - and `snapshot-restore` is refused by name rather than silently
+  downgraded to a restart.
+- **Two of the seventeen validators are what keep the substitution honest.** `vscode.contribution`
+  refuses a manifest whose `main` escapes the extension's own directory, and `vscode.engine`
+  evaluates `engines.vscode` against the `apiVersion` the document declares - so a world that admits
+  an extension it could not have loaded is a world that fails rather than one that passes for the
+  wrong reason.
+
+**Acceptance:** four deliberate defects, twenty-three criteria, the same `FAIL` -> repair -> `PASS`
+descent, and a bundle whose reading names the seven surfaces standing in for something. Measured in
+§7.
+
 ### Phase D - the rest of Tier 1
 
 `local-api` and `local-process` (`PLAN.md` §36 Tier 1). Both need only a child process and an HTTP
@@ -471,9 +511,9 @@ run ids rather than adjectives.
 | `sim-container` | real app process provisioning images and containers over a real command surface | `namespaces`, `cgroups`, `image-layers`, `registry`, `published-ports`, `volumes`, `user-switching` | **built**, see §7 |
 | `sim-posix` (linux, kali) | real process runner + real sandboxed filesystem | `kernel`, `distribution`, `package-manager`, `package-index`, `permissions`, `egress`, `provisioning` | **built** (Linux/Debian; Kali is the same world with a different declared distribution) |
 | `sim-os` (windows, macos) | real process runner | `kernel`, `os-identity`, `path-semantics`, `acl`, `registry`, `preferences`, `service-manager`, `egress`, `provisioning` | **built** (Windows, judged as `svc-audit`; macOS is the same world with a different declared family) |
+| `sim-vscode` | a real extension loaded by a real Node process through a resolved module | `extension-host`, `module-resolution`, `activation-events`, `command-registry`, `window`, `configuration`, `workspace` | **built**, see §7 |
 | `sim-data` | real app process against real protocol endpoints | the Kafka / Spark / Hadoop / Airflow runtimes | planned |
 | `sim-mobile` | real app code against a real device API surface | the device, the emulator, the touch OS | planned |
-| `vscode-host` | a real VS Code extension host process | - | planned (Phase B-adjacent) |
 
 **The Simulated column prints the world's own declared surface names, and a test holds the
 agreement.** Each cell is the members of that world's `<X>_SIMULATED_SURFACES` constant, spelled the
@@ -499,6 +539,7 @@ statement - each names the world it blocks, and the simulated row that answers i
 | a real Kubernetes cluster | Same, plus no `kubectl`. | `sim-k8s` - **built**, see §7 |
 | a real container runtime as a *world* | No runtime here. Phase A2's Dockerfile is a *distribution* route and needs none; an adapter that starts and resets containers does. | `sim-container` - **built**, see §7 |
 | a real cloud account | Not a runtime question: an unattended run against a metered, credentialed account is a cost model rather than a test. | `sim-cloud` - **built**, see §7 |
+| a real VS Code extension host as a *world* | Installed VS Code is not a sandbox substrate, and the extension host is a fourth runtime with its own loader - so a check that needs one cannot be a check in this tree. | `sim-vscode` - **built**, see §7 |
 
 **This table used to be an inventory of what is not installed here, and that was the wrong question.**
 It listed "no container runtime", "no `qemu`/`vagrant`/Hyper-V", "no macOS guest licence", "no
@@ -947,4 +988,41 @@ unchanged**; iteration 5 is `PASS`. So D3's criterion moved only once D4's mount
 criterion reading a container's captured output cannot report a repair to a line the container never
 had the chance to print. A loop that reported progress from its own intentions would have shown that
 criterion move on iteration 4, from the repair rather than from the world.
+
+### Phase C7: the extension-host world, and what the eighth adapter proved
+
+| Step | Status | Evidence |
+|------|--------|----------|
+| Substitute host | built | `adapters/sim-vscode/vscode-port.ts` resolves a module in place of `vscode` and holds contributions, commands, invocations, settings, status items, output channels, messages, subscriptions and durable state beside the calls it refuses by name. Every host process activates the extension, so an activation count is a count of **host processes**. `vscode-port.test.ts` is 18 tests over it, falsified rather than trusted (removing the disposal bookkeeping from one fold branch leaves the registration readable as live and fails 1 of the 18). |
+| Adapter lifecycle | built | `adapters/sim-vscode/sim-vscode-environment.ts` implements all ten `EnvironmentAdapter` methods and declares the four `VSCODE_ENV` names the application reads. **No editor, no window, no installed VS Code, no extension gallery, no extension host binary and no `require('vscode')` that a real editor supplied**: what answers the extension's calls is a generated module plus tables maintained in process. |
+| Observation vocabulary | built | `core/environment/vscode-observation.ts`, so no validator imports an adapter. The eighth family needed **no core change** beyond this and the name registration - the sixth sample of that claim, and the one that carries seven declared surfaces beside its refusal vocabulary. |
+| Validator family | built | `validators/vscode/` - seventeen validators, 55 tests, falsified at 50/55 and 52/55. It adds **no new step kind**: the extension is provisioned over `run` exactly as `sim-posix`, `sim-os` and `sim-container` are driven, and the two `activate`/`invoke` vectors are how a criterion reaches into the host. Five of the seventeen are targetless, because `host`, `identity`, `engine`, `activation` and `message` are questions about the world itself. |
+| Evidence, honestly bounded | built | The only evidence kind this world produces is `json` - there is no page and no trace archive - and `snapshot-restore` is refused by name rather than downgraded to a restart. The capability warning is derived from the artifacts actually written, so it cannot print "produces `json` and cannot produce `json`". |
+| Demo | built | `examples/sim-vscode/` - four deliberate defects, twenty-three criteria, `npm run demo:vscode`, exit 0. Measured on run `run-20260915-040826-1bb0f2`: iteration 1 `FAIL`s exactly `AC-014`, `AC-015`, `AC-016`, `AC-017` - the four filed criteria - and each subsequent iteration removes one, so the failing count descends `4 -> 3 -> 2 -> 1 -> 0`; iteration 5 is `PASS` on all twenty-three with `23/23 mandatory criteria passed, environment valid, no safety violation, evidence complete.` |
+| Regression tests | built | `tests/sim-vscode-demo.test.ts` (30), `tests/sim-vscode-environment.test.ts` (45), `adapters/sim-vscode/vscode-port.test.ts` (18), `validators/vscode/vscode-validators.test.ts` (55), plus a `vscode` case in `tests/environment-gaps.test.ts` and the `vscode` roster entry in `tests/readme-rosters.test.ts`. |
+
+**What the eighth world settled.** `core/` changed by an observation vocabulary and a name, for the
+sixth time. The claim this world was built to make is the sharpest of the series: the subject can be
+an *API* rather than a machine, and the reading can be a record of what the application **did to a
+host** rather than what it provisioned or what it said. No criterion in this world reads the
+application's own narration of itself - they read the extension's registered contributions, its
+invocations, the value it wrote to `globalState`, the line it logged, the message it showed and the
+status item it created.
+
+**One host process per action, and why that is a fact rather than an implementation detail.** There
+is no long-lived host to poke; each `activate`, `invoke` and `reload` starts a fresh process, and
+every one of them activates the extension. So `vscode.activation` reporting `2` is a statement about
+processes, not about a counter the world kept, and a criterion that expects the extension to have
+been activated once must be a criterion whose world was touched once. The cumulative transcript is
+the same fact from the other side: `output`, `messages` and `invocations` carry across a reload while
+durable state is shared, so a criterion reads a *history* and the test suite asserts that history is
+unchanged by two independent readings.
+
+**What the four defects are, and why they are all in one file.** Each defect edits the extension the
+application ships - the value it keeps in `globalState`, the line it logs, the message it shows, the
+status item it writes - and each is filed against exactly **one** criterion. Nothing here is a
+control the way `sim-container`'s D3 is, because nothing here is a consequence chain: the four
+readings are four independent surfaces of one host, so the progression `4 -> 3 -> 2 -> 1 -> 0` is the
+loop's own iteration order made visible. A defect table that moved many criteria per entry would be
+unreadable in a world whose whole subject is that four surfaces are recorded separately.
 

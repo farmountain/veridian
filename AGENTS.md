@@ -31,8 +31,15 @@ instructions file for this workspace — do not add a second one
 > anywhere in the loop. It is the world that states its own limits rather than hiding them: limits are
 > declared and never enforced, an account is recorded and never switched to, and a published port is
 > `exposed` and never `reachable`.
-> `npx tsc --noEmit` is silent and `node --test` reports 1463 passing tests -
-> Veridian's own 1399 plus the 64 the VS Code Cockpit contributes, which the root runner discovers
+> `sim-vscode` is the eighth and the sixth simulated one, and its subject is an **extension host**:
+> a real extension is loaded by a real Node process through a module this world resolves in place of
+> `vscode`, and every action that needs the extension running starts a fresh host process - so an
+> activation count is a count of host processes - while a generated substitute records contributions,
+> commands, invocations, settings, status items, output channels, messages, subscriptions and the
+> calls it refuses. Judged on those records, with no editor, no window and no installed VS Code
+> anywhere in the loop. Its only evidence kind is `json`, and `snapshot-restore` is refused by name.
+> `npx tsc --noEmit` is silent and `node --test` reports 1615 passing tests -
+> Veridian's own 1551 plus the 64 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Four distribution routes ship - a clone, an npm package, the Cockpit (as
 > a development install and as a `.vsix`), and a container image - and there is still **no
 > build step between the source tree and the running program**: Node 22 strips types and runs `.ts`
@@ -283,7 +290,11 @@ core/environment/       EnvironmentAdapter interface + Environment Manager (life
                         vocabulary the substitute and the validators share) + container-observation.ts
                         for the runtime family (the seventh, and the fifth reason that rule holds, and
                         the one that carries the reference grammar, the renderings the validators
-                        compare and the vocabulary for a command the world refuses) + the boundary
+                        compare and the vocabulary for a command the world refuses) + vscode-
+                        observation.ts for the extension-host family (the eighth, and the sixth
+                        reason that rule holds, and the one that carries the reference grammar, the
+                        renderings the validators compare, the seven simulated surfaces and the
+                        vocabulary for a call the world refuses) + the boundary
                         vocabulary (BoundaryPolicy/BoundaryReport) that keeps a declared safety limit
                         from being mistaken for an enforced one.
 core/evidence/          Evidence Engine. Writes the run bundle.
@@ -354,6 +365,18 @@ adapters/sim-container/ SimContainerEnvironment - the fifth SIMULATED world, and
                         than hiding them: limits are **declared and never enforced**, an account is
                         **recorded and never switched to**, and a published port is `exposed` and
                         never `reachable`.
+adapters/sim-vscode/    SimVSCodeEnvironment - the sixth SIMULATED world, and the first whose
+                        subject is an editor's extension API. A real extension is loaded by a real
+                        Node process through a module this world resolves in place of `vscode`;
+                        every action that needs the extension running starts a fresh host process,
+                        and every host process activates the extension, so an activation count is
+                        a count of host processes. `vscode-port.ts` is the substitute, holding
+                        contributions, commands, invocations, settings, status items, output
+                        channels, messages, subscriptions and durable state beside the calls it
+                        refuses by name; `sim-vscode-environment.ts` is the adapter, which declares
+                        the four `VSCODE_ENV` names the application reads. Its only evidence kind
+                        is `json` - there is no page to screenshot - and `snapshot-restore` is
+                        refused by name rather than downgraded to a restart.
 validators/playwright/  Playwright web validators (element, visible, value, text, count, url,
                         console.clean, network.ok).
 validators/database/    Database validators (table, column, count, value). Judge a reading in
@@ -398,6 +421,18 @@ validators/container/   Runtime validators (runtime, image, tag, digest, label, 
                         because a value that omitted them would say a limit held and a port was
                         reachable when neither is true. `container.exitcode` is all lower case,
                         like every validator name in this tree.
+validators/vscode/      Extension-host validators (host, identity, engine, activation,
+                        contribution, command, invocation, setting, status, output, message, state,
+                        subscription, file, refusal, call, probe). Judge a reading in
+                        core/environment/vscode-observation.ts - the eighth family, and the sixth
+                        reason that rule holds. It has no new step kind: the application provisions
+                        by printing command vectors on its stdout and is acted on with `run`, and
+                        the two `invoke`/`activate` vectors are how a criterion reaches into the
+                        host. Five of the seventeen are targetless - `host`, `identity`, `engine`,
+                        `activation` and `message` ask about the world itself - and two of those
+                        are the checks that keep the substitution honest: a manifest whose `main`
+                        escapes the extension's own directory is refused, and `engines.vscode` is
+                        evaluated against the `apiVersion` the document declares.
 cli/                    The interface that exists today: arguments, support, worlds.ts (the adapter
                         register and the requirements each adapter declares), veridian.ts.
 schemas/                goal/acceptance/environment/run/result/ambiguity .schema.json - the
@@ -437,6 +472,14 @@ examples/sim-container/ The seventh demo, and the fifth simulated one: the appli
                         is a one-character misspelling of a bind mount's source that moves **seven**
                         readings, which is what makes it the demo that shows one edit to a world is
                         never one fact.
+examples/sim-vscode/    The eighth demo, and the sixth simulated one: a real extension is loaded by a
+                        substitute extension host and judged on what that host recorded while it
+                        ran. Four defects, twenty-three criteria, two of which act in the world
+                        through a `run` step and one of which expects the world to **refuse** it.
+                        Each defect is filed against exactly one criterion - the state the
+                        extension kept, the line it logged, the message it showed and the status
+                        item it wrote - and the defects are repaired in criterion order, so the
+                        failing count descends `4 -> 3 -> 2 -> 1 -> 0`.
 examples/defect-text.ts One implementation of the CRLF rule for a textual overlay on a source file.
                         Two demos injecting defects is two chances to teach the rule differently;
                         a third copy is where the rule gets broken.
@@ -531,8 +574,8 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 1463 tests, ~5s. No directory argument.
-                           # 1463 = the root's own 1399 + the Cockpit's 64, because the runner walks
+node --test                # the whole suite. 1615 tests, ~5s. No directory argument.
+                           # 1615 = the root's own 1551 + the Cockpit's 64, because the runner walks
                            # the tree and reaches extension/vscode/src/*.test.ts. Neither figure is
                            # the whole story on its own: the root tsconfig EXCLUDES extension/**, so
                            # `npx tsc --noEmit` here does not typecheck the Cockpit and the root gate
@@ -1515,7 +1558,7 @@ port had none, which is why the defect reached a demo run.
   register.** `README.md` said a step is "one of seven kinds" while `core/acceptance/steps.ts` holds
   **eleven** in `STEP_KINDS` - a figure that had drifted through four new worlds without anything
   reading it. The same pass found `AGENTS.md` quoting `1273` tests and `1213` of the tree's own, where
-  the measured run was `1456` and `1396` - and the count stands at `1463` and `1399` as this is
+  the measured run was `1456` and `1396` - and the count stands at `1615` and `1551` as this is
   written, which is the rule demonstrating itself. *Both are the same defect as a roster printed in a
   document: a number is a claim about the code, and the cheapest way to hold it is to read the code -
   the difference is that a number cannot be pinned by a test the way a name can, so it has to be
@@ -1578,6 +1621,32 @@ port had none, which is why the defect reached a demo run.
   the archive is byte-identical to the one on disk"* and exits 1. *An archive has to be read back to
   be known, which is the same reason `smoke:dist` and `smoke:out` exist - one runtime further out
   each time, and never optional.*
+
+- **A guard built on a `*_SIMULATED_SURFACES` constant has to be extended in three places at once, and
+  the new entry has to be falsified.** `tests/simulated-surfaces.test.ts` reads four things that must
+  agree for the eighth world to be covered: the constant's import, its entry in `DECLARED`, the
+  document's world table, and the row's `Status` cell. Adding the import and the table entry while the
+  document said `vscode-host ... planned` would have left the world unchecked - and a loop over a
+  correct list passes for the *wrong* reason right up until a member is missing. The entry was
+  therefore falsified by deleting `` `workspace` `` from the document row: `2 pass / 1 fail`, naming
+  `'workspace'`, then reverted. The same shape one file over: `tests/readme-rosters.test.ts` was
+  extended with the ninth validator family and falsified by dropping `vscode.probe` from the README's
+  roster (`1 pass / 1 fail`, naming it), because a roster guard that has never been broken is a guard
+  nobody has watched work. *A document that prints a vocabulary must print every member in full - and
+  the way to know the guard holds it is to take one out and watch it fail.*
+
+- **A predicate written twice is a diverging pair, and the half that lags is the one nobody reads.**
+  `hasNoHttp` in `core/clarification/detect.ts` decides whether a world is asked for a `url`, a
+  `health.path` and a `browser.enabled`, and it had grown its **eighth** clause
+  (`!isMissing(environment.vscode)`) when the eighth world landed. `tests/environment-gaps.test.ts`
+  carried the same vocabulary a second time, by hand, as `NO_HTTP_KEYS`, and its derived assertion
+  named the six non-HTTP worlds it expected to cover - so the *test* had fallen one world behind the
+  *detector*. Nothing failed, because the detector was right: the world was skipped correctly and the
+  test simply did not know it had been. The list now names seven shapes and the derived set names
+  seven worlds, and the test is what proves the detector has not quietly lost one. *A test that
+  re-states a predicate rather than iterating the register can only cover the worlds it was written
+  with* - the same rule the `hasNoHttp` `||`-chain entry already records one layer up, arriving this
+  time at the test rather than at the code.
 
 ## Documentation
 

@@ -7,6 +7,7 @@ import { CONTAINER_SIMULATED_SURFACES } from "../core/environment/container-obse
 import { K8S_SIMULATED_SURFACES } from "../core/environment/k8s-observation.ts";
 import { OS_SIMULATED_SURFACES } from "../core/environment/os-observation.ts";
 import { POSIX_SIMULATED_SURFACES } from "../core/environment/posix-observation.ts";
+import { VSCODE_SIMULATED_SURFACES } from "../core/environment/vscode-observation.ts";
 
 /**
  * What the distribution document says each world substitutes must be what each world declares.
@@ -26,7 +27,7 @@ import { POSIX_SIMULATED_SURFACES } from "../core/environment/posix-observation.
  * So the document's Simulated column now prints each world's declared names verbatim, and this file
  * reads both sides. It is deliberately two questions rather than one:
  *
- *   - the five worlds that declare surfaces must print **exactly** those surfaces, so a renamed
+ *   - the six worlds that declare surfaces must print **exactly** those surfaces, so a renamed
  *     member fails here rather than in a reader's head;
  *   - a world the document calls **built** must not print a surface name no constant declares, so a
  *     surface cannot be conferred on a world by editing prose.
@@ -90,6 +91,7 @@ const DECLARED: readonly (readonly [string, readonly string[]])[] = [
   ["sim-os", OS_SIMULATED_SURFACES],
   ["sim-cloud", CLOUD_SIMULATED_SURFACES],
   ["sim-container", CONTAINER_SIMULATED_SURFACES],
+  ["sim-vscode", VSCODE_SIMULATED_SURFACES],
 ];
 
 /** A surface is a lower-case slug: the naming rule every vocabulary in this tree already follows. */

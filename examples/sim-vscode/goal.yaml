@@ -1,0 +1,92 @@
+# The goal, in the form the engine reads. `docs/PLAN.md` calls this the DEFINE end of the lifecycle.
+#
+# The statement is deliberately an *observable end state* rather than a description of what the
+# application's provisioning program does. "Install the extension" is not a goal: it names an intention,
+# and an intention cannot be observed, so no criterion could fail it. "The world holds an extension
+# installed under the name its own manifest declares, with the engine floor its manifest states admitted
+# by the host it was installed into, the commands it declared registered and invocable, the setting it
+# reads reaching it from the store the operator's own `configure` wrote, and its own activation and
+# invocation output present" is a goal, because every clause of it is a reading somebody can take.
+#
+# It also does not claim a real editor would have loaded the extension. This world is *simulated* - see
+# the `context` block - and a goal that read as though the extension had been activated inside a real
+# VS Code would be the one thing a simulated world may never do: let a substitute be mistaken for the
+# thing it stands in for.
+
+version: 1
+id: sim-vscode
+
+statement: >-
+  The application hands its own extension to the editor it was given. This run's provisioning program
+  installed the extension from the manifest it named, and the world it was installed into admitted the
+  engine floor that manifest states, recorded the commands and the configuration key the manifest
+  contributes, and answered as the host the manifest was installed against. The extension then really
+  activated - its own `activate` ran in a real Node process - registered the commands it declares,
+  created the output channel and the status item it names, read the setting the operator configured, and
+  answered two invocations by appending to the cart it keeps in durable storage. The world refused the
+  one command it does not serve, and the one API it does not implement, and refused nothing else.
+
+acceptance: acceptance.yaml
+environment: environment.yaml
+
+context: |-
+  The application under test is a provisioning program. Its artifacts are a manifest and an extension
+  source file; there is no page to click, no row to query and no object to submit, so the equivalent of
+  an interaction is `run` and the equivalent of a reading is `vscode.*`.
+
+  The world is an extension host, and it is *simulated*, which is a claim with three obligations
+  (docs/DISTRIBUTION-AND-ENVIRONMENTS.md section 5):
+
+    1. The application executes for real. `start.command` is the application's own `provision.mjs`, run
+       as a child process with the operator's own privileges, and every command line it prints is really
+       executed by the world. When the world activates the extension it spawns a *real* Node process
+       (`process.execPath`) which really `require`s the extension's entry point and really calls its
+       `activate`, so the extension's own code runs - not a stub standing in for it.
+    2. The interfaces are real. The extension is loaded from a real directory on this machine, through a
+       real `require` resolved by real Node module resolution, and the extension's own I/O - its store
+       reads and writes, its output lines, its messages - is recorded as it happens. Durable state
+       genuinely survives the host process's death, which is what makes a cross-process assertion about
+       `globalState` a measurement rather than a claim.
+    3. The substitution is declared. Every reading carries `simulated`, naming each surface that is not
+       real: `extension-host`, `module-resolution`, `activation-events`, `command-registry`, `window`,
+       `configuration` and `workspace`. So a result says which parts of the editor were substituted
+       rather than leaving a reader to infer it.
+
+  What is never simulated: whether the application's code ran, whether the extension's own `activate`
+  and its command handlers ran, what the world did in answer to each command, the reading taken
+  afterwards, the verdict each criterion reaches, and the reset between iterations.
+
+  Two limits worth stating at the top rather than discovering at the bottom, because both make a reading
+  weaker than it looks:
+
+    - The `vscode` module the extension loads is this world's own, not the editor's. It implements the
+      slice of the API an extension in this contract uses and *refuses by name* every property it does
+      not implement, so a reading about an unimplemented API is a recorded refusal rather than a
+      `TypeError`. Every refusal is in the reading, which is how a criterion can ask for one.
+    - There is no editor process to keep an extension resident in, so every action that needs the
+      extension running starts a fresh host process, and every host process activates the extension.
+      `activation.runs` therefore counts host processes, and the output, message and invocation surfaces
+      are a **cumulative transcript across those runs** rather than a photograph of one activation. A
+      criterion asks whether something appears, or what the newest entry is - never what the whole list
+      equals.
+
+tags:
+  - vscode-world
+  - simulated
+  - eighth-adapter
+  - extension-host
+
+limits:
+  # 10 is the MVP ceiling. The demo needs 5: one to observe all four defects, then one repair each.
+  maxIterations: 10
+  maxRuntimeMs: 300000
+  maxCriterionMs: 30000
+  # The host is a real Node process and the extension inside it is ordinary code, so it can open any
+  # socket it likes. The adapter reports the boundary as `unsupported` rather than `enforced`: a
+  # boundary this adapter cannot hold is stated as unheld rather than implied to be safe.
+  networkPolicy: deny
+  # `sandbox` rather than `deny`: the provisioning program writes the extension report into the
+  # workspace, and the world writes the host runner and the `vscode` module it stands in for into the
+  # sandbox tree. Both are writes inside the world. A command naming a path outside the application
+  # directory and outside the world's sandbox is refused by the world and recorded as a crossing.
+  filesystemWrite: sandbox

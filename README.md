@@ -37,8 +37,8 @@ in `extension/vscode/`, if you want the same engine with a UI.
 git clone <this-repository-url> veridian
 cd veridian
 npm ci                    # runtime dependency: yaml. dev: typescript, @types/node.
-npm run gate              # tsc --noEmit, then the whole test suite. 1463 tests, about five seconds
-                          # (this tree's own 1399 plus the Cockpit's 64, which the runner discovers
+npm run gate              # tsc --noEmit, then the whole test suite. 1615 tests, about five seconds
+                          # (this tree's own 1551 plus the Cockpit's 64, which the runner discovers
                           # because it walks the tree; the extension has its own gate as well).
 
 npm run e2e:install       # one-time, ~150 MB: fetch the Playwright browser
@@ -52,18 +52,21 @@ npm run demo:cloud        # the sixth: the app provisions a SIMULATED provider a
                           # judged as a service account rather than as the account root
 npm run demo:container    # the seventh: the app provisions a SIMULATED container runtime, and is
                           # judged on the images, containers, mounts and logs that runtime holds
+npm run demo:vscode       # the eighth: a real extension is loaded by a SIMULATED extension host,
+                          # and judged on what that host recorded while it ran
 ```
 
-Run those nine in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
+Run those ten in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
 Playwright is installed **outside** the lockfile on purpose, so installing the browser before `npm ci`
 would discard it.
 
-`demo`, `demo:db`, `demo:posix`, `demo:os`, `demo:cloud` and `demo:container` need no extra setup.
-`demo:k8s` needs neither a cluster nor `kubectl`, `demo:posix` needs neither a virtual machine nor a
-Linux host, `demo:os` needs neither a Windows guest nor a hypervisor, `demo:cloud` needs no cloud
-account, no `aws`/`az`/`gcloud` session and no outbound socket, and `demo:container` needs no Docker,
-no container runtime and no daemon - there is no cluster software, no guest kernel, no image and no
-provider API anywhere in those runs - which is the point of them: Veridian builds worlds,
+`demo`, `demo:db`, `demo:posix`, `demo:os`, `demo:cloud`, `demo:container` and `demo:vscode` need no
+extra setup. `demo:k8s` needs neither a cluster nor `kubectl`, `demo:posix` needs neither a virtual
+machine nor a Linux host, `demo:os` needs neither a Windows guest nor a hypervisor, `demo:cloud` needs
+no cloud account, no `aws`/`az`/`gcloud` session and no outbound socket, `demo:container` needs no
+Docker, no container runtime and no daemon, and `demo:vscode` needs neither VS Code nor any extension
+to be installed - there is no cluster software, no guest kernel, no image, no provider API and no
+editor anywhere in those runs - which is the point of them: Veridian builds worlds,
 and a world may be simulated. What a simulated world may never do is pass itself off as a real one, so
 each run records what it stood in for and a verdict a simulation cannot justify is reported
 `INCONCLUSIVE`.
@@ -619,6 +622,64 @@ renders `(declared, not enforced)`; a container's `user` is recorded and never a
 criterion judges what the image declares rather than a privilege boundary; and every port is a mapping
 that claims no socket, so `container.port` renders `exposed` and never `reachable`.
 
+The `vscode` world's subject is an **extension host**, and that makes it the first world whose state is
+created by a program that is neither the application's own program nor a daemon: it is created by an
+*extension the application ships*, loaded by a host the application never sees. An extension is not a
+script that prints a result - it is a module that registers contributions, is activated by an event,
+answers commands, reads configuration, writes status, logs to a channel and holds subscriptions it
+disposes when it unloads. So this world is a real Node process that resolves a module in place of
+`vscode`, loads the extension through it, and records every one of those facts as the extension runs.
+
+```yaml
+# environment.yaml, against the sim-vscode world
+adapter: sim-vscode
+app: app
+url: null                        # the app is an extension, not a server
+dependencyInstall: null          # the substitute is generated, the extension is a file that exists
+vscode:
+  host: veridian-vscode-sim      # the identity the substitute answers as
+  apiVersion: "1.100.0"          # a *record*, not an installation: no editor is fetched or booted
+  activationEvent: onCommand:cart.add
+  root: sandbox                  # resolved against the application directory
+  settings: {}                   # operator overrides; the manifest's own defaults are the other source
+start: { command: node, args: [provision.mjs], readyPattern: 'cart-web provisioned: \d+ commands' }
+health: { timeoutMs: 30000, intervalMs: 100 }
+reset: { strategy: restart }
+```
+
+There is no editor process to keep an extension resident in, so **every action that needs the extension
+running - `install`, `activate` and every `invoke` - starts a fresh host process, and every host process
+activates the extension.** That is not a shortcut, it is the honest shape of the substitution, and it is
+why `vscode.activation`'s reading reports `runs`, a count of host processes: a criterion about whether
+the extension activates on the right event is a criterion about how many times it was activated.
+Durable state (`globalState`, `workspaceState`) is the one surface genuinely shared between those
+processes, exactly as it is on a real machine, and it is what a criterion reads to see that a value
+survived a reload.
+
+The substitute implements a real slice of the API - command registration, the status bar, information
+and warning messages, configuration reads, the workspace file system, and subscription disposal - and
+**refuses by name** what it does not implement, which is what makes `vscode.refusal` a criterion about
+the world rather than a criterion about a crash: a contract can assert that an unimplemented call is
+reported as unimplemented instead of silently returning `undefined`. Two further refusals are the
+world's own boundaries rather than the API's: a manifest whose `main` escapes the extension's own
+directory is refused, and `engines.vscode` is evaluated against the `apiVersion` the document declares,
+so a manifest written for a newer host is refused here for the reason it would be refused there.
+
+`npm run demo:vscode` drives this: four deliberate defects, twenty-three criteria, and a `FAIL` ->
+repair -> `PASS` descent in five iterations (measured, verbatim: iteration 1 fails `AC-014` through
+`AC-017`; iteration 5 is `PASS` on all twenty-three with the reason `23/23 mandatory criteria passed,
+environment valid, no safety violation, evidence complete.`). Each defect is filed against one criterion
+and the defects are repaired in criterion order, so the failing count falls `4 -> 3 -> 2 -> 1 -> 0` -
+and the four criteria that move are the four that read what the extension *did*: the state it kept, the
+line it logged, the message it showed and the status item it wrote. A criterion that asked only whether
+the command was registered would pass for all four.
+
+The reading carries a `simulated` field naming each surface that is not real - the extension host, module
+resolution, activation events, the command registry, the window, configuration and the workspace - so a
+`PASS` is traceable to a named substitute rather than to unexamined reality. This world's only evidence
+kind is `json`, because there is no page to screenshot and no console to capture: the substitute's
+transcript *is* the artifact.
+
 ---
 
 ## How the code is arranged
@@ -633,8 +694,8 @@ core/acceptance/        AcceptanceCriterion, and the engine that turns a contrac
 core/execution/         the run controller: state machine, bounded exits, repair gate
 core/validation/        ValidationResult, the validator registry, status semantics, verdict rollup
 core/environment/       EnvironmentAdapter, the environment manager, the shared web, database, k8s,
-                        posix, os, cloud and container vocabularies that keep validators from
-                        importing an adapter
+                        posix, os, cloud, container and extension-host vocabularies that keep
+                        validators from importing an adapter
 core/evidence/          the evidence engine and the run bundle
 core/run/               run identity, history, iteration state
 core/metrics/           M1..M5, measured over the bundles on disk
@@ -653,6 +714,10 @@ adapters/sim-container/ a store of image and container records beside a register
                         it answers in process, holding tags, labels, digests, mounts, ports,
                         limits, health and captured output; no Docker, no daemon, no image and
                         no namespace or cgroup that ever existed
+adapters/sim-vscode/    a real extension loaded by a real Node process through a module resolved in
+                        place of `vscode`, recording contributions, commands, invocations,
+                        settings, status items, output, messages, subscriptions and refusals as
+                        it runs; no editor, no window and no installed VS Code anywhere
 validators/playwright/  web.element, web.visible, web.text, web.value, web.count, web.url,
                         web.console.clean, web.network.ok
 validators/database/    db.table, db.column, db.count, db.value
@@ -671,6 +736,10 @@ validators/container/   container.runtime, container.image, container.tag, conta
                         container.exitcode, container.command, container.user, container.mount,
                         container.port, container.limit, container.health, container.logs,
                         container.stderr, container.call, container.probe
+validators/vscode/      vscode.host, vscode.identity, vscode.engine, vscode.activation,
+                        vscode.contribution, vscode.command, vscode.invocation, vscode.setting,
+                        vscode.status, vscode.output, vscode.message, vscode.state,
+                        vscode.subscription, vscode.file, vscode.refusal, vscode.call, vscode.probe
 schemas/                goal / acceptance / environment / run / result / ambiguity
 scripts/                bootstrap and build steps that must run before anything is checked
 examples/shopping-cart/ the canonical demo: correct app, defect overlay, goal, contract, world
@@ -686,10 +755,12 @@ examples/sim-cloud/     the sixth demo: the app provisions a substitute provider
                         and is judged on the resources that account holds
 examples/sim-container/ the seventh demo: the app provisions a substitute container runtime and is
                         judged on the images, containers, mounts, ports and logs it holds
+examples/sim-vscode/    the eighth demo: a real extension is loaded by a substitute extension host
+                        and judged on what that host recorded while it ran
 extension/vscode/       the VS Code Cockpit: a thin client, no validation logic. The one directory
                         with a build step, because the extension host is not Node's loader
                         (`npm run package` produces the `.vsix` you can hand to somebody else)
-tests/                  1463 tests in a root `node --test` run: this tree's own 1399 plus the
+tests/                  1615 tests in a root `node --test` run: this tree's own 1551 plus the
                         Cockpit's 64
 
 dist/                   GENERATED by `npm run build`. Never edited, never committed.
@@ -728,9 +799,9 @@ Layering is enforced by hand, and `core/*` may not import `adapters/*`, `validat
 ## Scope
 
 **In, for the MVP:** VS Code + Veridian Core + a local application + a browser + Playwright +
-deterministic acceptance criteria + evidence + reset/replay. Seven adapters exist: `local-web` and
+deterministic acceptance criteria + evidence + reset/replay. Eight adapters exist: `local-web` and
 `local-db`, the second being the proof that `EnvironmentAdapter` is a seam rather than a browser
-harness with an interface bolted on - and five *simulated* worlds. `sim-k8s`: a real application
+harness with an interface bolted on - and six *simulated* worlds. `sim-k8s`: a real application
 process really deploys itself into a substitute control plane over a real HTTP surface it really
 calls, with no cluster software anywhere in the loop. `sim-posix`: a real application process really
 provisions a substitute Linux system through commands it really issues, with no virtual machine and
@@ -741,7 +812,11 @@ routes it really calls, and is judged on the resources that account holds, with 
 session and no outbound socket anywhere in the loop. `sim-container`: a real application process
 really issues runtime commands and really reads the runtime back, and is judged on the images,
 containers, mounts, ports, limits and captured output the substitute holds, with no Docker, no
-daemon, no image and no namespace or cgroup anywhere in the loop. In all five, the substitution is
+daemon, no image and no namespace or cgroup anywhere in the loop. `sim-vscode`: a real extension is
+loaded by a real Node process through a module resolved in place of `vscode`, and judged on the
+contributions, commands, invocations, settings, status, output, messages, subscriptions and refusals
+that process recorded, with no editor, no window and no installed VS Code anywhere in the loop. In all
+six, the substitution is
 **declared**: `environment.json` names what was stood in for and the reading carries a `simulated`
 field, so a `PASS` is traceable to a named substitute rather than to unexamined reality - and a
 verdict a substitute cannot justify is reported `INCONCLUSIVE`.
@@ -754,7 +829,11 @@ listed out in that sense - Veridian does not deploy anything to a real provider 
 world above is not an exception to it: it is a substitute account on loopback, which is why its
 readings say so. The `container` world is the same argument one more time: Veridian does not build or
 run real containers, and does not claim to - it holds records of images and containers beside a
-register of runtime commands, and every reading says which surfaces are stood in for.
+register of runtime commands, and every reading says which surfaces are stood in for. And the
+`vscode` world closes the argument: Veridian does not install, launch or drive an editor. It resolves a
+module in place of the editor's API and records what a real extension did through it - which is also
+why the `extension/vscode` Cockpit below and this world are two different things that happen to share a
+name: one is a client *of* Veridian, the other is a world *for* it.
 
 Also built, and named here rather than left for the reader to discover: the **VS Code Cockpit**
 (`extension/vscode/`) - a thin client over the same local Core interface the CLI drives, so CLI, CI
