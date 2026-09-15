@@ -16,11 +16,13 @@
 #   image  - does the container build and run? Docker is not installed on the
 #            maintainer's machine, so CI is the only place this can be proven,
 #            and a Dockerfile that has never been built is a claim.
-#   cockpit- does the VS Code extension still hold? It is a third runtime with
+#   cockpit - does the VS Code extension still hold? It is a third runtime with
 #            its own tsconfig, its own suite and its own compiled artifact, and
 #            the root `gate` job neither typechecks nor tests it: the root
 #            tsconfig excludes extension/**. Two gates, because they are two
-#            programs in one repository.
+#            programs in one repository. It also packages the extension and
+#            reads the archive back, because the `.vsix` is a third artifact no
+#            test in either tree can load: there is no VS Code test host here.
 name: CI
 
 on:
@@ -193,3 +195,28 @@ jobs:
       # multi-root workspaces. There is no VS Code test host here, and
       # extension/vscode/README.md names that gap rather than implying it away.
       - run: npm run gate
+      # The gate builds `out/` and loads it. It does not build the archive, and
+      # the archive is a different artifact produced by a different tool from an
+      # allowlist in the manifest - so it is covered by a check of its own, and
+      # that check runs here rather than in `gate` for the reason the root
+      # repository keeps `smoke:dist` out of its own gate: a packaging tool's
+      # output is not part of the source tree's contract, and running `vsce` on
+      # every local gate run would make the gate depend on it.
+      #
+      # `smoke:vsix` reads the archive as a zip and asserts that the entry point
+      # the manifest names is inside it, that the manifest inside it agrees with
+      # the one on disk field for field, that no source file, test file or
+      # installed dependency travelled with it, that the licence did, and that
+      # every compiled file it carries is byte-identical to the build's - which
+      # is what makes a stale archive a failure rather than a silent second copy.
+      - run: npm run package
+      - run: npm run smoke:vsix
+      - name: upload the packaged extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: veridian-cockpit-vsix
+          path: extension/vscode/veridian-cockpit.vsix
+          # A step whose name states an outcome must fail when that outcome does
+          # not happen. The default is `warn`, and this repository has already
+          # carried a green run whose artifact step uploaded nothing.
+          if-no-files-found: error

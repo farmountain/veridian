@@ -9,9 +9,10 @@
     "type": "git",
     "url": "git+https://github.com/farmountain/veridian.git"
   },
+  "publisher": "farmountain",
   "private": true,
   "engines": {
-    "vscode": "^1.94.0"
+    "vscode": "^1.100.0"
   },
   "categories": [
     "Testing",
@@ -25,7 +26,8 @@
   ],
   "main": "./out/host/activate.js",
   "files": [
-    "out"
+    "out",
+    "LICENSE"
   ],
   "activationEvents": [],
   "contributes": {
@@ -81,7 +83,11 @@
         },
         "veridian.browser": {
           "type": "string",
-          "enum": ["auto", "playwright", "none"],
+          "enum": [
+            "auto",
+            "playwright",
+            "none"
+          ],
           "default": "auto",
           "description": "Passed to the CLI as --browser. `none` makes every browser observation INCONCLUSIVE, which is the loop refusing to judge, not a failure."
         }
@@ -93,11 +99,14 @@
     "build": "tsc -p tsconfig.build.json",
     "test": "node --test",
     "smoke:out": "node scripts/smoke-out.mjs",
+    "package": "vsce package --no-dependencies --out veridian-cockpit.vsix",
+    "smoke:vsix": "node scripts/smoke-vsix.mjs",
     "gate": "npm run typecheck && npm test && npm run build && npm run smoke:out"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",
-    "@types/vscode": "^1.94.0",
+    "@types/vscode": "^1.100.0",
+    "@vscode/vsce": "^4.0.0",
     "typescript": "^5.9.3"
   }
 }

@@ -154,9 +154,11 @@ What exists instead is the nearest thing that can be run here, and the two are n
 | Gate | Command | Result |
 |------|---------|--------|
 | Typecheck | `npx tsc --noEmit` | silent (exit 0) |
-| Decisions, headless | `node --test` | 60 tests, 0 failing |
+| Decisions, headless | `node --test` | 64 tests, 0 failing |
 | Build | `npm run build` | `out/` - 6 files |
 | **Compiled artifact** | `npm run smoke:out` | 15 checks, exit 0 |
+| Package | `npm run package` | `veridian-cockpit.vsix` - 11 files, 24.15 KB |
+| **Packaged archive** | `npm run smoke:vsix` | 32 checks, exit 0 |
 | All of the above | `npm run gate` | exit 0 |
 
 The third row is the reason this phase could be built at all: the extension host is not Node's
@@ -186,11 +188,34 @@ A green `smoke:out` is a **necessary** condition for this extension to work and 
 and `scripts/vscode-stub.mjs` is a recording double rather than a simulation of VS Code - the same
 distinction §5 draws about worlds, applied one layer up to a tool.
 
-**Also not built, and not claimed:** no `.vsix`. Packaging needs `@vscode/vsce`, which is not a
-dependency of this repository and whose output has never been produced on this machine, so the
-install route that ships is the development install (F5 against a checkout) and it is documented as
-such in `extension/vscode/README.md`. Adding a package script nobody has run would be the same
-unverified claim this document refuses for a Dockerfile.
+**Also built, and it is the third artifact of this tree:** the `.vsix`. This paragraph used to say the
+opposite - that packaging needs `@vscode/vsce`, that the output had never been produced on this
+machine, and that adding a package script nobody had run would be the same unverified claim this
+document refuses for a Dockerfile. That reasoning was right, and the fix was to run it rather than to
+keep declining: `@vscode/vsce` is now a dev dependency, `npm run package` produces
+`veridian-cockpit.vsix` (11 files, 24.15 KB) and `npm run smoke:vsix` reads it back as a zip - by
+hand, with `node:zlib`, because this tree has no runtime dependency and adding one to read an archive
+would be the tail wagging the dog. The archive is a **fourth** artifact that nothing else here can
+load, so the same discipline `smoke:dist` and `smoke:out` follow one runtime further out applies:
+compare it against the build rather than trust the tool. Four facts were falsified rather than
+trusted - `src` in the allowlist fails both negative checks; a byte appended to a compiled file after
+packaging fails the byte-identity check; corrupting the licence copy fails *"the licence in the
+archive is the repository's, byte for byte (1388 bytes)"*; and removing `LICENSE` from `files` is the
+instructive one, because `vsce` prints `WARNING LICENSE, LICENSE.md, or LICENSE.txt not found`,
+packages **10** files and **exits 0** - a warning is not a check, so `smoke:vsix` is what fails.
+
+The installed floor moved with it. The manifest declares `"type": "module"`, so the compiled
+`out/host/activate.js` is an ES module, and the Node.js extension host could not load one until VS
+Code **1.100**. The manifest said `^1.94.0`, so on six releases the extension would have installed
+cleanly and never started - nothing errors at install time. Read out of the 1.100 release notes
+rather than recalled, fixed to `^1.100.0`, and held by `src/packaging.test.ts`, which derives the
+module format from `tsconfig.json` and the floor from the manifest and asserts the second admits the
+first.
+
+**What is still not reached:** no VS Code test host, and no `.vscodeignore`. The second is
+deliberate: with `files` in the manifest, `vsce` includes only what the allowlist names plus the
+manifest and the README, so a `.vscodeignore` would *replace* that rule with a permissive one rather
+than refine it.
 
 ### Phase C - the second adapter: `local-db`
 
