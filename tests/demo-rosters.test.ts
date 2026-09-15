@@ -72,17 +72,56 @@ function declaredDemoScripts(manifest: string): readonly string[] {
     .sort();
 }
 
+/**
+ * Every demo a workflow would run, read out of the workflow rather than out of a note about it.
+ *
+ * Two shapes have to be read together because the file uses both, and the third list this file
+ * exists to reconcile is the workflow's. A demo named literally (`npm run demo:no-browser`) is a
+ * command; the eleven worlds are not written out at all - the job holds `for world in db k8s ...`
+ * and runs `npm run demo:$world` - so a check that scraped only literals would find one world per
+ * *name*, and a check that scraped only the loop would miss the refusal.
+ *
+ * `$world` is deliberately not expanded by the regex but by the loop list it reads, and a match
+ * containing `$` is discarded rather than kept: `echo "::group::npm run demo:$world"` is a line in
+ * this file, and taking it as a command would put a variable name in a roster of scripts.
+ */
+function demosInWorkflow(body: string): readonly string[] {
+  const names = new Set<string>();
+
+  for (const match of body.matchAll(/npm run (demo(?::[a-z0-9-]+)?)/g)) {
+    if (match[1] !== undefined) names.add(match[1]);
+  }
+
+  // The loop is the job's real roster and is required to be there: if it is gone the eleven worlds
+  // are run by nothing, which is the defect this whole check is about rather than a gap in parsing.
+  const loop = /\bfor world in ([^;]+);/.exec(body);
+  assert.ok(
+    loop?.[1] !== undefined,
+    ".github/workflows/ci.yml no longer carries a `for world in ...; do` loop, so the demos this " +
+      "check reads have moved and the roster it derives is not a claim about CI any more",
+  );
+
+  for (const world of loop[1].split(/\s+/).filter((word) => word.length > 0)) {
+    names.add(`demo:${world}`);
+  }
+
+  return [...names].sort();
+}
+
 const manifest = await repo.readTextFile("package.json");
 const readme = await repo.readTextFile("README.md");
 const agents = await repo.readTextFile("AGENTS.md");
+const workflow = await repo.readTextFile(".github/workflows/ci.yml");
 
 assert.ok(manifest !== null, "package.json could not be read");
 assert.ok(readme !== null, "README.md could not be read");
 assert.ok(agents !== null, "AGENTS.md could not be read");
+assert.ok(workflow !== null, ".github/workflows/ci.yml could not be read");
 
 const declared = declaredDemoScripts(manifest);
 const inReadme = commandsIn(readme);
 const inAgents = commandsIn(agents);
+const inWorkflow = demosInWorkflow(workflow);
 
 /**
  * The one declared demo `README.md` is not required to put in its quickstart block.
@@ -152,6 +191,51 @@ describe("the demo rosters name the scripts that exist", () => {
       "a document names a demo script `package.json` does not declare, which is the `db.query` " +
         "defect with a command instead of a validator: a list of names in a document is read by " +
         "nothing that could disagree with it",
+    );
+  });
+});
+
+/**
+ * Every declared demo must be run by a CI job, and this is the third list of that one roster.
+ *
+ * It was written because the gap it closes was real and green: the `worlds` job ran **seven** demos
+ * while `package.json` declared thirteen, so `demo:api`, `demo:local-process`, `demo:data` and
+ * `demo:cockpit` were declared, shipped and documented in `README.md` and run by **no CI job at
+ * all** - and every run of the workflow was green, because a job that runs seven of thirteen demos
+ * passes. The names in this file's other two checks were correct the whole time; they simply could
+ * not see the third roster, and a check that passes over a roster it does not read is the shape this
+ * whole guard family exists to refuse.
+ *
+ * The demos are run from a matrix-free shell loop rather than from `strategy.matrix`, which is why
+ * `demosInWorkflow` reads the loop's own world list instead of a YAML list - and the assertion below
+ * is deliberately about *coverage* rather than about the job's shape, so a job may be restructured
+ * without this file having an opinion about how.
+ */
+describe("every declared demo is run by a CI job", () => {
+  it("holds a roster large enough for the comparison to mean anything", () => {
+    assert.ok(
+      inWorkflow.length >= 12,
+      `.github/workflows/ci.yml runs ${String(inWorkflow.length)} demos, so this roster is ` +
+        "checking almost nothing - either the workflow was gutted or the demos moved to a shape " +
+        "this file cannot read",
+    );
+  });
+
+  it("runs every demo the manifest declares, so no world is checked by nothing", () => {
+    assert.deepEqual(
+      declared.filter((name) => !inWorkflow.includes(name)),
+      [],
+      "a demo `package.json` declares is run by no CI job: it is shipped and documented, and " +
+        "nothing in the workflow ever executes it - which is a green build over an unrun command",
+    );
+  });
+
+  it("runs no demo the manifest does not declare", () => {
+    assert.deepEqual(
+      inWorkflow.filter((name) => !declared.includes(name)),
+      [],
+      "the workflow runs a demo `package.json` does not declare, so the job fails on a missing " +
+        "script - or, worse, on a script that was deleted and whose world is now unrun",
     );
   });
 });

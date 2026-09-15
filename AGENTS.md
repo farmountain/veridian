@@ -2213,7 +2213,66 @@ port had none, which is why the defect reached a demo run.
   not the implementation*. It was split into four `it` blocks for the same reason, so that a failure
   names one property instead of whichever fired first. Falsified 3/3: deleting the `demo:cockpit`
   fence line from either document, and inventing a demo into `README.md`, each failed the subtest that
-  names it.
+  names it. **And the roster has a third list, which was the one nobody read.** `AGENTS.md`'s
+  *"Running things:"* block and `README.md`'s quickstart are two documents; `.github/workflows/ci.yml`
+  is a third statement of the same roster, and it said something different. The `worlds` job ran
+  **seven** demos while `package.json` declared thirteen, so `demo:api`, `demo:local-process`,
+  `demo:data` and `demo:cockpit` were declared, shipped and documented in `README.md` while **no CI job
+  executed them** - and the build was green, because a job that runs seven of thirteen demos passes.
+  Fixed in `623aab9` and proved by run `35033297178`, where the job's own log carries eleven
+  `##[group]npm run demo:X` markers by name. The demos are run from `for world in db k8s ...; do`
+  rather than from `strategy.matrix`, so `demosInWorkflow` reads the loop's own world list and unions
+  it with the demos named literally (`npm run demo`, `npm run demo:no-browser`), and discards any
+  match containing `$` because `echo "::group::npm run demo:$world"` is itself a line of the file. The
+  file is now seven `it` blocks over three rosters, falsified 3/3 at the workflow too - a world dropped
+  from the loop, the refusal demo dropped from the canonical job, and an invented demo added to the
+  workflow, each naming its subtest before being reverted. *A guard that reads two of three statements
+  of one roster is a guard that can be green while the third is wrong - and the count of `it` blocks is
+  a number in prose, so it gets re-measured whenever this entry is touched.*
+
+- **A metric that compares two readings must first establish that they are readings of the same
+  thing, and the identity it needs may not be in the thing it compares.** M1 asks "did the same code
+  give the same result twice", and `signature()` answered with the iteration index, each criterion's
+  id and status, and the verdict - **no goal, no adapter**. A criterion id is a name *inside one
+  contract*: both the cart demo and the inventory demo name `AC-001`..`AC-004` and both repair them in
+  ascending criterion order, so two runs of `shopping-cart` on `local-web` and one of `inventory-db` on
+  `local-db` produced **byte-identical signatures** and `veridian metrics` printed
+  `M1 result consistency: yes (3 runs, ...)`. That is a false PASS by construction, in the one place
+  whose entire purpose is to refuse one, and it was found by running the reproduction rather than by
+  reading the function - the criteria collided because the *contracts* collide, which no amount of
+  reading `metrics.ts` reveals. The fix carries the subject on the reading (`RunSnapshot.goalId`,
+  `.adapter`, from the bundle's own `goal_id` and `environment.adapter`, `null` when absent) and
+  **groups the population before comparing anything**, which is also why `signature()` is left
+  subject-blind on purpose: `compareTo` should not have a question to ask about two unrelated claims.
+  Three states, not two - the runs agreed, the runs disagreed, and this population is not a question
+  M1 can answer - so `ConsistencyReport` gained `measured`, `formatMetrics` prints three lines, and
+  the CLI counts a violation only when `measured && !consistent`. Writing it as `runs > 1 &&
+  !consistent`, which is what it was, worked for the single run by accident and would have accused a
+  clean-but-heterogeneous history of a divergence it had refused to look for: **a false FAIL beside
+  the false PASS, and the second one would have hidden the first.**
+
+- **A test whose fixtures cannot be told apart does not test the gate that tells them apart, and the
+  green suite is what hides it.** The first version of the mixed-population test used three runs with
+  *identical* signatures - the reproduction, and the reason the defect went unnoticed - so removing
+  the comparison gate left every assertion passing: `differences` was empty because the signatures
+  agreed, not because the population had been refused. Falsifying the guard is what found this, and it
+  found it only because the probe was run rather than trusted; the test now carries a positive control
+  that asks the same two readings of **one** subject and asserts the machinery *does* name a delta, so
+  the empty list is evidence of a refusal. *A test that passes whether or not the rule holds is not a
+  test* - and the fixture that made the defect invisible is exactly the fixture a test written from
+  the defect will reach for.
+
+- **A probe harness that restores the file before running the suite reports "did not fire" for
+  reasons that have nothing to do with the code.** The M1 harness patched `metrics.ts` correctly,
+  restored it, and *then* ran `node --test` - so all four probes reported `did not fire` against the
+  **unpatched** file, which reads as four rules that are not held. A probe that measures the original
+  is a verdict about work that did not happen, and it is the same failure the repository already
+  records at the CRLF anchor and at the column-zero `not ok` scrape. The harness now patches, runs,
+  then restores, decides each file's ending from the file it is about to edit and prints what it
+  detected, and asserts the anchor was present before patching and that the patch changed the file.
+  Under it all four probes fire by name: removing the comparison gate, widening `measured`, treating
+  an absent subject as a match, and dropping the formatter's mixed branch each fail the subtest that
+  names the property.
 
 ## Documentation
 

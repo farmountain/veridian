@@ -459,7 +459,8 @@ them would be a lie. `--defects` is the ground truth M2 and M3 need; without it 
 *intended* to break from what a run happened to observe.
 
 A real output, over a history that mixes browser and browserless runs (elided: one line per differing
-criterion, per compared run):
+criterion, per compared run). Every run in it is the canonical cart demo in `local-web` - **one
+subject**, which is what makes M1's `no` here an answer rather than the refusal described below:
 
 ```
 runs measured: 5 (+6 unreadable)
@@ -479,6 +480,15 @@ unmeasurable history reported as clean would be a false pass at the level of the
 above disagreed with the run it measured - correctly. That disagreement is what found a real defect:
 the environment record was captured once before the loop ran, so it described the world the run
 *started* in and never showed the three resets it performed.
+
+A third thing, and it is a defect this metric had rather than a caveat it carries. M1 answers only
+about a population that is a reading of **one subject**. A run does not record what source it ran, so
+the goal it judged and the adapter that judged it - the bundle's own `goal_id` and
+`environment.adapter` - are all "the same code" can mean from disk, and a history spanning two of
+those prints `INCONCLUSIVE (N runs over M subjects: ...)` rather than comparing them. Criterion ids
+restart at `AC-001` in every contract, and every demo repairs in ascending criterion order, so the
+cart demo in a browser and the inventory demo in a database once produced identical signatures and
+were certified as "the same code run twice".
 
 ---
 
