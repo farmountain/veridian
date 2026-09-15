@@ -43,6 +43,17 @@ export interface RunSnapshot {
   readonly runId: string;
   readonly verdict: MetricVerdict;
   readonly state: string;
+  /**
+   * The goal this run judged, and the world that judged it - the two halves of the run's subject.
+   *
+   * A run does not record what *code* it ran; it records which goal it was a reading of and which
+   * adapter produced that reading. M1's question is "did the same code give the same result twice",
+   * and those two fields are the only part of "the same code" a bundle can answer from. `null` means
+   * the bundle did not carry it, which is a subject nothing can be compared against rather than a
+   * subject that matches.
+   */
+  readonly goalId: string | null;
+  readonly adapter: string | null;
   /** Every criterion's final status, with what the run recorded about its evidence. */
   readonly criteria: readonly CriterionSnapshot[];
   /** Every trip around the loop, each carrying the criteria *as that iteration saw them*. */
@@ -125,10 +136,15 @@ export function parseRunSnapshot(value: unknown): RunSnapshot | null {
   const transitions = asArray(environment?.["transitions"]).map((item) => asRecord(item));
   const resets = transitions.filter((entry) => asString(entry?.["from"], "") === RESET_STATE).length;
 
+  const goal = root["goal_id"];
+  const adapter = environment?.["adapter"];
+
   return {
     runId,
     verdict,
     state: asString(root["state"], "UNKNOWN"),
+    goalId: typeof goal === "string" && goal.length > 0 ? goal : null,
+    adapter: typeof adapter === "string" && adapter.length > 0 ? adapter : null,
     criteria,
     iterations,
     resets,
@@ -148,10 +164,36 @@ export interface ConsistencyDifference {
 
 export interface ConsistencyReport {
   readonly runs: number;
+  /**
+   * Whether M1 was answered at all, and it is a separate field from `consistent` on purpose.
+   *
+   * Three states are not two: "the runs agreed", "the runs disagreed", and "this population is not a
+   * question M1 can answer". Folding the third into either boolean is what produced the defect this
+   * field exists to close - an empty population must not read as a clean one, and a mixed one must
+   * not read as an unclean one.
+   */
+  readonly measured: boolean;
   readonly consistent: boolean;
   readonly baseline: string | null;
+  /**
+   * The distinct subjects the population is a reading of, in the order they were first seen. More
+   * than one is a history M1 refuses rather than compares.
+   */
+  readonly subjects: readonly string[];
   readonly differences: readonly ConsistencyDifference[];
 }
+
+/**
+ * The subject a run is a reading of: the goal it judged, in the world that judged it.
+ *
+ * This is what "the same code" means from a bundle. A run does not record the source it ran; it
+ * records the goal it was a reading of and the adapter that produced the reading, and two runs that
+ * disagree about either are two different claims however their criteria are spelled. `?` marks a
+ * bundle that did not carry the field: absent is a subject nothing can be compared against, and it is
+ * deliberately not equal to a real one, so a population mixing the two is refused rather than
+ * quietly split.
+ */
+const subjectOf = (run: RunSnapshot): string => `${run.goalId ?? "?"}@${run.adapter ?? "?"}`;
 
 /** A run's result, in the only form that can be compared: which criteria, which status, which trip. */
 const signature = (run: RunSnapshot): string =>
@@ -175,23 +217,41 @@ const signature = (run: RunSnapshot): string =>
  * deliberately not compared on their own: three passes that do not say *which* three is not a result
  * anyone can check, and a check written against them would pass two runs that disagreed about which
  * criterion failed.
+ *
+ * The population is checked for being *one subject* before anything is compared, and a mixed history
+ * is refused rather than compared. This was a real false PASS before it was a rule: `AC-001` means
+ * something in every contract, the criterion ids restart at one per goal, and two goals repaired in
+ * ascending criterion order produce byte-identical signatures - so the canonical cart demo and the
+ * inventory demo, judged in a browser and in a database, were certified as "the same code run
+ * twice". Only the subject tells them apart, and without it M1 was answering a question about two
+ * criteria that merely shared a name.
  */
 export function resultConsistency(runs: readonly RunSnapshot[]): ConsistencyReport {
   const first = runs[0];
-  if (first === undefined) return { runs: 0, consistent: false, baseline: null, differences: [] };
+  if (first === undefined) return { runs: 0, measured: false, consistent: false, baseline: null, subjects: [], differences: [] };
 
+  const subjects = [...new Set(runs.map(subjectOf))];
   const mine = signature(first);
   const differences: ConsistencyDifference[] = [];
-  for (const run of runs.slice(1)) {
-    if (signature(run) === mine) continue;
-    differences.push(...compareTo(first, run));
+  if (subjects.length === 1) {
+    for (const run of runs.slice(1)) {
+      if (signature(run) === mine) continue;
+      differences.push(...compareTo(first, run));
+    }
   }
+  // One run is trivially self-consistent, so a population of one is *unmeasured* rather than
+  // consistent; a mixed population is unmeasured rather than inconsistent. Neither is a violation,
+  // and the caller distinguishes them by reading `measured` instead of inferring it from `runs`.
+  const measured = subjects.length === 1 && runs.length > 1;
   return {
     runs: runs.length,
-    // One run is trivially self-consistent; saying so as `true` would hide that nothing was compared,
-    // so a single run reports consistency with `runs: 1` and no differences and the caller prints it.
-    consistent: runs.length > 1 && differences.length === 0,
+    // `false` here is never a disagreement on its own - read `measured` beside it. A single run was
+    // never compared and a mixed population was refused before anything was compared, and both say
+    // `consistent: false` for that reason rather than because the runs diverged.
+    measured,
+    consistent: measured && differences.length === 0,
     baseline: first.runId,
+    subjects,
     differences,
   };
 }
@@ -434,6 +494,11 @@ export function successMetrics(runs: readonly RunSnapshot[], options: MetricOpti
  * named the defect. Without that half, `none` would be a claim about a comparison that never
  * happened - so the line says `INCONCLUSIVE` and names what was left out, while any false pass it
  * *did* find is still printed.
+ *
+ * M1 is the same distinction one state further along. It answers `yes` or `no` only when the
+ * population is a reading of exactly one subject; a single run has nothing to compare, and a
+ * population spanning two subjects is not a consistency question at all, because a criterion id is a
+ * name *inside one contract*. Both print `INCONCLUSIVE` with the reason, and neither is a violation.
  */
 export function formatMetrics(metrics: SuccessMetrics): readonly string[] {
   const lines: string[] = [];
@@ -444,9 +509,11 @@ export function formatMetrics(metrics: SuccessMetrics): readonly string[] {
 
   const m1 = metrics.consistency;
   lines.push(
-    m1.runs > 1
-      ? `M1 result consistency: ${yes(m1.consistent)} (${String(m1.runs)} runs, baseline ${m1.baseline ?? "none"})`
-      : `M1 result consistency: INCONCLUSIVE (${String(m1.runs)} run, nothing to compare)`,
+    m1.subjects.length > 1
+      ? `M1 result consistency: INCONCLUSIVE (${String(m1.runs)} runs over ${String(m1.subjects.length)} subjects: ${m1.subjects.join(", ")} - a criterion id is a name inside one contract, so criteria from two subjects are two unrelated claims)`
+      : m1.runs > 1
+        ? `M1 result consistency: ${yes(m1.consistent)} (${String(m1.runs)} runs, baseline ${m1.baseline ?? "none"})`
+        : `M1 result consistency: INCONCLUSIVE (${String(m1.runs)} run, nothing to compare)`,
   );
   for (const difference of m1.differences) lines.push(`  ${difference.runId} vs ${difference.against}: ${difference.detail}`);
 

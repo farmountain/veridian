@@ -557,10 +557,13 @@ async function runMetrics(parsed: CliArguments, logger: Logger): Promise<number>
     return EXIT_CODES.inconclusive;
   }
 
-  // M1 with a single run reports `consistent: false` on purpose - nothing was compared - so it is
-  // counted as a violation only when there were two runs that actually disagreed.
+  // M1 reports `measured: false` when it had nothing to compare - one run, or a history spanning two
+  // subjects - and it says `consistent: false` in both cases *because* nothing was compared. Only an
+  // answered `no` is a violation. Reading this as `runs > 1 && !consistent`, which is what it was,
+  // worked for the single run by accident and accused a mixed history of a disagreement it had
+  // refused to look for.
   const violated =
-    (metrics.runs > 1 && !metrics.consistency.consistent) ||
+    (metrics.consistency.measured && !metrics.consistency.consistent) ||
     metrics.falsePasses.length > 0 ||
     !metrics.reset.reproducible ||
     metrics.evidence.violations.length > 0;

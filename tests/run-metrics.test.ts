@@ -54,12 +54,15 @@ const result = (options: {
   readonly criteria?: readonly CriterionScript[];
   readonly resets?: number;
   readonly environmentValid?: boolean;
+  readonly goalId?: string;
+  readonly adapter?: string;
 }): Record<string, unknown> => {
   const criteria: readonly CriterionScript[] =
     options.criteria ??
     Object.entries(options.iterations.at(-1)?.statuses ?? {}).map(([criterionId, status]) => ({ criterionId, status }));
   return {
     run_id: options.runId,
+    goal_id: options.goalId ?? "goal-under-test",
     state: options.verdict === "PASS" ? "COMPLETED" : "ABORTED",
     verdict: options.verdict ?? "FAIL",
     environmentValid: options.environmentValid ?? true,
@@ -78,6 +81,7 @@ const result = (options: {
       })),
     })),
     environment: {
+      adapter: options.adapter ?? "adapter-under-test",
       transitions: Array.from({ length: options.resets ?? 0 }, () => ({ from: "resetting", to: "ready" })),
     },
   };
@@ -206,7 +210,136 @@ describe("M1 compares criteria, not the counts they add up to", () => {
   it("calls one run unmeasured rather than consistent, because nothing was compared", () => {
     const alone = resultConsistency([failing("AC-001")]);
     assert.equal(alone.consistent, false);
+    assert.equal(alone.measured, false, "one run is not a measurement, and `consistent: false` alone says the opposite");
     assert.match(formatMetrics(successMetrics([failing("AC-001")])).join("\n"), /M1 result consistency: INCONCLUSIVE/);
+  });
+
+  it("refuses a population that spans two subjects instead of certifying it", () => {
+    // Measured, not imagined. Every contract names its criteria `AC-001` upward, and the repair gate
+    // walks a defect table in criterion order, so a cart demo judged in a browser and an inventory
+    // demo judged in a database - two different goals, two different adapters, two unrelated sets of
+    // criteria - produce byte-identical signatures. M1 called that pair `yes (3 runs)`: a false PASS
+    // by construction, and exactly the class this module exists to refuse.
+    const cart = [
+      snapshot({
+        runId: "run-cart-1",
+        goalId: "shopping-cart",
+        adapter: "local-web",
+        verdict: "PASS",
+        iterations: [
+          { iteration: 1, statuses: { "AC-001": "FAIL", "AC-002": "FAIL" } },
+          { iteration: 2, statuses: { "AC-001": "PASS", "AC-002": "FAIL" } },
+          { iteration: 3, statuses: { "AC-001": "PASS", "AC-002": "PASS" } },
+        ],
+      }),
+      snapshot({
+        runId: "run-cart-2",
+        goalId: "shopping-cart",
+        adapter: "local-web",
+        verdict: "PASS",
+        iterations: [
+          { iteration: 1, statuses: { "AC-001": "FAIL", "AC-002": "FAIL" } },
+          { iteration: 2, statuses: { "AC-001": "PASS", "AC-002": "FAIL" } },
+          { iteration: 3, statuses: { "AC-001": "PASS", "AC-002": "PASS" } },
+        ],
+      }),
+    ];
+    const inventory = snapshot({
+      runId: "run-inventory",
+      goalId: "inventory-db",
+      adapter: "local-db",
+      verdict: "PASS",
+      iterations: [
+        { iteration: 1, statuses: { "AC-001": "FAIL", "AC-002": "FAIL" } },
+        { iteration: 2, statuses: { "AC-001": "PASS", "AC-002": "FAIL" } },
+        { iteration: 3, statuses: { "AC-001": "PASS", "AC-002": "PASS" } },
+      ],
+    });
+
+    const mixed = resultConsistency([...cart, inventory]);
+    assert.equal(mixed.measured, false, "two subjects is not a consistency question");
+    assert.equal(mixed.consistent, false);
+    assert.deepEqual(mixed.differences, [], "and nothing was compared, so there is nothing to report as a divergence");
+    assert.deepEqual(mixed.subjects, ["shopping-cart@local-web", "inventory-db@local-db"]);
+
+    // The positive control beside it: the *same* signatures, one subject fewer, are a measurement -
+    // so the refusal above is caused by the subject and not by the fixtures being uncomparable.
+    const alone = resultConsistency(cart);
+    assert.equal(alone.measured, true);
+    assert.equal(alone.consistent, true);
+
+    assert.match(
+      formatMetrics(successMetrics([...cart, inventory])).join("\n"),
+      /M1 result consistency: INCONCLUSIVE \(3 runs over 2 subjects: shopping-cart@local-web, inventory-db@local-db/,
+    );
+  });
+
+  it("treats a bundle with no recorded subject as uncomparable, not as a match", () => {
+    // `?` is what an absent `goal_id` or `environment.adapter` becomes. A bundle that does not say
+    // which goal it judged cannot be held to a bundle that does, and treating the absence as equal
+    // would let one unlabelled run certify a history it knows nothing about.
+    const labelled = snapshot({
+      runId: "run-labelled",
+      goalId: "shopping-cart",
+      adapter: "local-web",
+      verdict: "PASS",
+      iterations: [{ iteration: 1, statuses: { "AC-001": "PASS" } }],
+    });
+    const bare = parseRunSnapshot({
+      run_id: "run-bare",
+      verdict: "PASS",
+      iterations: [{ iteration: 1, verdict: "PASS", criteria: [{ criterion_id: "AC-001", status: "PASS" }] }],
+      criteria: [{ criterion_id: "AC-001", status: "PASS", mandatory: true, missing_evidence: [] }],
+      environment: { transitions: [] },
+    });
+    assert.ok(bare !== null, "the fixture must be one the parser accepts");
+    assert.equal(bare.goalId, null, "the field is absent, and absent is what it reports");
+    assert.equal(bare.adapter, null);
+
+    const report = resultConsistency([labelled, bare]);
+    assert.equal(report.measured, false);
+    assert.deepEqual(report.subjects, ["shopping-cart@local-web", "?@?"]);
+  });
+
+  it("reports no divergence for a mixed population even where the signatures differ", () => {
+    // The reproduction above is caught by `measured` alone, because the two subjects happen to share
+    // a signature - which is the whole reason the defect went unnoticed. This is the other half, and
+    // it is what holds the gate around the comparison: a delta between two criteria that share only a
+    // spelling would be a claim about a comparison that has no subject, so there must be none.
+    const cart = snapshot({
+      runId: "run-cart",
+      goalId: "shopping-cart",
+      adapter: "local-web",
+      verdict: "FAIL",
+      iterations: [{ iteration: 1, statuses: { "AC-001": "FAIL", "AC-002": "PASS" } }],
+    });
+    const inventory = snapshot({
+      runId: "run-inventory",
+      goalId: "inventory-db",
+      adapter: "local-db",
+      verdict: "PASS",
+      iterations: [{ iteration: 1, statuses: { "AC-001": "PASS", "AC-002": "FAIL" } }],
+    });
+
+    // The positive control: the comparison machinery *would* have something to say about these two
+    // status sets - asked of one subject, it says it - so the empty `differences` below is the gate
+    // refusing, and not two fixtures that happened to agree.
+    const sameSubject = resultConsistency([
+      cart,
+      snapshot({
+        runId: "run-cart-again",
+        goalId: "shopping-cart",
+        adapter: "local-web",
+        verdict: "PASS",
+        iterations: [{ iteration: 1, statuses: { "AC-001": "PASS", "AC-002": "FAIL" } }],
+      }),
+    ]);
+    assert.equal(sameSubject.measured, true);
+    assert.ok(sameSubject.differences.length > 0, "one subject over the same two readings is a divergence");
+
+    const report = resultConsistency([cart, inventory]);
+    assert.deepEqual(report.differences, [], "a mixed population was refused, so nothing was compared");
+    assert.equal(report.measured, false);
   });
 });
 
