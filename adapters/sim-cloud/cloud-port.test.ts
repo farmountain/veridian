@@ -274,6 +274,41 @@ describe("a request this world cannot answer", () => {
     assert.equal(outcome.resource, null);
   });
 
+  it("names the query-parameter spelling when a sub-resource is addressed as a path segment", () => {
+    const port = fresh();
+    makeBucket(port);
+    const outcome = call(port, "PUT", "/v1/storage/buckets/cart-assets/versioning", {
+      body: json({ state: "enabled" }),
+    });
+    assert.equal(outcome.status, 404);
+    assert.equal(outcome.result, "unsupported");
+    const why = outcome.reason ?? "";
+    assert.match(
+      why,
+      /\?versioning/,
+      `the refusal does not spell the address the caller should have used: ${why}`,
+    );
+    assert.match(why, /query parameter/);
+    assert.doesNotMatch(
+      why,
+      /serves no route/,
+      "a route is exactly what this refusal was able to name, so it must not claim it could not",
+    );
+  });
+
+  it("answers an address that is merely unrouted with what this world does serve", () => {
+    const port = fresh();
+    const outcome = call(port, "GET", "/nope/at/all");
+    const why = outcome.reason ?? "";
+    assert.match(why, /serves no route/);
+    assert.match(why, /\/v1\/metering/, "an unserved-route refusal that lists nothing is a dead end");
+    assert.ok(
+      (outcome.body ?? "") !== "",
+      "the world built an explanation and sent an empty body, which leaves the one party that cannot " +
+        "read the call record - the caller - with nothing at all",
+    );
+  });
+
   it("answers an absent resource with 404 and the missing member", () => {
     const port = fresh();
     const outcome = call(port, "GET", "/v1/storage/buckets/never-made");
@@ -1280,6 +1315,36 @@ describe("the state document", () => {
     port.load(port.dump());
     assert.equal(port.calls().length, calls);
   });
+
+  it("starts the meter over on clear, keeping the record it is read from", () => {
+    const port = populated();
+    const first = port.meters();
+    assert.ok(first.objects > 0, "the fixture must have provisioned something, or this proves nothing");
+    const calls = port.calls().length;
+    port.clear();
+    // The two halves of one rule, asserted together because either alone is satisfiable the wrong way:
+    // a meter that resets by truncating the record, and a record that survives by freezing the meter,
+    // are both worse than the pair.
+    assert.equal(
+      port.meters().objects,
+      0,
+      "a criterion asking what this attempt cost was answered with the totals of every attempt before " +
+        "it, so a correct application failed on the second iteration and no repair could converge",
+    );
+    assert.equal(port.meters().bytes, 0);
+    assert.equal(port.meters().requests, 0);
+    assert.equal(
+      port.calls().length,
+      calls,
+      "the meter was started over by deleting the record it came from, which throws away the evidence " +
+        "that an earlier iteration crossed a boundary",
+    );
+    const again = port.calls().length;
+    makeBucket(port);
+    call(port, "PUT", "/v1/storage/buckets/cart-assets/objects/logo.png", { body: ANCHOR });
+    assert.equal(port.meters().objects, 1, "the meter must count what this life did");
+    assert.equal(port.calls().length > again, true);
+  });
 });
 
 // -----------------------------------------------------------------------------------------------
@@ -1346,6 +1411,32 @@ describe("over a real socket", () => {
       "application",
       "a request that arrived over the socket is the application's, never a criterion's",
     );
+  });
+
+  it("tells a client why, because a client cannot read this world's call record", async () => {
+    const wire = await bound();
+    await send(wire, "PUT", "/v1/storage/buckets/cart-assets", json({ name: "cart-assets" }));
+    // The address a provisioning program reaches for when it has not read the route table. The world
+    // knows exactly what is wrong here and says so; before this it said nothing at all, because
+    // `#handle` writes an empty body whenever `#record` was given none.
+    const misplaced = await send(
+      wire,
+      "PUT",
+      "/v1/storage/buckets/cart-assets/versioning",
+      json({ state: "enabled" }),
+    );
+    assert.equal(misplaced.status, 404);
+    const envelope = misplaced.parsed as { kind?: string; reason?: string; status?: number; message?: string };
+    assert.equal(envelope.kind, "Error");
+    assert.equal(envelope.reason, "NoSuchRoute");
+    assert.equal(envelope.status, 404);
+    assert.match(String(envelope.message), /\?versioning/);
+    assert.match(String(envelope.message), /query parameter/);
+    // And the generic branch answers a stranger the same way, so no refusal on the wire is silent.
+    const unrouted = await send(wire, "GET", "/nope/at/all");
+    assert.equal(unrouted.status, 404);
+    assert.ok(unrouted.text !== "", "a refusal on the wire carried no body");
+    assert.equal((JSON.parse(unrouted.text) as { reason?: string }).reason, "NoSuchRoute");
   });
 
   it("tells the three refusals apart over the wire as well", async () => {

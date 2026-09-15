@@ -1,0 +1,74 @@
+# The goal: an observable end state, not an activity.
+#
+# "Provision the cloud account" is not a goal. "The account holds the assets bucket, closed to public
+# access and carrying the two tags it was given; the object under it carries the tag it was given; the
+# work queue carries the announcement and the dead-letter queue is empty; the secret is on its second
+# version, rotating and encrypted; the reader principal may read the object and the pipeline principal
+# may not delete the bucket; and the account's own meter counts one object" is a goal, because a third
+# party can query the account and decide whether it is true. Veridian never chooses this; it validates
+# against it.
+#
+# Note what the statement does *not* say. It does not say the account is secure, and it does not say a
+# real provider would have accepted the same requests. This world substitutes the provider's control
+# plane, its object store, its queues, its secret store, its identity and policy evaluator and its
+# billing meter (see `CLOUD_SIMULATED_SURFACES`), so a verdict it can justify is about what this API
+# accepted and what the application's own program actually asked for - not about a provider it does not
+# have. A goal that overclaimed here would be a false PASS with a longer name.
+
+version: 1
+id: sim-cloud
+
+statement: >-
+  The application provisions the cloud account it was given. The account holds a cart-assets bucket
+  that blocks public access, on the second of the two values the program wrote into its secret, and
+  carrying exactly the two tags the program gave it; the object the program uploaded carries the tag
+  the program gave it; the work queue carries the announcement the program published and the
+  dead-letter queue is empty; the reader principal is allowed to read the object; the pipeline
+  principal's own policy refuses to delete the assets bucket, and the account's evaluator reaches its
+  refusal on that statement; and the account's meter counts one object.
+
+acceptance: acceptance.yaml
+environment: environment.yaml
+
+context: |-
+  The application under test is a provisioning pipeline. Its artifacts are a program and the requests
+  that program makes; there is no page to click and no file to query, so the equivalent of an
+  interaction is `call` and the equivalent of a reading is `cloud.*`.
+
+  The world is a cloud provider account, and it is *simulated*, which is a claim with three
+  obligations (see docs/DISTRIBUTION-AND-ENVIRONMENTS.md section 5):
+
+    1. The application executes for real. `start.command` is the application's own `provision.mjs`,
+       run as a child process with the operator's own privileges. It reads the account's address out
+       of its environment and makes real HTTP requests to it over a loopback socket.
+    2. The interfaces are real. The routes are a provider's own paths, the resources are its
+       resources, the policy grammar is a real policy grammar, and a request the account refuses gets
+       a real status with a real reason.
+    3. The substitution is declared. Every reading carries `simulated`, naming each surface that is
+       not real - so a result says which parts of the provider were substituted rather than leaving a
+       reader to infer it.
+
+  What is never simulated: whether the application's code ran, which requests it actually made, what
+  the account answered, the reading taken afterwards, and the reset between iterations.
+
+tags:
+  - cloud-world
+  - simulated
+  - sixth-adapter
+
+# Safety boundaries. Every field is required and has a hard ceiling as well as a default, because
+# Veridian executes potentially untrusted AI-generated code (PLAN.md section 52).
+limits:
+  # 10 is the MVP ceiling. The demo needs 5: one to observe all four defects, and four repairs.
+  maxIterations: 10
+  maxRuntimeMs: 300000
+  maxCriterionMs: 30000
+  # The world binds a loopback socket the application really connects to, and the adapter reports it
+  # as `unsupported` rather than `enforced`: the application is an ordinary child process that can
+  # open any socket it likes. A boundary this adapter cannot hold is stated as unheld rather than
+  # implied to be safe.
+  networkPolicy: deny
+  # `sandbox` rather than `deny`: this world keeps its whole account in memory and writes no file the
+  # application asked for, so the only write is the evidence the run itself produces. A request whose
+  # path resolves outside the account is refused by the adapter and recorded as a crossing.
+  filesystemWrite: sandbox

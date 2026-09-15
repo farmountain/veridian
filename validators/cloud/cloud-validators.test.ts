@@ -1032,4 +1032,27 @@ describe("the family is what the product's registry will hand out", () => {
     }
     assert.equal(built.names().length, Object.values(CLOUD_VALIDATOR_NAMES).length);
   });
+
+  it("is exactly the roster the demo's contract names, read out of the contract itself", () => {
+    // A roster in prose and a roster in a register are two lists of the same thing, and only one of them
+    // is executable - so this reads the *contract*, which is the document an operator writes, rather than
+    // a list recalled here. `AC-023` is why the count is not the interesting part: it names two validators
+    // in one criterion, one judging the criterion's own request and one judging the application's, and a
+    // set difference would be silent about a name spelled twice.
+    const contract = readFileSync(new URL("../../examples/sim-cloud/acceptance.yaml", import.meta.url), "utf8");
+    const named = new Set((contract.match(/validator:\s*([a-z0-9.]+)/g) ?? []).map((line) => line.split(":")[1]?.trim() ?? ""));
+    const exported = new Set<string>(Object.values(CLOUD_VALIDATOR_NAMES));
+
+    assert.ok(named.size > 0, "the contract names no validator, so nothing was compared");
+    assert.deepEqual(
+      [...named].filter((name) => !exported.has(name)),
+      [],
+      "the contract names a validator this family does not export - the run would report an environment defect",
+    );
+    assert.deepEqual(
+      [...exported].filter((name) => !named.has(name)).sort(),
+      [],
+      "this family exports a validator the demo's contract never exercises, so its behavior is held by unit tests only",
+    );
+  });
 });

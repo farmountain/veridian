@@ -979,10 +979,18 @@ export function renderPrincipal(principal: CloudPrincipalReading): string {
 /**
  * One policy statement, rendered.
  *
- * `effect principal action resource`, which is readable and targetable at once: `contains: "allow s3.* *"`
- * is the sentence "something here lets this principal do every object operation to everything", and a
- * contract asking for least privilege is a sentence about a *set* of statements rather than about one
- * line.
+ * `effect action resource`, which is readable and targetable at once: `contains: "deny s3.deleteBucket
+ * bucket/cart-assets"` is the sentence "this says nothing may delete that bucket", and a contract
+ * asking for least privilege is a sentence about a *set* of statements rather than about one line.
+ *
+ * **The principal is deliberately absent, and the first version of this comment named it anyway.** A
+ * reading of `principal/svc-cart` renders that principal's own policy, so the subject is already the
+ * header of the document and repeating it on every line would be the same word twice - but the
+ * comment said `effect principal action resource` while the body below renders three fields, and a
+ * comment that describes a rendering the code does not perform sends a contract author to write a
+ * `contains` that can never match. Measured rather than reasoned: `tests/cloud-observation.test.ts`
+ * pins this function's output, so the next reader does not have to choose between the comment and the
+ * code.
  */
 export function statementSpelling(statement: CloudPolicyStatement): string {
   return `${statement.effect} ${statement.action} ${statement.resource}`;

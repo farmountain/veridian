@@ -394,6 +394,13 @@ export class SimCloudEnvironment implements EnvironmentAdapter {
    * world, not the record of what the run did to it. Clearing any of them would destroy the evidence
    * of a violation - a criterion reading a foreign host, or an access the account refused - by the
    * very act of repairing it.
+   *
+   * The account's **meter** is the one thing that does start over, and the port owns that decision
+   * rather than this method: `meters()` is a reading of the account's current life, so a criterion
+   * asking what this application provisioned is answered by this attempt's writes instead of by the
+   * totals of every attempt before it. The record the reading is derived from is untouched, so
+   * nothing an auditor needs is dropped. A `custom` reset is the exception, and honestly so: the
+   * command names what resetting means for that world, and this method has nothing to read from it.
    */
   async reset(id: string): Promise<void> {
     this.#requireId(id);

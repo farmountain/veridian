@@ -1,0 +1,595 @@
+# The contract. Declarative expectations over a reading this world takes, plus one `call`.
+#
+# Every criterion here is a question put to the account the world stands in for. Each one is phrased so
+# that exactly one plausible wrong answer exists, because a criterion that could be satisfied by the
+# wrong world is not a criterion.
+#
+# Read this next to `environment.yaml`: the provider, the region, the account and the principal are
+# facts about the world and the application, and nothing in this file restates them - copying them here
+# would create a third place for them to disagree with the two that matter.
+#
+# ## The action record and the state record, kept apart
+#
+# `AC-022` asks what the application *asked for*; every other criterion asks what the account *holds*.
+# Collapsing the two is the classic shortcut and it is a false pass with a longer name: a resource that
+# was already in the account before the run is not evidence that this run provisioned anything. The
+# validators keep them apart because the readings keep them apart, and the demo's reset - which clears
+# the account and re-runs the program - is what makes the distinction observable.
+#
+# ## Why some criteria carry more than one expectation
+#
+# A rendering is a document of `<key>=<value>` lines sorted by key, and `equals` is exact whole-string
+# equality. A criterion that means "these three settings" therefore states them as three lines in their
+# sorted order rather than as three criteria, because they are one question with one repair. Where the
+# lines a criterion wants are *not* adjacent in that order, it uses `contains` per line instead - a
+# three-line `equals` with a gap in the middle would compare against a document this world never emits.
+#
+# ## At most one `equals` per (validator, target, steps) - and this is not a style rule
+#
+# It was measured. Three criteria here originally read three different line groups of one secret with
+# three `equals` blocks, and the definition **could not be run at all**: the contradiction detector
+# proved them unsatisfiable and refused the contract, exit 2, before a single request was made. The
+# detector's subjects are the validator, the target and the declared steps, so three criteria that reach
+# one target with no steps between them are one scenario - and in one scenario one observable cannot
+# hold two different values, whatever the application does. Two `contains` blocks over the same pair are
+# not a conflict, because a substring is a claim about a part rather than about the whole. So the split
+# between the two comparison keys is doing real work here: `equals` is for a document a criterion means
+# *entirely*, and it is spent once per target.
+
+version: 1
+goal_id: sim-cloud
+
+criteria:
+  # ---- the assets bucket: it exists, it is configured, and it is closed -------------------------
+
+  - id: AC-001
+    description: >-
+      The account holds the assets bucket. Observed with no step on purpose: this judges what the
+      application did on its own during `start`, so a contract that had to create the bucket itself
+      would be validating the contract rather than the software.
+    expect:
+      - validator: cloud.bucket
+        target: bucket/cart-assets
+        equals: true
+        message: >-
+          The account holds no bucket named cart-assets, so nothing below has anything to read. Check
+          the provisioning program's own output first: every request it made is recorded, including
+          the ones the account refused, so the reason is in the criterion's observation artifact even
+          when the bucket is absent.
+    evidence:
+      - json
+
+  - id: AC-002
+    description: >-
+      The bucket is versioned and encrypted at rest. Two settings, one question - a bucket that is
+      versioned and unencrypted and a bucket that is encrypted and unversioned are the same defect
+      here, which is that one of the two requests the program makes did not land.
+    expect:
+      - validator: cloud.setting
+        target: bucket/cart-assets
+        contains: versioning=enabled
+        message: >-
+          The bucket is not versioned, so a version of an object could be lost by writing over it.
+          `suspended` and `never` are different answers from `enabled` and both fail this criterion;
+          the reading tells you which one it is.
+      - validator: cloud.setting
+        target: bucket/cart-assets
+        contains: encryption=AES256
+        message: >-
+          The bucket is not encrypted with the key the program asked for. Note that the object written
+          under this bucket inherits this setting when no per-request algorithm is sent, so an
+          unencrypted bucket makes an unencrypted object too.
+    evidence:
+      - json
+
+  - id: AC-003
+    description: >-
+      The bucket blocks public access. This is the criterion the demo's first defect moves: the
+      request whose whole purpose is to close the bucket is the request that opens it.
+    expect:
+      - validator: cloud.setting
+        target: bucket/cart-assets
+        contains: publicAccessBlocked=true
+        message: >-
+          The bucket is not closed to public access. The application makes exactly one request about
+          this and it is the request that sets it, so a `false` here is that request having been given
+          the wrong value rather than the request having been skipped - a skipped request would leave
+          the bucket's own default, which the reading also reports.
+    evidence:
+      - json
+
+  - id: AC-004
+    description: >-
+      The bucket holds exactly one object. A control: the number is one in the correct program and one
+      in three of the four defect states, so a criterion that fails here means the application wrote
+      something it never meant to write.
+    expect:
+      - validator: cloud.setting
+        target: bucket/cart-assets
+        contains: objects=1
+        message: >-
+          The bucket does not hold exactly one object. The program uploads one; a second would be a
+          request issued twice, which is the shape of a retry that was not idempotent.
+    evidence:
+      - json
+
+  - id: AC-005
+    description: >-
+      The bucket carries exactly the two tags the program gave it, and no others. `equals` against a
+      whole tag document rather than two `contains` checks, on purpose: the demo's second defect
+      replaces the bucket's tag set with the object's, and an extra tag is exactly what two separate
+      `contains` checks cannot see.
+    expect:
+      - validator: cloud.tag
+        target: bucket/cart-assets
+        equals: |-
+          tag.owner=cart-team
+          tag.tier=assets
+        message: >-
+          The bucket's tag set is not the two tags the program gave it. A tag the program never gave
+          this bucket is the signature of a tagging request that was aimed at the wrong resource,
+          because this world's tagging routes replace a resource's whole tag set rather than merging
+          into it.
+    evidence:
+      - json
+
+  # ---- the object: it exists, it inherited the bucket's encryption, and it carries its tag -------
+
+  - id: AC-006
+    description: >-
+      The object the program uploaded is under the bucket. A control: the object exists in every
+      defect state, because the defect that loses its tags leaves the object itself untouched.
+    expect:
+      - validator: cloud.object
+        target: object/cart-assets/assets/cart-web.js
+        equals: true
+        message: >-
+          The bucket holds no object at that key. An upload the account refused is recorded with its
+          own reason; an upload that never happened records nothing, which is why the criterion about
+          the request the application made is separate from this one.
+    evidence:
+      - json
+
+  - id: AC-007
+    description: >-
+      The object was stored with the algorithm its bucket is encrypted with, and it is on its first
+      version. The encryption value is read rather than assumed: it is inherited from the bucket
+      because the program sends no per-request algorithm, so this criterion is also the one that
+      catches a bucket left unencrypted.
+    expect:
+      - validator: cloud.setting
+        target: object/cart-assets/assets/cart-web.js
+        contains: encryption=AES256
+        message: >-
+          The stored object is not encrypted with the algorithm the bucket asks for. A value of `none`
+          here means the bucket itself was never encrypted, so read AC-002 before changing anything in
+          the program.
+      - validator: cloud.setting
+        target: object/cart-assets/assets/cart-web.js
+        contains: versionId=v1
+        message: >-
+          The object is not on its first version, which means the program wrote it more than once.
+          This world mints a version identifier from the write count, so a `v2` is a second upload
+          rather than a versioning setting.
+    evidence:
+      - json
+
+  - id: AC-008
+    description: >-
+      The stored bytes hash to something this world can state as a digest. The digest itself is not
+      pinned here - it is a function of the program's own text - but its *shape* is: a mismatch between
+      the length of the body the program sent and the length of the body the account stored would show
+      up as an absent hash. Read the `bytes` line in the same artifact to see the size.
+    expect:
+      - validator: cloud.setting
+        target: object/cart-assets/assets/cart-web.js
+        matches: 'sha256=[0-9a-f]{64}'
+        message: >-
+          The account recorded no usable digest for the stored object, so nothing here can say the
+          bytes it holds are the bytes the program sent.
+    evidence:
+      - json
+
+  - id: AC-009
+    description: >-
+      The object carries the tag the program gave it, and nothing else. This is the criterion the
+      demo's second defect moves: the tagging request is aimed at the bucket, so the object is left
+      with no tags at all and the bucket is left with this one.
+    expect:
+      - validator: cloud.tag
+        target: object/cart-assets/assets/cart-web.js
+        equals: tag.cacheControl=max-age=3600
+        message: >-
+          The object does not carry the one tag the program gave it. An empty tag document here means
+          the tagging request never reached this object; a tag document holding a different tag means
+          the request reached a different resource, which AC-005 reports from the other side.
+    evidence:
+      - json
+
+  # ---- the work queue and the dead-letter queue --------------------------------------------------
+
+  - id: AC-010
+    description: >-
+      The account holds the work queue. A control: the queue is created in every defect state, because
+      the defect that moves a message moves where the message is published rather than where the queue
+      is declared.
+    expect:
+      - validator: cloud.queue
+        target: queue/cart-events
+        equals: true
+        message: >-
+          The account holds no queue named cart-events, so the announcement the program published has
+          nowhere to be read from.
+    evidence:
+      - json
+
+  - id: AC-011
+    description: >-
+      The work queue carries the announcement the program published, is encrypted, and names the
+      dead-letter queue created beside it. Three facts joined here because they are one question about
+      one resource: the queue the program created is the queue the program published to.
+    expect:
+      - validator: cloud.setting
+        target: queue/cart-events
+        contains: messages=1
+        message: >-
+          The work queue holds the wrong number of messages. Zero here is the demo's third defect: the
+          announcement was published, and it was published somewhere else - read AC-013 for the
+          criterion that sees where it went.
+      - validator: cloud.setting
+        target: queue/cart-events
+        contains: deadLetterQueue=cart-events-dead
+        message: >-
+          The work queue does not name the dead-letter queue the program created beside it. A queue
+          that discards what it cannot process is a queue whose failures are invisible.
+      - validator: cloud.setting
+        target: queue/cart-events
+        contains: encryption=AES256
+        message: >-
+          The queue is not encrypted at rest. This world records the algorithm it was asked for, and
+          `none` is the value a queue created without an encryption setting carries.
+    evidence:
+      - json
+
+  - id: AC-012
+    description: >-
+      The queue keeps its attributes and its retention window. Three `contains` checks rather than one
+      `equals`, and the reason is the reading: `cloud.setting` renders the whole queue, so an `equals`
+      here would be asserting the exact spelling of a document this criterion does not own - the queue's
+      name, its message count, its dead-letter link, its encryption and its tags are all in it, and
+      four of those are other criteria's questions. Each check names one line and one fact.
+    expect:
+      - validator: cloud.setting
+        target: queue/cart-events
+        contains: attribute.messageRetentionSeconds=1209600
+        message: >-
+          The queue's retention window is not the one the program declared, so it would expire messages
+          a consumer was still working through.
+      - validator: cloud.setting
+        target: queue/cart-events
+        contains: attribute.maxReceiveCount=5
+        message: >-
+          The queue's redelivery limit is not the one the program declared. It is the value the
+          dead-letter hand-off depends on, so a queue without it retries a failing message forever.
+      - validator: cloud.setting
+        target: queue/cart-events
+        contains: visibilityTimeoutSeconds=30
+        message: >-
+          The queue's visibility timeout is not the one the program declared. The default this world
+          applies to a queue created without the field is 30, so a failure here means the program
+          asked for something else rather than that it asked for nothing.
+    evidence:
+      - json
+
+  - id: AC-013
+    description: >-
+      The dead-letter queue is empty. This is the criterion the demo's third defect moves, and it is
+      deliberately separate from AC-011: the queue that only ever receives failures holding a message
+      and the work queue holding none are the same mistake seen from two sides, and the pair is what
+      lets a reader tell a lost message from a misrouted one.
+    expect:
+      - validator: cloud.setting
+        target: queue/cart-events-dead
+        contains: messages=0
+        message: >-
+          The dead-letter queue holds a message. The program publishes one announcement and it is not
+          a failure, so a message here means the announcement was addressed to the wrong queue - which
+          also empties the work queue, and is reported from that side by AC-011.
+    evidence:
+      - json
+
+  - id: AC-014
+    description: >-
+      The dead-letter queue exists with its own retention and owner. A control: its tags come from a
+      different map than the work queue's, on purpose, so a defect that confuses the two queues shows
+      up here rather than in a document that happens to match.
+    expect:
+      - validator: cloud.setting
+        target: queue/cart-events-dead
+        contains: tag.owner=cart-team
+        message: >-
+          The dead-letter queue is not owned by the team that owns the work queue. A failure queue
+          nobody owns is a failure queue nobody reads.
+      - validator: cloud.setting
+        target: queue/cart-events-dead
+        contains: tag.retention=14d
+        message: >-
+          The dead-letter queue's retention is not the one the program declared. It is deliberately
+          shorter than the work queue's, so a value copied from the wrong map is visible here.
+    evidence:
+      - json
+
+  # ---- the secret --------------------------------------------------------------------------------
+
+  - id: AC-015
+    description: >-
+      The account holds the secret. A control: the secret is declared in every defect state.
+    expect:
+      - validator: cloud.secret
+        target: secret/cart-api-key
+        equals: true
+        message: >-
+          The account holds no secret named cart-api-key, so nothing below has a version to read.
+    evidence:
+      - json
+
+  - id: AC-016
+    description: >-
+      The secret is on its second version, and it is encrypted. Rotation is the operation a
+      provisioning program usually forgets, so the version count is the fact this criterion exists
+      for - a program that wrote one value and stopped holds a credential nobody has ever replaced.
+    expect:
+      - validator: cloud.setting
+        target: secret/cart-api-key
+        contains: |-
+          bytes=36
+          currentVersion=v2
+          encrypted=true
+        message: >-
+          The secret is not on its second version, or it is not encrypted. A `versions=1` here means
+          the rotation write never landed; a `currentVersion=v1` means the versions are there but the
+          newest one is the older value, which is the shape of a write that failed silently.
+    evidence:
+      - json
+
+  - id: AC-017
+    description: >-
+      The secret's newest value is not one this world recognises as a placeholder, its rotation is
+      enabled, and the account holds a digest of the stored value. The placeholder question is asked
+      about the *stored* value rather than about the program's source: a scaffold's `changeme` written
+      into a secret is a secret that is not one, and the reading says so.
+    expect:
+      - validator: cloud.setting
+        target: secret/cart-api-key
+        contains: |-
+          matchesKnownPlaceholder=false
+          name=cart-api-key
+          rotationEnabled=true
+        message: >-
+          The secret's newest value is a placeholder this world recognises, or its rotation is not
+          enabled. Both are credential defects a reviewer would find by reading the program, and both
+          are reported from the account's own record rather than by inspecting the source.
+      - validator: cloud.setting
+        target: secret/cart-api-key
+        matches: 'sha256=[0-9a-f]{64}'
+        message: >-
+          The account recorded no usable digest for the stored value. Note that no reading in this
+          world carries the value itself: a criterion can ask whether a secret is a placeholder and
+          how long it is, and cannot ask what it says.
+    evidence:
+      - json
+
+  - id: AC-018
+    description: >-
+      The secret carries its owner and its rotation interval, and its version count is two. The tag
+      and the count are read together because a rotation policy with no rotation behind it is a
+      schedule rather than a fact.
+    expect:
+      - validator: cloud.setting
+        target: secret/cart-api-key
+        contains: |-
+          tag.owner=cart-team
+          tag.rotation=90d
+          versions=2
+        message: >-
+          The secret's tags are not the ones the program gave it, or it is not on two versions. The
+          rotation interval is deliberately different from the dead-letter queue's retention so a
+          value copied from the wrong map is visible.
+    evidence:
+      - json
+
+  # ---- the reader principal: what it holds, and what the account answers -------------------------
+
+  - id: AC-019
+    description: >-
+      The reader principal exists, holds exactly one attached policy, and carries the tags the program
+      gave it. The attached-policy name is read because it is the handle a reviewer uses to find the
+      statements AC-020 states in full.
+    expect:
+      - validator: cloud.setting
+        target: principal/svc-reader
+        contains: attachedPolicies=cart-read-only
+        message: >-
+          The reader principal does not hold the policy the program attached to it. An empty value
+          here means the attachment request never landed; a different name means something else was
+          attached.
+      - validator: cloud.setting
+        target: principal/svc-reader
+        contains: tag.role=reader
+        message: >-
+          The reader principal does not carry the role tag the program gave it. The tag is what makes
+          a principal's purpose readable without opening its policy.
+    evidence:
+      - json
+
+  - id: AC-020
+    description: >-
+      The reader's one statement grants `s3.getObject` on the assets bucket's objects and nothing
+      wider. `object/cart-assets/*` is the pattern this world's evaluator resolves as a prefix, so the
+      criterion is a statement about least privilege: a change to `*` would satisfy a `contains` on
+      the action alone and fails the resource spelled here.
+    expect:
+      - validator: cloud.setting
+        target: principal/svc-reader
+        contains: statement.0=allow s3.getObject object/cart-assets/*
+        message: >-
+          The reader principal's first statement is not the grant the program wrote. A wildcard
+          resource is the classic over-grant and it is reported here as a different statement rather
+          than as a policy that failed to load.
+    evidence:
+      - json
+
+  - id: AC-021
+    description: >-
+      The account's own evaluator allows the reader to read the object. This is the outcome of the
+      question rather than the policy that answers it: the decision comes from the evaluator, and the
+      `entry` line names the statement the answer came from, so a decision that is allowed for a
+      reason nobody wrote is visible rather than merely permissive.
+    expect:
+      - validator: cloud.access
+        target: principal/svc-reader:s3.getObject:object/cart-assets/assets/cart-web.js
+        contains: allowed=true
+        message: >-
+          The account refuses the reader the read it was granted. Read the `entry` line in the same
+          artifact: `entry=none` means no statement covered the request, which is a resource spelled
+          differently than the grant spells it.
+      - validator: cloud.access
+        target: principal/svc-reader:s3.getObject:object/cart-assets/assets/cart-web.js
+        contains: entry=allow s3.getObject object/cart-assets/*
+        message: >-
+          The request was allowed, but not by the statement the program wrote. An allow that comes
+          from somewhere else is a grant nobody intended, and it is the one shape of "it works" this
+          world refuses to accept as correct.
+    evidence:
+      - json
+
+  # ---- the action record, and the request a criterion makes itself -------------------------------
+
+  - id: AC-022
+    description: >-
+      The application's own request to store the object was accepted. This reads the action record
+      rather than the account's state, and the pair is what lets a resource that was already there be
+      told apart from a resource this run created. The target is the action's own name, because the
+      record is of requests rather than of resources.
+    expect:
+      - validator: cloud.call
+        target: s3.putObject
+        equals: ok
+        message: >-
+          The account did not accept an object write from the application. A refusal carries its own
+          reason in the same artifact; an empty reading means the program never made the request at
+          all, and those are two different repairs.
+    evidence:
+      - json
+
+  - id: AC-023
+    description: >-
+      A criterion can act in this world and judge its own action. The `call` step below asks the
+      account to describe itself, and the expectation judges the answer to that request rather than
+      the account's state - which is the one reading of this world a contract produces itself, and the
+      reason `cloud.probe` and `cloud.call` are different validators rather than one with a source
+      option.
+    steps:
+      - call:
+          method: GET
+          path: /v1/version
+          body: null
+    expect:
+      - validator: cloud.probe
+        target: provider.describe
+        equals: ok
+        message: >-
+          The account did not answer the criterion's own request for a description of itself. The
+          refusal, if there was one, is recorded with its reason in the same artifact; note that this
+          validator reads the criterion's requests and `cloud.call` reads the application's, so a
+          failure here is about the step above rather than about the program under test.
+    evidence:
+      - json
+
+  - id: AC-024
+    description: >-
+      The account's meter counts exactly one stored object. This is the one reading that exists on
+      behalf of a consumer of the world rather than of the application: it is what a provider would
+      bill for, and it counts writes that were accepted rather than writes that were attempted. The
+      meter is scoped to the account's current life - the requests the application made since the
+      world was last reset - because a reading that accumulated across attempts would make this
+      criterion's answer a function of the iteration number rather than of the program.
+    expect:
+      - validator: cloud.meter
+        target: objects
+        equals: 1
+        message: >-
+          The account's object meter is not one. A refusal is not counted by this world, so a zero
+          here means the accepted write never happened; a number above one means the program wrote the
+          object more than once and nothing above AC-007 would have said so. The reading is of this
+          attempt's requests and not of the run's, so a failure here is about this application and not
+          about how many times the loop has been round.
+    evidence:
+      - json
+
+  # ---- the pipeline principal's policy, and the reason the account refuses ------------------------
+
+  - id: AC-025
+    description: >-
+      The receipts bucket's policy refuses the deletion of the receipts bucket to every principal. It
+      is a bucket policy rather than a principal's, and that distinction is the criterion: a
+      protection that lives on the principal is a protection lost with the principal. A control, and
+      the demo's fourth defect is measured not to touch it.
+    expect:
+      - validator: cloud.policy
+        target: bucket/cart-receipts
+        equals: deny s3.deleteBucket bucket/cart-receipts
+        message: >-
+          The receipts bucket's policy is not the single statement the program wrote. The rendering is
+          one line and `equals` is exact, so a statement added beside it fails this criterion rather
+          than passing it - which is the point of asking about a policy as a document.
+    evidence:
+      - json
+
+  - id: AC-026
+    description: >-
+      The pipeline principal's own policy allows the object write and refuses the bucket deletion, in
+      the order the program wrote them. This is the criterion the demo's fourth defect moves: the deny
+      statement is aimed at the wrong bucket, so the assets bucket is protected by nothing.
+    expect:
+      - validator: cloud.policy
+        target: principal/svc-cart
+        equals: |-
+          allow s3.putObject object/cart-assets/*
+          deny s3.deleteBucket bucket/cart-assets
+        message: >-
+          The pipeline principal's policy is not the two statements the program wrote. The rendering
+          is in declaration order rather than sorted order, because a policy is a document a reader
+          reads top to bottom - so a statement aimed at a different bucket is visible here as a
+          different line rather than as a line out of place.
+    evidence:
+      - json
+
+  - id: AC-027
+    description: >-
+      The account's own evaluator refuses the pipeline principal the deletion of the assets bucket,
+      and it refuses it on the statement that exists to refuse it. The outcome alone cannot see the
+      demo's fourth defect - the answer is "no" before the defect and "no" after it - so this
+      criterion also reads the `entry` line, which names the rule the answer came from. This is the
+      decision side of that defect: AC-026 reads what the program wrote, and it is the criterion the
+      table files the defect against. Both are here because an answer that is still correct for the
+      wrong reason is invisible to a criterion that only asks whether the answer was right.
+    expect:
+      - validator: cloud.access
+        target: principal/svc-cart:s3.deleteBucket:bucket/cart-assets
+        contains: allowed=false
+        message: >-
+          The account allows the pipeline principal to delete the bucket that holds the site. This is
+          the outcome half of the question and it fails whenever any statement allows the deletion,
+          from anywhere.
+      - validator: cloud.access
+        target: principal/svc-cart:s3.deleteBucket:bucket/cart-assets
+        contains: entry=deny s3.deleteBucket bucket/cart-assets
+        message: >-
+          The account refuses the deletion, but not because of the statement that refuses it. `none`
+          means nothing covered the request at all - nothing allows it, and nothing forbids it either
+          - which is a rule that has stopped protecting anything while still looking like a refusal.
+          This is the decision side of the demo's fourth defect, whose statement is read by AC-026,
+          and it is the reason the outcome and the reason are two expectations rather than one.
+    evidence:
+      - json

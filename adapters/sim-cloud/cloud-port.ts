@@ -37,6 +37,14 @@
  * and was then reset would otherwise report `PASS` with the evidence of the violation deleted by the
  * very act of repairing it. That is the shape of false pass this product exists to refuse.
  *
+ * **The meter is a reading rather than a record, so it is the one thing a reset does start over.**
+ * `meters()` is derived from the action record, and derived is the whole difference: the record is what
+ * the run did and it is kept, while the meter answers "what did this attempt cost" and is scoped to the
+ * account's current life. Both halves are needed and they pull in opposite directions, so the rule is
+ * written at {@link CloudPort.clear} where the choice is made. A meter that survived a reset made every
+ * criterion built on it a function of the iteration number - measured, not argued: the demo's own
+ * `cloud.meter equals: 1` read `1, 2, 3, 4, 5` across five iterations of one correct program.
+ *
  * ## Determinism
  *
  * Nothing in this file reads the clock or a random source. Listings are sorted, version identifiers are
@@ -153,8 +161,9 @@ export interface CloudPort {
   /** Read the account. Sorted, so two readings of one state are byte-identical. */
   snapshot(): CloudSnapshot;
   /** The meter, computed from the request record and this world's declared price table. */
+  /** The meter for the account's current life. Computed from the request record, never stored. */
   meters(): CloudMeterReading;
-  /** Empty the account. Called by `reset()`. Leaves both records untouched. */
+  /** Empty the account and start its meter over. Leaves both records untouched. */
   clear(): void;
   dump(): string;
   load(state: string): void;
@@ -360,6 +369,29 @@ const conflicting = (resource: string | null, message: string): HandlerResult =>
 /** 500. Something inside this world failed, which is not the application's fault and is named as such. */
 const crashed = (message: string): HandlerResult =>
   refusedWith(null, "error", 500, "InternalError", message);
+
+/**
+ * The body a refusal on the request path sends: the same reason and message the call record carries.
+ *
+ * Every refusal raised before dispatch builds one, and the reason is that a *client* has no other way to
+ * find out why. The branch that refused an unserved route used to record its explanation and send
+ * **nothing** - `#handle` writes an empty body whenever `#record` was given no body, so the one party
+ * that could not read the call record was the one party that asked. It was found by the provisioning
+ * program in `examples/sim-cloud/app/`, whose `PUT .../versioning` came back as a bare `404` with an empty
+ * message while the world's own sentence - "this world serves no route ... its sub-resources are named by
+ * a query parameter" - had been assembled two statements earlier and thrown away.
+ *
+ * This is the mirror of the defect `core/memory` paid for: a client that reads only the status and then
+ * names a cause it never observed is blind by its own hand, and a server that knows the cause and sends
+ * none leaves the caller in exactly the same position. Both are the same rule - an error message may only
+ * name a cause the reporter observed, and the reporter is the one holding it.
+ */
+const refusalBody = (reason: string, status: number, message: string): Record<string, unknown> => ({
+  kind: "Error",
+  reason,
+  status,
+  message,
+});
 
 // ---------------------------------------------------------------------------------------------
 // The stored account.
@@ -580,7 +612,18 @@ const SERVE_HEADLINES: readonly string[] = [
   "/v1/queues - messages, attributes and dead-letter configuration",
   "/v1/secrets - versions, encryption and rotation, never a value",
   "GET /v1/metering - requests, objects, bytes and this world's own cost units",
+  "a sub-resource is named by a query parameter on the resource it belongs to, so the address for a " +
+    'bucket\'s versioning is `/v1/storage/buckets/<bucket>?versioning` and not `.../<bucket>/versioning`',
 ];
+
+/**
+ * A route's pattern as a caller would write it.
+ *
+ * One function rather than a copy per message, because every refusal that quotes an address has to quote
+ * **the same** address - two renderings of one route is two different answers about one world.
+ */
+const routeAddress = (spec: RouteSpec): string =>
+  `/${spec.pattern.map((part) => (part.startsWith(":") ? `<${part.slice(1)}>` : part)).join("/")}`;
 
 const readHeader = (request: CloudRequest, name: string): string | null => {
   const headers = request.headers;
@@ -667,6 +710,16 @@ class HttpCloud implements CloudPort {
   readonly #decisions: CloudDecisionReading[] = [];
   /** Bytes written by served `putObject` requests. Kept beside the record, never in place of it. */
   #writtenBytes = 0;
+  /**
+   * Where the account's current life begins in both of those.
+   *
+   * The meter is a **reading**, and the record is the **record**, and `clear()` has to treat them
+   * differently or a criterion built on the meter stops being about the application. Nothing is
+   * dropped: the record keeps every request, and these two numbers say which of them the account's
+   * current life is answerable for.
+   */
+  #meterFrom = 0;
+  #meterBytesFrom = 0;
   readonly #server: Server;
   #bound: string | null = null;
 
@@ -746,16 +799,25 @@ class HttpCloud implements CloudPort {
    * inspected - the same property `#decide` had to be given (a read must not change what it reads).
    * The subtraction is on this side of the derivation only: the *record* still holds every request,
    * because a bundle a reader audits must not be short of the one request that asked.
+   *
+   * **The meter is scoped to the account's current life, and the record it is read from is not.**
+   * `clear()` moves the baseline rather than the record, so an iteration's meter answers what *that*
+   * attempt cost. Measured before this: the canonical `sim-cloud` demo's fourth criterion reported
+   * `objects` as `1, 2, 3, 4, 5` across five iterations of the *same* correct provisioning program, so
+   * a contract saying "this application writes one object" could pass on iteration one and never again
+   * - a verdict decided by how many attempts came before rather than by what the software did, which is
+   * the one thing a criterion must never be. The general rule is in the file header: a reset restores
+   * the world and not the record, and the meter is the world's.
    */
   meters(): CloudMeterReading {
     let objects = 0;
     let inspections = 0;
-    for (const call of this.#calls) {
+    for (const call of this.#calls.slice(this.#meterFrom)) {
       if (call.action === "s3.putObject" && call.result === "ok") objects += 1;
       if (call.action === "ce.getMetering") inspections += 1;
     }
-    const requests = this.#calls.length - inspections;
-    const bytes = this.#writtenBytes;
+    const requests = this.#calls.length - this.#meterFrom - inspections;
+    const bytes = this.#writtenBytes - this.#meterBytesFrom;
     const costUnits =
       requests * COST_UNITS.perRequest +
       objects * COST_UNITS.perObject +
@@ -796,11 +858,17 @@ class HttpCloud implements CloudPort {
   }
 
   /**
-   * Empty the account.
+   * Empty the account, and start its meter over.
    *
    * The declared identity survives, because it is what the account *is* rather than something the run
    * provisioned - an account with no identity could not answer the next request at all. Both records
    * survive, on purpose and for the reason in the file header.
+   *
+   * The meter does **not** survive, and that is the one place the record and the reading have to
+   * disagree: a validator must never inherit contaminated state from a previous iteration, and a
+   * meter that kept counting would make every criterion built on it a function of the iteration
+   * number. The baseline moves and nothing is removed, so `calls()` still holds every request and
+   * `meters()` describes the account this iteration is about.
    */
   clear(): void {
     this.#buckets.clear();
@@ -812,6 +880,8 @@ class HttpCloud implements CloudPort {
       policies: [],
       tags: {},
     });
+    this.#meterFrom = this.#calls.length;
+    this.#meterBytesFrom = this.#writtenBytes;
   }
 
   /**
@@ -1080,13 +1150,19 @@ class HttpCloud implements CloudPort {
     // criterion's `call` step uses, so a divergence here is a criterion judging a world that does not
     // exist. The HTTP path can never reach this branch.
     if ((method === "GET" || method === "HEAD") && (request.body ?? "") !== "") {
-      return this.#record(source, method, request.path, caller, "", null, {
-        result: "invalid",
-        status: 400,
-        reason:
-          `the request carries a body on ${method}, and a ${method} carries none - a request no ` +
-          "client could have made is refused rather than answered with the body it named dropped",
-      });
+      const why =
+        `the request carries a body on ${method}, and a ${method} carries none - a request no ` +
+        "client could have made is refused rather than answered with the body it named dropped";
+      return this.#record(
+        source,
+        method,
+        request.path,
+        caller,
+        "",
+        null,
+        { result: "invalid", status: 400, reason: why },
+        refusalBody("BadRequest", 400, why),
+      );
     }
     // A request's path is a *request target*, and this world serves its own address. Parsed with a
     // base, `http://elsewhere.example/v1/metering` was accepted and answered as this world's own
@@ -1103,21 +1179,32 @@ class HttpCloud implements CloudPort {
     // boundary the port did not hold - which is the defect the project has paid for twice already.
     const problem = targetProblem(request.path);
     if (problem !== null) {
-      return this.#record(source, method, request.path, caller, "", null, {
-        result: "invalid",
-        status: 400,
-        reason: problem,
-      });
+      return this.#record(
+        source,
+        method,
+        request.path,
+        caller,
+        "",
+        null,
+        { result: "invalid", status: 400, reason: problem },
+        refusalBody("BadRequest", 400, problem),
+      );
     }
     let url: URL;
     try {
       url = new URL(request.path, "http://cloud.invalid");
     } catch {
-      return this.#record(source, method, request.path, caller, "", null, {
-        result: "invalid",
-        status: 400,
-        reason: "the request path cannot be read as a URL",
-      });
+      const why = "the request path cannot be read as a URL";
+      return this.#record(
+        source,
+        method,
+        request.path,
+        caller,
+        "",
+        null,
+        { result: "invalid", status: 400, reason: why },
+        refusalBody("BadRequest", 400, why),
+      );
     }
     const path = url.pathname;
     const segments: string[] = [];
@@ -1126,25 +1213,45 @@ class HttpCloud implements CloudPort {
       try {
         segments.push(decodeURIComponent(raw));
       } catch {
-        return this.#record(source, method, path, caller, "", null, {
-          result: "invalid",
-          status: 400,
-          reason: `the path segment ${JSON.stringify(raw)} is not valid percent-encoding`,
-        });
+        const why = `the path segment ${JSON.stringify(raw)} is not valid percent-encoding`;
+        return this.#record(
+          source,
+          method,
+          path,
+          caller,
+          "",
+          null,
+          { result: "invalid", status: 400, reason: why },
+          refusalBody("BadRequest", 400, why),
+        );
       }
     }
     const parts = [...url.searchParams.keys()];
     const match = this.#match(segments);
     if (match === null) {
-      return this.#record(source, method, path, caller, "", null, {
-        result: "unsupported",
-        status: 404,
-        reason:
-          `this world serves no route ${JSON.stringify(path)}. It serves: ${SERVE_HEADLINES.join("; ")}` +
-          " - a route it does not serve is reported as unsupported rather than as a missing resource, " +
-          "because a reader sent looking for a resource that was never the question would be sent to " +
-          "the wrong file",
-      });
+      const misplaced = this.#misplacedSubResource(segments);
+      const why =
+        misplaced === null
+          ? `this world serves no route ${JSON.stringify(path)}. It serves: ${SERVE_HEADLINES.join("; ")}` +
+            " - a route it does not serve is reported as unsupported rather than as a missing resource, " +
+            "because a reader sent looking for a resource that was never the question would be sent to " +
+            "the wrong file"
+          : `${misplaced.address} has no path segment named ` +
+            `${JSON.stringify(misplaced.segment)}: its sub-resources (${misplaced.held.join(", ")}) are ` +
+            `named by a query parameter, so the address for ${JSON.stringify(misplaced.segment)} is ` +
+            `${misplaced.address}?${misplaced.segment}. A sub-resource addressed as a path segment ` +
+            "matches no route at all, and reporting that as a route this world does not serve would " +
+            "name a cause narrower than the one observed";
+      return this.#record(
+        source,
+        method,
+        path,
+        caller,
+        "",
+        null,
+        { result: "unsupported", status: 404, reason: why },
+        refusalBody("NoSuchRoute", 404, why),
+      );
     }
     const resource = this.#resourceFor(match);
     const named = this.#actionFor(match, method, parts);
@@ -1297,9 +1404,7 @@ class HttpCloud implements CloudPort {
    */
   #actionFor(match: Match, method: string, parts: readonly string[]): CloudAction | Refusal {
     const spec = match.spec;
-    const address = `/${spec.pattern
-      .map((part) => (part.startsWith(":") ? `<${part.slice(1)}>` : part))
-      .join("/")}`;
+    const address = routeAddress(spec);
     const part = parts.length === 0 ? null : (parts[0] ?? null);
     if (parts.length > 1) {
       return {
@@ -1361,6 +1466,39 @@ class HttpCloud implements CloudPort {
       };
     }
     return found;
+  }
+
+  /**
+   * The sub-resource a caller addressed as a *path segment* instead of as a query parameter, if that is
+   * what they did.
+   *
+   * Every route's sub-resources are reached as `?name` on the resource they belong to, and the reason is
+   * recorded on `RouteSpec.parts`. A bare `404` cannot convey that, though, and this world is a
+   * substitute whose **client is a program being judged** - so the one wrong spelling it can identify is
+   * identified rather than left as "this world serves no route".
+   *
+   * It was found by the provisioning program in `examples/sim-cloud/app/`, which addressed five
+   * sub-resources as path segments. The first one answered `404` with an empty body and the world's own
+   * explanation - naming neither the route to use nor the spelling - went nowhere; the run ended
+   * `INCONCLUSIVE` at zero iterations, which is what a diagnosis that names nothing buys.
+   *
+   * Only a **trailing** segment is considered. `PUT /objects/<key>/tagging` is not treated as a
+   * misplaced sub-resource even though it looks like one, because the object route's `*` legitimately
+   * swallows the whole remainder as the key - see the `parts` comment on {@link RouteSpec} - so the
+   * request is a write to the key `<key>/tagging` and a world that guessed otherwise would be inventing
+   * a route. Everything else is answered with the generic unserved-route message.
+   */
+  #misplacedSubResource(
+    segments: readonly string[],
+  ): { readonly segment: string; readonly address: string; readonly held: readonly string[] } | null {
+    if (segments.length < 2) return null;
+    const trailing = segments[segments.length - 1];
+    if (trailing === undefined) return null;
+    const shorter = this.#match(segments.slice(0, -1));
+    if (shorter === null) return null;
+    const parts = shorter.spec.parts;
+    if (parts === undefined || !Object.hasOwn(parts, trailing)) return null;
+    return { segment: trailing, address: routeAddress(shorter.spec), held: sorted(Object.keys(parts)) };
   }
 
   #resourceFor(match: Match): string | null {
