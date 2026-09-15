@@ -20,7 +20,7 @@ estimated:
 | Tests | `node --test` | 72 tests, 0 failing |
 | Build | `npm run build` | `out/` - 6 files |
 | Compiled artifact | `npm run smoke:out` | 15 checks, exit 0 |
-| Packaged archive | `npm run package` | `veridian-cockpit-0.2.1.vsix` - 12 files, 118.19 KB |
+| Packaged archive | `npm run package` | `veridian-cockpit-0.2.1.vsix` - 12 files, 118.70 KB |
 | Archive contents | `npm run smoke:vsix` | 34 checks, exit 0 |
 | All of the above but the archive | `npm run gate` | exit 0 |
 
@@ -70,13 +70,32 @@ reading the archive instead of restating the manifest.
 
 The third route is the **two extension marketplaces**, the VS Code Marketplace and Open VSX. Both
 install the same `.vsix` the second route builds, so this route is not a fourth artifact - the
-archive *is* the distribution, and `vsce publish` or `ovsx publish` only uploads what `npm run
-package` already produced. What each publisher adds is metadata read off the manifest it is given:
-the display name, the description, the version, the icon, the categories and the keywords are all
-fields in `package.json`, which is why that file is the single source for both storefronts'
-descriptions rather than a copy kept beside each. Publishing is the maintainer's step, not a check in
-this tree - it needs a token and a claimed name - so this repository's obligation is only that the
-archive's manifest describes the extension correctly, which `smoke:vsix` verifies.
+archive *is* the distribution. What each publisher adds is metadata read off the manifest it is
+given: the display name, the description, the version, the icon, the categories and the keywords are
+all fields in `package.json`, which is why that file is the single source for both storefronts'
+descriptions rather than a copy kept beside each.
+
+The route is **declared**, so a maintainer runs a command rather than reproducing one from memory:
+
+```powershell
+cd extension\vscode
+npm run publish:vsce   # the Visual Studio Marketplace, authenticated with VSCE_PAT
+npm run publish:ovsx   # Open VSX, authenticated with OVSX_PAT
+```
+
+Both hand the publisher the archive `npm run package` produced, through `--packagePath` - and that
+flag is what makes the previous paragraph true rather than merely intended. Bare `vsce publish` and
+bare `ovsx publish` each *package* the directory themselves, so a maintainer running one of those
+would upload a second build rather than the one `smoke:vsix` read back; and `vsce publish <version>`
+runs `npm version`, which would edit one of the several files that carry the version number. Naming
+the archive avoids both. Each script refuses, with a message naming `npm run package`, when there is
+no archive to upload - and `ovsx` asks for a token on the terminal when `OVSX_PAT` is unset, which is
+worth knowing before running it somewhere with no terminal.
+
+Neither command is part of `gate`: they need a token and a claimed publisher name, and the source
+tree's gate must not require a credential or a third party to be reachable. So this repository's
+obligation is only that the archive's manifest describes the extension correctly, which `smoke:vsix`
+verifies.
 
 ## The commands
 
@@ -188,6 +207,10 @@ src/packaging.test.ts  Holds the manifest against the build: the editor floor, t
 scripts/vscode-stub.mjs  The recording double for the compiled artifact.
 scripts/smoke-out.mjs    Loads and activates `out/` without an editor.
 scripts/smoke-vsix.mjs   Reads the packaged archive back, as a zip, without an editor.
+scripts/vsix-archive.mjs  Resolves the archive's name from the `package` script and the manifest,
+                          so the smoke test and both publish routes cannot disagree about it.
+scripts/publish-vsix.mjs  Hands that archive to `vsce publish` or `ovsx publish` with
+                          `--packagePath`, so neither repackages, and neither bumps the version.
 LICENSE                A copy of the repository's, byte for byte. `vsce` looks for it *here*.
                        It is in the manifest's `files` because it would not travel otherwise.
 icon.png              The project logo used as the VS Code extension icon.

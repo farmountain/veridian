@@ -157,7 +157,7 @@ What exists instead is the nearest thing that can be run here, and the two are n
 | Decisions, headless | `node --test` | 72 tests, 0 failing |
 | Build | `npm run build` | `out/` - 6 files |
 | **Compiled artifact** | `npm run smoke:out` | 15 checks, exit 0 |
-| Package | `npm run package` | `veridian-cockpit-0.2.1.vsix` - 12 files, 118.19 KB |
+| Package | `npm run package` | `veridian-cockpit-0.2.1.vsix` - 12 files, 118.70 KB |
 | **Packaged archive** | `npm run smoke:vsix` | 34 checks, exit 0 |
 | All of the above | `npm run gate` | exit 0 |
 
@@ -193,7 +193,7 @@ opposite - that packaging needs `@vscode/vsce`, that the output had never been p
 machine, and that adding a package script nobody had run would be the same unverified claim this
 document refuses for a Dockerfile. That reasoning was right, and the fix was to run it rather than to
 keep declining: `@vscode/vsce` is now a dev dependency, `npm run package` produces
-`veridian-cockpit-<version>.vsix` (12 files, 118.19 KB) and `npm run smoke:vsix` reads it back as a zip - by
+`veridian-cockpit-<version>.vsix` (12 files, 118.70 KB) and `npm run smoke:vsix` reads it back as a zip - by
 hand, with `node:zlib`, because this tree has no runtime dependency and adding one to read an archive
 would be the tail wagging the dog. The archive is a **fourth** artifact that nothing else here can
 load, so the same discipline `smoke:dist` and `smoke:out` follow one runtime further out applies:
@@ -232,10 +232,26 @@ gate`, so a package whose own tests are red cannot leave the machine, where `pri
   are both `0.2.1` as this is written, and the check is `npm run package` - the archive is named
   `veridian-cockpit-<manifest version>.vsix` because the `package` script passes no `--out`, so a
   filename that disagrees with the manifest cannot be produced.
+- **A named route that nothing in the tree can execute is not a route.** This section named
+  `vsce publish` and `ovsx publish` while `ovsx` was installed nowhere and declared nowhere, so the
+  route existed only as prose a maintainer had to reproduce from memory - the same defect class as a
+  README describing a command that no longer behaves that way. `ovsx` is now a dev dependency and
+  both publishers are one script behind two declared commands.
 
-**Publishing is still the maintainer's step, not an agent's.** `vsce publish` and `ovsx publish`
-need a token and a claimed name, and both are the maintainer's to hold. What this repository owes is
-an archive whose manifest describes it correctly, which `npm run smoke:vsix` reads back.
+**Publishing is still the maintainer's step, not an agent's - but it is now a command in this tree
+rather than a sentence in a document.** `vsce publish` and `ovsx publish` need a token and a claimed
+name, and both are the maintainer's to hold, so `npm run publish:vsce` and `npm run publish:ovsx` are
+declared scripts and are deliberately **not** in `gate`: the source tree's gate must not require a
+credential or a third party to be reachable. `scripts/publish-vsix.mjs` is both of them, and
+`--packagePath` is the whole argument - the flag is what makes *"neither publisher adds a second
+artifact to keep in step"* true rather than merely intended. Bare `vsce publish` and bare `ovsx
+publish` each *package* the directory themselves, so a maintainer running one would upload a second
+build rather than the archive `smoke:vsix` had just read back; and `vsce publish <version>` runs `npm
+version`, which edits one of the several files that carry the version number. The archive's name is
+resolved by `scripts/vsix-archive.mjs` rather than spelled out a second time, because the smoke test
+needs that same answer and two copies of one rule is how a publisher ends up uploading an archive
+nobody produces. What this repository owes is still an archive whose manifest describes it
+correctly, which `npm run smoke:vsix` reads back.
 
 **What is still not reached:** no VS Code test host, and no `.vscodeignore`. The second is
 deliberate: with `files` in the manifest, `vsce` includes only what the allowlist names plus the

@@ -784,9 +784,9 @@ the only tree that ships compiled:
 ```powershell
 cd extension/vscode
 npm ci                     # install. Dev only: typescript, @types/node, @types/vscode,
-                           # @vscode/vsce. There is no runtime dependency, and Playwright is not
-                           # one of them - which is why reading the archive is done with node:zlib
-                           # by hand rather than with a zip library.
+                           # @vscode/vsce, ovsx. There is no runtime dependency, and Playwright is
+                           # not one of them - which is why reading the archive is done with
+                           # node:zlib by hand rather than with a zip library.
 npm run gate               # typecheck, test, build, smoke:out - in that order.
                            # npx tsc --noEmit  -> silent
                            # node --test       -> 72 tests, 0 failing
@@ -800,7 +800,7 @@ npm run package            # vsce package --no-dependencies
                            # The archive lands at veridian-cockpit-<version>.vsix - `vsce` takes the
                            # name and the version out of the manifest it packages, so the filename
                            # cannot claim a version the extension inside it does not have.
-                           # 12 files, 118.19 KB, at the extension root. Deliberately NOT in `gate`:
+                           # 12 files, 118.70 KB, at the extension root. Deliberately NOT in `gate`:
                            # a packaging tool's output is not part of the source tree's contract,
                            # and making the local gate depend on `vsce` would make every local run
                            # need it. CI runs it, and runs the check below against it.
@@ -831,10 +831,44 @@ for byte (1388 bytes)` and exits 1; and taking `LICENSE` out of `files` is the i
 **exits 0** - so the packaging step reports nothing wrong and `smoke:vsix` is what fails. *A warning
 is not a check.*
 
+**The marketplaces are a declared route now rather than a habit.** `vsce publish` and `ovsx publish`
+were named in `extension/vscode/README.md` as the third distribution route while `ovsx` was installed
+nowhere and declared nowhere - so the route existed only as prose a maintainer had to reproduce from
+memory, which is this repository's recurring defect: *a route named in a document that nothing in the
+tree can execute.* `npm run publish:vsce` and `npm run publish:ovsx` are one script,
+`scripts/publish-vsix.mjs`, and the flag at its centre is what keeps the route honest: `--packagePath`.
+Bare `vsce publish` and bare `ovsx publish` each *package* the directory themselves, so a maintainer
+running one would upload a second build rather than the archive `smoke:vsix` had just read back - and
+`vsce publish <version>` runs `npm version`, editing one of the several files that carry the version
+number. The archive's name is resolved by `scripts/vsix-archive.mjs` instead of repeated, because the
+smoke test needs that same answer and two copies of one rule is how a publisher ends up uploading an
+archive nobody produces. Neither command is in `gate`, for the reason the README already gave: a token
+and a claimed publisher name are needed, and the source tree's gate must not require a credential or a
+third party to be reachable. Two things were **measured rather than assumed**. The missing-archive
+guard was falsified by renaming the archive away - it names `npm run package` and exits 1. And the
+token message was corrected by running the route: the first draft claimed the publisher would *refuse*
+without `OVSX_PAT`, and it does not refuse - it asks (`? Personal Access Token for namespace
+'farmountain':`), so the message says that instead, and the USAGE warns that a non-interactive caller
+has no terminal to answer it. *An error message may only name a cause the reporter observed.*
+
+**The archive travels by one more route, and until this pass a document had not named it: the release
+itself.** Release `v0.2.1` carried **no asset at all** - the marketplaces were described, the tag was
+pushed, and the one address a reader without a marketplace account can walk to was empty. It was found
+by listing the release's assets rather than by reading the README that described the routes, because a
+route described and a route reachable are two different claims. `gh release upload v0.2.1
+extension/vscode/veridian-cockpit-0.2.1.vsix --clobber` is the command, and the upload's own success
+line is **not** the evidence: `gh release download` returns a file whose SHA-256 matches both the local
+archive's hash and the `digest` the release API reports, which is the only reading that says the thing
+a reader will download is the thing `smoke:vsix` read back. *A step whose name states an outcome must
+fail when that outcome does not happen* - and this file already paid for that rule once, when the
+`demo` job's step named *"upload the evidence bundle"* reported success and carried nothing.
+
 The `.vsix` is generated and is **ignored rather than committed**, for the reason `dist/` and `out/`
 are: a committed archive is a binary nobody can diff against the extension it claims to be, and it is
 one `git add .` away from being committed. The rule in `.gitignore` is `*.vsix` rather than one
-filename, so a second target added to the `package` script cannot arrive unignored.
+filename, so a second target added to the `package` script cannot arrive unignored. **The release is
+therefore the only durable address for a built archive**, which is what makes attaching it to the tag
+part of the release rather than a follow-up.
 
 **`npm run smoke:dist` is not optional when the build, the packaging or the asset resolution
 changes.** Every test in `tests/` covers `.ts` files that are never shipped; without this, the
@@ -1046,7 +1080,7 @@ npx tsc --noEmit    silent (exit 0)
 node --test         72 tests, 0 failing
 npm run build       out/, 6 files
 npm run smoke:out   15 checks, exit 0
-npm run package     veridian-cockpit-0.2.1.vsix, 12 files, 118.19 KB
+npm run package     veridian-cockpit-0.2.1.vsix, 12 files, 118.70 KB
 npm run smoke:vsix  34 checks, exit 0
 npm run gate        exit 0
 ```

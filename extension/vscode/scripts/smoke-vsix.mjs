@@ -34,6 +34,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inflateRawSync } from "node:zlib";
+import { resolveArchive } from "./vsix-archive.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = dirname(SCRIPT_DIR);
@@ -105,28 +106,11 @@ function entriesOf(bytes) {
   return entries;
 }
 
-/**
- * The archive the `package` script writes, derived rather than repeated here.
- *
- * `AGENTS.md`: *"a requirement that names a place must be resolved as a pointer, not read as a
- * literal key."* A copy of the name would agree with the script on the day it was written and be
- * free to disagree afterwards, and the symptom would be this check reading an archive nobody
- * produces while the real one went unexamined.
- *
- * When the script names no `--out`, `vsce` writes `<name>-<version>.vsix`, taking both out of the
- * manifest it is packaging - so the version in the filename is the version of the extension inside
- * it, and the two cannot disagree. The fallback is not a convenience: it is what puts the version
- * in the name at all.
- */
-function archiveNameOf(packageScript, manifest) {
-  const named = /--out\s+(\S+)/u.exec(packageScript ?? "");
-  if (named?.[1] !== undefined) return named[1];
-  return `${String(manifest.name)}-${String(manifest.version)}.vsix`;
-}
-
+// The archive the `package` script writes. The naming rule lives in `./vsix-archive.mjs` because the
+// publish routes need the same answer, and two copies of one rule is how a publisher ends up
+// uploading an archive nobody produces.
 const manifest = JSON.parse(await readFile(join(PACKAGE_ROOT, "package.json"), "utf8"));
-const archiveName = archiveNameOf(manifest.scripts?.package, manifest);
-const archivePath = join(PACKAGE_ROOT, archiveName);
+const { name: archiveName, path: archivePath } = resolveArchive(PACKAGE_ROOT, manifest);
 
 check(existsSync(archivePath), `the archive exists (${archiveName})`);
 if (failures.length > 0) {

@@ -33,9 +33,10 @@ strategy. Veridian never decides *how* to write the code; it decides *whether th
 
 Five ways in: **clone it** if you want the source, the tests and the canonical demo; **install it**
 if you want the `veridian` command and nothing else; **open the Cockpit**, the thin VS Code client in
-`extension/vscode/`, if you want the same engine with a UI; **install the packaged Cockpit** from the
-marketplace or from the `.vsix` it ships as, if you want the editor client without a checkout; or
-**build the image**, if you want the CLI in a container:
+`extension/vscode/`, if you want the same engine with a UI; **install the packaged Cockpit** from
+either marketplace, or from the `.vsix` attached to
+[the latest release](https://github.com/farmountain/veridian/releases/latest), if you want the editor
+client without a checkout; or **build the image**, if you want the CLI in a container:
 
 ```bash
 docker build -t veridian .

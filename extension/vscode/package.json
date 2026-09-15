@@ -102,6 +102,8 @@
     "smoke:out": "node scripts/smoke-out.mjs",
     "package": "vsce package --no-dependencies",
     "smoke:vsix": "node scripts/smoke-vsix.mjs",
+    "publish:vsce": "node scripts/publish-vsix.mjs vsce",
+    "publish:ovsx": "node scripts/publish-vsix.mjs ovsx",
     "gate": "npm run typecheck && npm test && npm run build && npm run smoke:out",
     "prepublishOnly": "npm run gate"
   },
@@ -109,6 +111,7 @@
     "@types/node": "^26.5.1",
     "@types/vscode": "^1.100.0",
     "@vscode/vsce": "^4.0.0",
+    "ovsx": "^1.2.0",
     "typescript": "^5.9.3"
   }
 }
