@@ -68,6 +68,7 @@ import { k8sValidators } from "../validators/k8s/index.ts";
 import { posixValidators } from "../validators/posix/index.ts";
 import { osValidators } from "../validators/os/index.ts";
 import { cloudValidators } from "../validators/cloud/index.ts";
+import { containerValidators } from "../validators/container/index.ts";
 
 import type { CliArguments } from "./arguments.ts";
 import {
@@ -95,13 +96,13 @@ import {
 /**
  * Every validator this build can judge with.
  *
- * All five families, because the registry is what decides whether a criterion is *answerable* and
+ * Every family, because the registry is what decides whether a criterion is *answerable* and
  * the answer must not depend on which world the run chose. A contract that names `db.value`,
- * `k8s.ready`, `posix.permission` or `os.access` is judged by the world that can observe it and
- * refused with `unresolvable_entity` everywhere else - by the plan decoder, at DEFINE, before
- * anything starts. Registering a family only when a world that can answer it was selected would make
- * the *same contract* resolvable in one world and nonsensical in another, and the resolvability of a
- * criterion is a property of the criterion.
+ * `k8s.ready`, `posix.permission`, `os.access`, `cloud.object` or `container.state` is judged by the
+ * world that can observe it and refused with `unresolvable_entity` everywhere else - by the plan
+ * decoder, at DEFINE, before anything starts. Registering a family only when a world that can answer
+ * it was selected would make the *same contract* resolvable in one world and nonsensical in another,
+ * and the resolvability of a criterion is a property of the criterion.
  */
 function allValidators() {
   return [
@@ -111,6 +112,7 @@ function allValidators() {
     ...posixValidators(),
     ...osValidators(),
     ...cloudValidators(),
+    ...containerValidators(),
   ];
 }
 

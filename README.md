@@ -371,7 +371,7 @@ limits:
 
 `networkPolicy` and `filesystemWrite` are **applied, not just recorded**. Under `deny` the local-web
 adapter refuses every request that is not to the application's own origin, and each refusal is
-recorded as a crossing that fails the run with `SECURITY_VIOLATION` â€?even if every criterion passed.
+recorded as a crossing that fails the run with `SECURITY_VIOLATION` ï¿½?even if every criterion passed.
 `filesystemWrite` cannot be held by an adapter that runs the application as an ordinary child process,
 so it is reported `unsupported` rather than `enforced`. `environment.json` always pairs the policy with
 the enforcement actually achieved, so a declaration is never mistaken for a guarantee:
@@ -475,7 +475,7 @@ health: { timeoutMs: 30000, intervalMs: 100 }
 reset: { strategy: restart }
 ```
 
-`npm run demo:posix` drives this: four deliberate defects, thirteen criteria, and a `FAIL` â†?repair â†?
+`npm run demo:posix` drives this: four deliberate defects, thirteen criteria, and a `FAIL` ï¿½?repair ï¿½?
 `PASS` descent in five iterations (measured, verbatim: iteration 1 fails `AC-003`, `AC-006`, `AC-008`,
 `AC-010`, `AC-011`, `AC-012` and cannot judge `AC-007`; iteration 5 is `PASS` on all thirteen with the
 reason `13/13 mandatory criteria passed, environment valid, no safety violation, evidence complete.`).
@@ -506,7 +506,7 @@ health: { timeoutMs: 30000, intervalMs: 100 }
 reset: { strategy: restart }
 ```
 
-`npm run demo:os` drives this: four deliberate defects, seventeen criteria, and a `FAIL` â†?repair â†?
+`npm run demo:os` drives this: four deliberate defects, seventeen criteria, and a `FAIL` ï¿½?repair ï¿½?
 `PASS` descent in five iterations (measured, verbatim: iteration 1 fails `AC-001`, `AC-006`, `AC-007`,
 `AC-009`, `AC-010`, `AC-013` and `AC-014` and cannot judge `AC-012`; iteration 5 is `PASS` on all
 seventeen with the reason `17/17 mandatory criteria passed, environment valid, no safety violation,
@@ -608,6 +608,11 @@ validators/os/          os.file, os.contents, os.owner, os.access, os.acl, os.ac
 validators/cloud/       cloud.bucket, cloud.object, cloud.tag, cloud.policy, cloud.access,
                         cloud.queue, cloud.secret, cloud.call, cloud.setting, cloud.probe,
                         cloud.meter
+validators/container/   container.runtime, container.image, container.tag, container.digest,
+                        container.label, container.env, container.state, container.alive,
+                        container.exitcode, container.command, container.user, container.mount,
+                        container.port, container.limit, container.health, container.logs,
+                        container.stderr, container.call, container.probe
 schemas/                goal / acceptance / environment / run / result / ambiguity
 scripts/                bootstrap and build steps that must run before anything is checked
 examples/shopping-cart/ the canonical demo: correct app, defect overlay, goal, contract, world
@@ -650,7 +655,8 @@ ValidationResult:    criterion_id, status, actual, expected, timestamp, evidence
 Layering is enforced by hand, and `core/*` may not import `adapters/*`, `validators/*` or `cli/*`;
 `validators/*` may not import `adapters/*` (the shared vocabulary lives in
 `core/environment/web-observation.ts`, `db-observation.ts`, `k8s-observation.ts`,
-`posix-observation.ts`, `os-observation.ts` and `cloud-observation.ts` for exactly that reason);
+`posix-observation.ts`, `os-observation.ts`, `cloud-observation.ts` and
+`container-observation.ts` for exactly that reason);
 `cli/*` is the only layer that may import all three.
 
 ---
