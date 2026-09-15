@@ -940,8 +940,10 @@ const runtimeBlocking = isBlocking({});
  *
  * A question asked mid-run puts the verdict behind a prompt: the same code in the same world against
  * the same acceptance criteria would then produce different results depending on who was watching.
- * These ambiguities are therefore non-blocking by construction, which restricts the ladder to
- * DERIVE → INFER → DEFAULT and makes every runtime gap land on a recorded, conservative default.
+ * These ambiguities are therefore non-blocking by construction, which makes rung 5 (ASK) unreachable
+ * and leaves every runtime gap to the rungs that do not interrupt: DERIVE, INFER, a declared default,
+ * and the run's own answer from material it already holds. Rung 4 is why a runtime gap that no earlier
+ * rung can close now has somewhere to go other than a conservative default.
  */
 const RUNTIME_NOTE =
   " (resolved without asking: a question asked mid-run would put the verdict behind a prompt)";

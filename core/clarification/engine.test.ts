@@ -9,6 +9,7 @@ import {
   scriptedSelfPromptPort,
 } from "./engine.ts";
 import { createDeriver, schemaDefaultRule, type IoPort } from "./derive.ts";
+import { runtimeDetectors, type DetectorContext } from "./detect.ts";
 import { getPointer, joinPointer, setPointer } from "./pointer.ts";
 import { ambiguity, failSafeDefault, type Ambiguity, type Clock } from "./types.ts";
 
@@ -571,4 +572,129 @@ test("rung 4 may close a non-blocking gap, where rung 2 is forbidden from spendi
   const outcome = await engine.resolve({}, [goalAmbiguity("/a", { blocking: false })]);
   assert.equal(outcome.report.records[0]?.resolution.via, "self_prompted");
   assert.equal(getPointer(outcome.artifact, "/a"), "self");
+});
+
+/**
+ * The runtime protocol's own document, spelled once.
+ *
+ * Every field the three runtime detectors read is here on purpose, and each detector ignores most
+ * of them: a detector declares its own structural view and reads only its own fields, so one shared
+ * fixture is what lets the guard below iterate the register instead of restating it. Three
+ * hand-built documents would be a fourth list of which detector wants what - and that list is
+ * exactly what falls behind when a detector is added, which is the failure the guard exists to
+ * catch.
+ */
+const runtimeDocument = {
+  criteria: [
+    {
+      criterionId: "AC-001",
+      mandatory: true,
+      status: "INCONCLUSIVE",
+      observationError: "the world produced no observation",
+      observationKind: null,
+      missingEvidence: ["screenshot"],
+      note: null,
+      evidenceNote: null,
+    },
+  ],
+  iteration: 1,
+  maxIterations: 3,
+  elapsedMs: 12,
+  maxRuntimeMs: 1000,
+  verdict: "FAIL",
+  repairGate: "command",
+  decision: null,
+};
+
+const runtimeContext: DetectorContext = {
+  registeredValidators: ["text.equals"],
+  validatorDescriptors: [{ name: "text.equals", needsTarget: true, comparisons: ["equals"] }],
+  registeredAdapters: ["scripted"],
+  sourceLabel: "engine.test",
+};
+
+for (const entry of runtimeDetectors()) {
+  test(`the ${entry.origin} question a run raises mid-run can be closed without interrupting anyone`, () => {
+    const gaps = entry.detect(runtimeDocument, runtimeContext);
+
+    // Without this the guard below would pass over an empty list, which is how a register-driven
+    // loop covers a member it was not written for: every assertion after this line would be about
+    // nothing, and the test would report a rule held that it never reached.
+    assert.ok(
+      gaps.length > 0,
+      `${entry.origin} raised nothing from the shared fixture, so this test proves nothing about it`,
+    );
+
+    for (const gap of gaps) {
+      // The loop cannot ask a human mid-run, so a runtime detector that raised a blocking gap would
+      // create a question with nowhere to go - the ladder would fall to rung 6 and the run would
+      // record an unresolved blocking ambiguity nobody was ever shown.
+      assert.equal(
+        gap.blocking,
+        false,
+        `${entry.origin} raised a blocking gap at ${gap.path}, which the loop has no way to put to anyone`,
+      );
+      assert.notEqual(
+        gap.defaultValue,
+        undefined,
+        `${entry.origin} raised ${gap.path} with no declared default, so rung 3 could not close it and the run would have to reach a rung that answers from something other than a declaration`,
+      );
+      assert.ok(
+        (gap.defaultRationale ?? "").trim().length > 0,
+        `${entry.origin} declared a default at ${gap.path} without stating why selecting it is fail-safe`,
+      );
+    }
+  });
+}
+
+test("a gap raised mid-run is closed by its declared default, with both later rungs wired and willing", async () => {
+  // The loop's own gaps are non-blocking by construction and, per the guard above, every one of them
+  // carries a declared fail-safe default - so this is the ladder they actually walk. INFER is
+  // blocking-gated and is therefore never spent on one, DEFAULT answers, and the two rungs that could
+  // answer from something other than a declaration are never reached. Held here with both of those
+  // rungs installed and willing, because "not reached" is a claim about the code rather than about
+  // which ports a caller happened to wire.
+  let inferred = 0;
+  const selfPrompt = scriptedSelfPromptPort(selfAnswer("self", 1));
+  const engine = new ClarificationEngine({
+    derive: createDeriver([schemaDefaultRule()]),
+    infer: {
+      infer: () => {
+        inferred += 1;
+        return Promise.resolve({ value: "inferred", confidence: 1, source: "memory" });
+      },
+    },
+    selfPrompt,
+    user: scriptedPromptPort({}),
+    clock: fixedClock(),
+  });
+
+  const outcome = await engine.resolve({ criteria: [{}] }, [
+    ambiguity({
+      origin: "execution",
+      path: "/criteria/0/note",
+      kind: "missing_value",
+      question: "AC-001 produced no observation yet is reported as INCONCLUSIVE. What accounts for that status?",
+      blocking: false,
+      ...failSafeDefault(
+        "the world produced no observation, so this is not a measurement of the application",
+        "recording the absence cannot make the run report PASS more readily than the truth",
+      ),
+    }),
+  ]);
+
+  const record = outcome.report.records[0];
+  assert.equal(record?.resolution.via, "defaulted");
+  assert.equal(
+    getPointer(outcome.artifact, "/criteria/0/note"),
+    "the world produced no observation, so this is not a measurement of the application",
+  );
+  assert.deepEqual(
+    record?.rungsAttempted,
+    ["derived", "defaulted"],
+    "DERIVE is tried and declines, INFER is skipped because the gap is non-blocking, and DEFAULT answers",
+  );
+  assert.equal(inferred, 0, "a non-blocking gap may not spend an external call");
+  assert.equal(selfPrompt.asked.length, 0, "a declared default outranks a self-answer");
+  assert.equal(outcome.report.questionsAsked, 0);
 });

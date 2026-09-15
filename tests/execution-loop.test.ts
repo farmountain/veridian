@@ -732,6 +732,41 @@ describe("the runtime protocol resolves without interrupting anyone", () => {
     assert.equal(count("FAIL"), summary.failed);
     assert.equal(summary.criteria.length - count("PASS") - count("FAIL"), summary.undecided);
   });
+
+  it("records which rung closed each of its own questions, so a declared default can be told from an answer", async () => {
+    // A run that resolves its own indeterminacy has answered in one of two very different voices: it
+    // applied a default somebody argued was fail-safe, or it found the answer in material it already
+    // held. Both leave the artifact filled and both leave `questionsAsked` at zero, so the *rung* is
+    // the only thing that separates them - and it is the rung, not the value, that a reader has to
+    // weigh when deciding whether to trust a PASS. This fixture wires neither an infer port nor a
+    // self-prompt port, so the ladder has nothing but declarations to answer from; the assertion is
+    // that the bundle says so rather than leaving the reader to assume it.
+    const h = harness();
+    const world = scriptedWorld({ totals: ["$30.00"], produces: [] });
+    const result = await h.run(world, new NoRepairGate());
+
+    const seen = new Set<string>();
+    let recorded = 0;
+    for (const report of result.clarifications) {
+      assert.equal(report.questionsAsked, 0, "a mid-run question has nowhere to go, so none may be asked");
+      for (const record of report.records) {
+        seen.add(record.ambiguity.origin);
+        recorded += 1;
+        assert.equal(
+          record.resolution.via,
+          "defaulted",
+          `the ${record.ambiguity.origin} question at ${record.ambiguity.path} was closed by ${record.resolution.via}`,
+        );
+      }
+    }
+
+    assert.ok(recorded > 0, "the fixture has to raise the run's own questions, or this test measures an empty list");
+    assert.deepEqual(
+      [...seen].sort(),
+      ["evidence", "iteration"],
+      "the two questions this run raises are its own: the iteration decision, and required evidence that was never captured",
+    );
+  });
 });
 
 describe("the loop judges the run's own boundary history", () => {

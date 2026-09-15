@@ -579,6 +579,33 @@ describe("createSelfPromptPort", () => {
     assert.equal(await port.prompt(question("target", { candidates: ["", ""] }), 1), null);
   });
 
+  it("tells a gap with nothing to choose between apart from one it corroborated twice", async () => {
+    const lines: string[] = [];
+    const port = createSelfPromptPort({
+      material: ["a", "b"],
+      logger: consoleLogger({ level: "debug", sink: (line) => lines.push(line) }),
+    });
+
+    // Both refusals return `null` and both spend a round, so the *answer* cannot tell them apart -
+    // and they could not be less alike. One had nothing to eliminate; the other had two candidates
+    // the run could justify and declined to grade its own homework. An operator asking why a run
+    // stopped self-answering needs the distinction, so the log is the only place it can live, and
+    // this is the only place it is held.
+    assert.equal(await port.prompt(question("target", { candidates: [] }), 1), null);
+    assert.equal(await port.prompt(question("target", { candidates: ["a", "b"] }), 1), null);
+
+    assert.match(
+      lines.join(""),
+      /self-prompt declined \(path=\/target attempt=1 reason=no-candidate-offered\)/,
+      "a gap that offered no candidate has to say so, or it is indistinguishable from a tie",
+    );
+    assert.match(
+      lines.join(""),
+      /self-prompt declined \(path=\/target attempt=1 confirmed=2\)/,
+      "and a tie still reports how many candidates it could justify",
+    );
+  });
+
   it("never rejects, whatever shape the candidate list arrives in", async () => {
     const port = createSelfPromptPort({ material });
 

@@ -247,7 +247,19 @@ export function createSelfPromptPort(options: SelfPromptPortOptions): SelfPrompt
       const candidates = (ambiguity.candidates ?? []).filter(
         (candidate) => String(candidate).length > 0,
       );
-      if (candidates.length === 0) return Promise.resolve(null);
+      // Declining silently here would be an observation nobody can read. This rung spends a round
+      // whether it answers or not, and a gap with nothing to choose between is a *different* refusal
+      // from a gap with two corroborated candidates - both return `null`, and only the log tells an
+      // operator which one happened. Every runtime gap the loop raises is this branch: the runtime
+      // detectors ask for a reason in prose, and this rung may not invent prose.
+      if (candidates.length === 0) {
+        options.logger?.debug("self-prompt declined", {
+          path: ambiguity.path,
+          attempt,
+          reason: "no-candidate-offered",
+        });
+        return Promise.resolve(null);
+      }
 
       const inHand = [...options.material, ...flattenValues(ambiguity.context)];
       const confirms = (candidate: unknown): string | null => {

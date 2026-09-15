@@ -33,8 +33,9 @@ import type { CriterionExecution, IterationSummary, LoopOptions, LoopResult } fr
  *     the same ladder that resolved the goal document resolves it — so the reason ends up in
  *     `clarifications.json` instead of in a comment nobody reads.
  *  2. **The loop never asks a human mid-run.** Runtime ambiguities are non-blocking by construction,
- *     which restricts the ladder to DERIVE → INFER → DEFAULT. A prompt in the middle of a run would
- *     let the verdict depend on who happened to be watching.
+ *     so rung 5 (ASK) is unreachable: a mid-run gap is closed by DERIVE, by INFER, by a declared
+ *     fail-safe default, or by the run's own answer from material it already holds. A prompt in the
+ *     middle of a run would let the verdict depend on who happened to be watching.
  *  3. **The decision to iterate is read, not computed.** There is one source for it — the detector's
  *     facts plus the ladder's fail-safe default — and the rationale it returns *becomes* the exit
  *     reason in the bundle. A loop that computed a decision and then confirmed it would have two
