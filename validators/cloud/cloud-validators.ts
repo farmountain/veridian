@@ -117,7 +117,7 @@ import {
   CLOUD_OBSERVATION_KIND,
   CLOUD_REF_KINDS,
   bucketNamed,
-  callsOf,
+  cloudCallsOf,
   cloudRefSpelling,
   decisionFor,
   isCloudObservationData,
@@ -127,7 +127,7 @@ import {
   queueNamed,
   renderDecision,
   renderPolicy,
-  renderRef,
+  renderCloudRef,
   resolveCloudAccessRef,
   resolveCloudRef,
   secretNamed,
@@ -333,7 +333,7 @@ function callBy(
         "contract that cannot be read.",
     );
   }
-  const all = callsOf(document, action);
+  const all = cloudCallsOf(document, action);
   if (all.length === 0) {
     return unanswered(
       validator,
@@ -486,7 +486,7 @@ const setting: Validator = {
       "a reference to something this account holds (`bucket/cart-assets`)",
     );
     if (isAssertion(ref)) return ref;
-    const rendering = renderRef(document, ref);
+    const rendering = renderCloudRef(document, ref);
     const spelling = cloudRefSpelling(ref);
     if (rendering === null) {
       return unanswered(setting.name, spelling, absenceMessage(ref, "reading"));
@@ -517,7 +517,7 @@ const tag: Validator = {
       "a reference to something this account holds (`bucket/cart-assets`)",
     );
     if (isAssertion(ref)) return ref;
-    const rendering = renderRef(document, ref);
+    const rendering = renderCloudRef(document, ref);
     const spelling = cloudRefSpelling(ref);
     if (rendering === null) {
       return unanswered(tag.name, spelling, absenceMessage(ref, "tag set"));

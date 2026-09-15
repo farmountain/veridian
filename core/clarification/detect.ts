@@ -149,6 +149,15 @@ export interface EnvironmentLike {
    * "the world has no local directory" are both true at once.
    */
   readonly cloud?: unknown;
+  /**
+   * Present when the world stands in for a container runtime.
+   *
+   * It has no address at all - and, uniquely among the six, it has **two** filesystems. A container
+   * world's declaration carries a host directory (where its images and containers live) *and* a
+   * platform that decides how a path inside a container is spelled, so a detector that read this
+   * block as a path would be reading the wrong one of the two.
+   */
+  readonly container?: unknown;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -190,7 +199,8 @@ const hasNoHttp = (environment: EnvironmentLike): boolean =>
     !isMissing(environment.cluster) ||
     !isMissing(environment.posix) ||
     !isMissing(environment.os) ||
-    !isMissing(environment.cloud));
+    !isMissing(environment.cloud) ||
+    !isMissing(environment.container));
 
 const asArray = <T>(value: readonly T[] | undefined): readonly T[] => value ?? [];
 

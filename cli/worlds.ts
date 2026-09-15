@@ -31,6 +31,7 @@ import type { BrowserPort } from "../adapters/local-web/index.ts";
 import { LocalDbEnvironment } from "../adapters/local-db/index.ts";
 import { SimK8sEnvironment } from "../adapters/sim-k8s/index.ts";
 import { SimCloudEnvironment } from "../adapters/sim-cloud/index.ts";
+import { SimContainerEnvironment } from "../adapters/sim-container/index.ts";
 import { SimOsEnvironment } from "../adapters/sim-os/index.ts";
 import { SimPosixEnvironment } from "../adapters/sim-posix/index.ts";
 import type { AdapterDescriptor, AdapterRequirement } from "../core/clarification/detect.ts";
@@ -326,6 +327,67 @@ const WORLDS: readonly World[] = [
     ],
     build: ({ environment, io, logger, processes, stateDir }) =>
       new SimCloudEnvironment(environment, {
+        io,
+        clock: systemClock,
+        logger,
+        processes,
+        stateDir,
+      }),
+  },
+  {
+    kind: "sim-container",
+    summary:
+      "a simulated container runtime the application provisions itself, with no engine and no image store behind it",
+    // Three fields, and the third is what makes this world a different *kind* of subject rather than a
+    // second copy of `sim-posix`. A runtime name is what every reading is scoped to and what the
+    // adapter's environment id is built from - `docker` and `podman` are different worlds to a contract
+    // that names one, and this world will not answer to a name nobody chose. A *platform* is not a
+    // label on a reading: it decides how a path inside a container is spelled and whether a binary in
+    // an image could ever execute, so the loader refuses a platform this substitution does not
+    // implement by name rather than adapting to it. And a *root* is the host path the machine opens
+    // the world from - the one fact that lets the adapter tell a bind mount's host source from its
+    // in-container destination, which is the two-filesystems problem this world exists to make
+    // explicit. The sandbox is not asked for: it is a declared place this world builds, not an input.
+    //
+    // Asked as three pointers rather than as one `container` object because the ladder resolves a
+    // requirement against a *place*: a single `container` field would report the whole block missing
+    // however much of it the document already stated, and the operator's answer would be written over
+    // the fields they had already written correctly.
+    requires: [
+      {
+        field: "container.runtime",
+        question: "Which container runtime is this world standing in for?",
+        why:
+          "Every reading records it and the provisioning program is told it, because a criterion of " +
+          "the form \"this is the image we shipped\" is a claim about a named runtime and not about " +
+          "runtimes in general. There is no default: this adapter substitutes a runtime, and a " +
+          "substituted runtime that will not say which one it stands in for cannot be judged against " +
+          "anything.",
+      },
+      {
+        field: "container.platform",
+        question: "Which platform should this world build containers for?",
+        why:
+          "The platform decides how a path inside a container is spelled, so a plan that defaulted it " +
+          "would resolve every criterion's container-side target by the wrong grammar and report a " +
+          "correct path as absent. A platform this substitution does not implement is refused by the " +
+          "loader, by name, before a world exists - because the alternative is a run whose every " +
+          "reading describes a container nobody described.",
+      },
+      {
+        field: "container.root",
+        question: "Where should this world keep its images and containers?",
+        why:
+          "This is the host path the machine opens the world from, and it is also the second of the " +
+          "two places a host path in a command may name - the first being the application's own " +
+          "directory. There is no default: a sandbox root that drifted from the directory the adapter " +
+          "wrote to would make every build context and every bind mount resolve against a different " +
+          "tree than the one the criteria acted on, and the failure would look like a missing " +
+          "directory rather than a misdescribed world.",
+      },
+    ],
+    build: ({ environment, io, logger, processes, stateDir }) =>
+      new SimContainerEnvironment(environment, {
         io,
         clock: systemClock,
         logger,

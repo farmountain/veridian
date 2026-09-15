@@ -1,5 +1,6 @@
 import type { FailureKind } from "../failure.ts";
 import type { FilesystemWritePolicy, NetworkPolicy } from "../goal/types.ts";
+import type { ContainerPlatform } from "./container-observation.ts";
 import type { OsFamily } from "./os-observation.ts";
 
 /**
@@ -270,6 +271,29 @@ export interface EnvironmentDefinitionShape {
     readonly account?: unknown;
     readonly principal?: unknown;
   };
+  /**
+   * The container runtime this world stands in for, when the world is one.
+   *
+   * Three facts, and the shape of them is the point. `runtime` is a free string, because a runtime's
+   * name decides nothing a criterion can observe - the same argument that made a provider name free
+   * one family over. `platform` is a *declared* fact, because the platform decides how a path is
+   * spelled inside every container the world holds. And `root` is a host path, which is the field
+   * that makes this block different in kind from `cloud`: a container world has a bind mount, and a
+   * bind mount's source is a path **on this machine** while its destination is a path **inside the
+   * container**, so the world has to be able to tell the two apart - and it cannot tell them apart
+   * unless the document says where its own sandbox is.
+   *
+   * There is deliberately no principal. Every other simulated world declares the identity its
+   * criteria act as, because every other one has an access decision; a local runtime interface has
+   * none, so a `principal` field here would be a field that exists to make the seventh block look
+   * like the sixth. The honest consequence is recorded rather than hidden: this world cannot judge a
+   * contract about who may talk to the runtime.
+   */
+  readonly container?: {
+    readonly runtime?: unknown;
+    readonly platform?: unknown;
+    readonly root?: unknown;
+  };
   readonly health?: {
     readonly path?: unknown;
     readonly expectStatus?: unknown;
@@ -412,6 +436,21 @@ export interface EnvironmentPlan {
    * against a substitute has to be traceable to the thing it substituted for.
    */
   readonly cloud: CloudPlan | null;
+  /**
+   * The container runtime this world stands in for, or `null` when the world is not one.
+   *
+   * The seventh of the same field, one per kind of world, and read for the same reason as the other
+   * six: the first question asked of a result is *which world produced it*. A runtime reading answers
+   * that with three facts - which runtime the readings name, which platform its paths are spelled in,
+   * and which directory on this machine its sandbox lives in - and the last of the three is not
+   * recoverable from a reading at all, which is why it is a plan field rather than a reported one.
+   *
+   * It is also the field a bundle is read against when a verdict reached against a substitute has to
+   * be traceable to the thing it substituted for - and in this world that traceability carries a
+   * second job, because a container's process is real while its isolation is not, so a reader has to
+   * be able to see which half of a verdict came from where.
+   */
+  readonly container: ContainerPlan | null;
   readonly health: HealthPolicy;
   readonly reset: { readonly strategy: ResetStrategy; readonly command: string | null };
   readonly browser: BrowserPolicy;
@@ -517,4 +556,28 @@ export interface CloudPlan {
   readonly account: string;
   /** The identity the criteria act as. Access is decided *as* this principal, never as an account root. */
   readonly principal: string;
+}
+
+/**
+ * A container runtime's resolved declaration.
+ *
+ * `root` is a *sandbox* directory on this machine, and it is here for a reason none of the other
+ * simulated plans had: this world has two filesystems at once. A container's paths are its own -
+ * `/app`, `/data`, `/var/lib/cart` - and they are spelled by a grammar that has nothing to do with the
+ * machine the world is running on. A bind mount names both spellings in one command, so the adapter
+ * resolves the host side against this directory and refuses a command that hands it a host path where
+ * a container path belongs. Without this field it could not tell the two apart, and it would either
+ * accept a path it cannot honour or refuse a path it should have mapped - the shape of the defect the
+ * machine family paid for when one world ended up with two answers for one question.
+ *
+ * `platform` is the one fact here that is a rule rather than a label, which is why it is validated
+ * against {@link CONTAINER_PLATFORMS} at load rather than accepted as written.
+ */
+export interface ContainerPlan {
+  /** The runtime identity the readings name, e.g. `veridian-container-sim`. Declared, never inferred. */
+  readonly runtime: string;
+  /** The platform the containers stand in for. Decides how a path inside a container is spelled. */
+  readonly platform: ContainerPlatform;
+  /** Absolute, resolved against `appPath` on the same rule `databasePath` follows. */
+  readonly root: string;
 }

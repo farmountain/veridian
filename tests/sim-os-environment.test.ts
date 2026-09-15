@@ -64,6 +64,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => ({
   posix: null,
   os: { family: "windows", system: "Windows Server 2022", user: "svc-audit", root: "app/.sandbox" },
   cloud: null,
+  container: null,
   health: { path: null, expectStatus: null, timeoutMs: 5_000, intervalMs: 10, readyPattern: null },
   reset: { strategy: "restart", command: null },
   browser: { enabled: false, viewport: { width: 1280, height: 720 }, locale: null, timezoneId: null },

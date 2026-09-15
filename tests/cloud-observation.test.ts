@@ -8,7 +8,7 @@ import {
   CLOUD_REF_KINDS,
   CLOUD_SIMULATED_SURFACES,
   bucketNamed,
-  callsOf,
+  cloudCallsOf,
   cloudRefSpelling,
   decisionFor,
   meterValue,
@@ -22,7 +22,7 @@ import {
   renderPolicy,
   renderPrincipal,
   renderQueue,
-  renderRef,
+  renderCloudRef,
   renderSecret,
   resolveCloudAccessRef,
   resolveCloudRef,
@@ -695,14 +695,14 @@ describe("the questions a criterion asks of a reading", () => {
     // policy. A criterion asking whether the *application* made a request has to be able to tell them
     // apart by `source`, which is why the record carries it - and the count is what a contract about
     // "the application asked once" is written against.
-    const calls = callsOf(account(), CLOUD_ACTIONS.putObject);
+    const calls = cloudCallsOf(account(), CLOUD_ACTIONS.putObject);
     assert.equal(calls.length, 2);
     assert.deepEqual(
       calls.map((call) => call.source),
       ["application", "criterion"],
     );
     assert.deepEqual(
-      callsOf(account(), "s3.teleport").length,
+      cloudCallsOf(account(), "s3.teleport").length,
       0,
       "an action nothing served must come back empty rather than as the whole record",
     );
@@ -750,12 +750,12 @@ describe("the questions a criterion asks of a reading", () => {
   it("answers a rendering of a resource the world does not hold with `null`", () => {
     // An account that holds no receipts bucket is a fact a criterion may assert, so the reading has to
     // distinguish "the world holds nothing under that name" from "here is an empty document".
-    assert.equal(renderRef(account(), { kind: "bucket", name: "cart-receipts" }), null);
-    assert.equal(renderRef(account(), { kind: "object", bucket: "cart-assets", key: "gone.js" }), null);
-    assert.equal(renderRef(account(), { kind: "queue", name: "nope" }), null);
-    assert.equal(renderRef(account(), { kind: "secret", name: "nope" }), null);
-    assert.equal(renderRef(account(), { kind: "principal", name: "nope" }), null);
-    assert.ok(renderRef(account(), { kind: "bucket", name: "cart-assets" }) !== null);
+    assert.equal(renderCloudRef(account(), { kind: "bucket", name: "cart-receipts" }), null);
+    assert.equal(renderCloudRef(account(), { kind: "object", bucket: "cart-assets", key: "gone.js" }), null);
+    assert.equal(renderCloudRef(account(), { kind: "queue", name: "nope" }), null);
+    assert.equal(renderCloudRef(account(), { kind: "secret", name: "nope" }), null);
+    assert.equal(renderCloudRef(account(), { kind: "principal", name: "nope" }), null);
+    assert.ok(renderCloudRef(account(), { kind: "bucket", name: "cart-assets" }) !== null);
   });
 
   it("refuses to judge a hardening contract as an account root", () => {

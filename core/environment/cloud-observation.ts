@@ -827,7 +827,7 @@ export function principalNamed(
 }
 
 /** The reading of the thing a reference names, as its document, or `null`. */
-export function renderRef(data: CloudObservationData, ref: CloudRef): string | null {
+export function renderCloudRef(data: CloudObservationData, ref: CloudRef): string | null {
   switch (ref.kind) {
     case "bucket": {
       const bucket = bucketNamed(data, ref.name);
@@ -859,7 +859,7 @@ export function renderRef(data: CloudObservationData, ref: CloudRef): string | n
  * they take - and because a caller that wants to know how many times something was attempted is
  * asking a question the reading can answer.
  */
-export function callsOf(data: CloudObservationData, action: string): readonly CloudCallRecord[] {
+export function cloudCallsOf(data: CloudObservationData, action: string): readonly CloudCallRecord[] {
   return data.calls.filter((call) => call.action === action);
 }
 

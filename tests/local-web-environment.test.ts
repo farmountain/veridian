@@ -300,7 +300,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => ({
   env: { PORT: "4173" },
   dependencyInstall: null,
   start: { command: "node", args: ["serve.mjs"], readyPattern: "Listening on" },
-  url: "http://127.0.0.1:4173",  databasePath: null,  cluster: null,  posix: null,  os: null,  cloud: null,  health: { path: "/health", expectStatus: 200, timeoutMs: 5_000, intervalMs: 100, readyPattern: null },
+  url: "http://127.0.0.1:4173",  databasePath: null,  cluster: null,  posix: null,  os: null,  cloud: null,  container: null,  health: { path: "/health", expectStatus: 200, timeoutMs: 5_000, intervalMs: 100, readyPattern: null },
   reset: { strategy: "restart", command: null },
   browser: { enabled: true, viewport: { width: 1280, height: 720 }, locale: null, timezoneId: null },
   boundary: { network: "deny", allow: [], filesystemWrite: "deny" },

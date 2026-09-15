@@ -88,6 +88,17 @@
       "required": ["provider", "region", "account", "principal"],
       "additionalProperties": false
     },
+    "container": {
+      "type": ["object", "null"],
+      "description": "The container runtime this world stands in for, when the world is one. Present for a simulated runtime such as `sim-container`; absent for every other world. Same reasoning as `cloud`: stated here rather than as an adapter-private option, so the plan every reader sees names the same runtime, platform and sandbox the run measured, and so that 'this world is not a runtime' stays distinguishable from 'nobody filled the field in'. A world declaring `container` has no url, no cluster, no posix, no os and no cloud, exactly as a database world has no url. It is the first world block with two filesystems at once: `root` is a directory on this machine, while every path a container's command names is spelled inside the container by `platform` - and a bind mount names both in one command, which is why the declaration has to carry both a root and a platform rather than either alone.",
+      "properties": {
+        "runtime": { "type": "string", "minLength": 1, "description": "The runtime identity the readings name, so a result says which runtime produced it. A free string rather than an enumeration: a runtime name decides nothing a criterion can observe, and enumerating it would let a label act as a rule." },
+        "platform": { "type": "string", "enum": ["linux"], "description": "The platform the containers stand in for. It is a rule rather than a label - it decides how a path inside a container is spelled - so it is the one field in this block the loader validates, and a document naming a platform this substitution does not implement is refused before a world exists rather than judged with the wrong path grammar." },
+        "root": { "type": "string", "minLength": 1, "description": "The directory on this machine the world's images, containers and volumes live in. A sandbox rather than the application directory, on the same reasoning as `posix.root`: the world is destroyed and rebuilt on every reset, so pointing it at the application would delete the code under test on the first iteration. It is also what lets the adapter tell a bind mount's host source from its in-container destination." }
+      },
+      "required": ["runtime", "platform", "root"],
+      "additionalProperties": false
+    },
     "health": {
       "type": "object",
       "properties": {

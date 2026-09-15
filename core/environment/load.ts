@@ -3,6 +3,7 @@ import type { GoalDocument, GoalLimits, SourceRef } from "../goal/types.ts";
 import type { ReadonlyIoPort } from "../io.ts";
 import { SCHEMA_URIS, type SchemaSet } from "../schema/index.ts";
 import { principalProblem } from "./cloud-observation.ts";
+import { CONTAINER_PLATFORMS } from "./container-observation.ts";
 import { OS_FAMILIES, PRIVILEGED_OS_ACCOUNTS } from "./os-observation.ts";
 import {
   RESET_STRATEGIES,
@@ -10,6 +11,7 @@ import {
   type BrowserPolicy,
   type CloudPlan,
   type ClusterPlan,
+  type ContainerPlan,
   type EnvironmentPlan,
   type HealthPolicy,
   type OsPlan,
@@ -345,6 +347,69 @@ function readCloud(raw: unknown): CloudPlan | null {
   return { provider, region, account, principal };
 }
 
+/**
+ * The container runtime declaration, resolved.
+ *
+ * The fifth time the rule of {@link readCluster}, {@link readPosix}, {@link readOs} and
+ * {@link readCloud} is written out, and the fact that it is written out again rather than factored
+ * into one helper is the decision {@link readOs} already recorded: the three facts each world refuses
+ * to default are *different* facts with different sentences, and a helper taking a list as an
+ * argument would move the sentence that explains a refusal - the part an operator actually reads -
+ * away from the field it is about.
+ *
+ * Two things here have no counterpart in the four before it, and both come from the same property of
+ * this world: it has two filesystems. `root` is a path **on this machine**, resolved against
+ * `appPath`, and it is the only thing that lets the adapter tell a bind mount's host source from its
+ * in-container destination. `platform` is validated against {@link CONTAINER_PLATFORMS} rather than
+ * accepted as written, because it decides how a path is spelled inside every container the world
+ * holds - so a document naming a platform the substitution does not implement would be a document
+ * whose criteria all resolved paths by the wrong grammar. Refusing it here stops the run before a
+ * world exists, which is the only place a refusal can name the reason with the operator's own
+ * document in hand.
+ */
+function readContainer(raw: unknown, appPath: string): ContainerPlan | null {
+  if (raw === undefined || raw === null) return null;
+  if (!isPlainObject(raw)) {
+    throw defect(
+      "$.container",
+      "container must be an object naming a runtime, a platform and the sandbox root it holds its " +
+        "images and containers in",
+    );
+  }
+  const runtime = asString(raw["runtime"]).trim();
+  const platform = asString(raw["platform"]).trim();
+  const root = asString(raw["root"]).trim();
+  const missing = [
+    runtime === "" ? "runtime" : null,
+    platform === "" ? "platform" : null,
+    root === "" ? "root" : null,
+  ].filter((entry): entry is string => entry !== null);
+  if (missing.length > 0) {
+    throw defect(
+      `$.container.${missing[0] ?? "runtime"}`,
+      `the container declaration is missing ${missing.join(", ")}. The runtime is what every reading ` +
+        "names, the platform is what decides how a path inside a container is spelled, and the root " +
+        "is the directory on this machine the world's images and containers live in - defaulting any " +
+        "of them would produce a verdict about a runtime nobody described.",
+    );
+  }
+  if (!(CONTAINER_PLATFORMS as readonly string[]).includes(platform)) {
+    throw defect(
+      "$.container.platform",
+      `this world stands in for ${CONTAINER_PLATFORMS.join(" and ")} containers, and the document ` +
+        `names ${JSON.stringify(platform)}. The platform is not a label on the readings - it is what ` +
+        "decides whether a path inside a container separates with a slash - so a document naming one " +
+        "this substitution does not implement is a document whose every criterion would resolve " +
+        "paths by the wrong grammar.",
+    );
+  }
+  return {
+    runtime,
+    platform: platform as ContainerPlan["platform"],
+    root: resolveSibling({ dir: appPath, path: "", text: "" }, root),
+  };
+}
+
 function readBoundary(limits: GoalLimits): BoundaryPolicy {
   return {
     network: limits.networkPolicy,
@@ -426,6 +491,7 @@ export function finalizeEnvironment(
     posix: readPosix(raw["posix"], appPath),
     os: readOs(raw["os"], appPath),
     cloud: readCloud(raw["cloud"]),
+    container: readContainer(raw["container"], appPath),
     health: readHealth(raw["health"], url !== "", readyPattern),
     reset: { strategy: strategy as ResetStrategy, command: resetCommand },
     browser: readBrowser(raw["browser"], url !== ""),
