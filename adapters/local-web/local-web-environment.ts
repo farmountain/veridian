@@ -40,6 +40,7 @@ import type {
   Observation,
   ObservationRequest,
 } from "../../core/environment/types.ts";
+import { confineChild, type ConfinementResult } from "../../core/environment/confinement.ts";
 import { probeUrl } from "../../core/environment/load.ts";
 import type { WebObservationData, WebTargetObservation } from "../../core/environment/web-observation.ts";
 import { WEB_OBSERVATION_KIND } from "../../core/environment/web-observation.ts";
@@ -199,6 +200,15 @@ export class LocalWebEnvironment implements EnvironmentAdapter {
    * the very act of repairing it, which is the shape of false pass M3 exists to refuse.
    */
   readonly #crossings: BoundaryCrossing[] = [];
+  /**
+   * What was done to the application child, or `null` if no child was started.
+   *
+   * Held from `#spawn` rather than recomputed when `boundaries()` is asked, because the two are
+   * different questions: the capability is a property of this machine *now*, while the report is a
+   * statement about what *this run* did. A world that asked again at report time could describe a
+   * child it never confined.
+   */
+  #confinement: ConfinementResult | null = null;
   /**
    * Whether a request guard was installed on at least one page, and never failed to be installed.
    *
@@ -535,18 +545,21 @@ export class LocalWebEnvironment implements EnvironmentAdapter {
   /**
    * What this world did about the plan's boundaries.
    *
-   * `filesystemWrite` is reported `unsupported` and not silently, because it is the truth: the
-   * application runs as an ordinary child process with the operator's own privileges, so nothing
-   * here holds a filesystem boundary. Writing `enforced` for a boundary this adapter cannot express
-   * would be the exact defect this whole path exists to remove, one level down.
+   * `filesystemWrite` is derived from what `#spawn` returned rather than declared, so it cannot
+   * disagree with the child that was actually started. It was `unsupported` unconditionally until
+   * `core/environment/confinement.ts` existed, and the sentence that carried that claim - "the
+   * application runs as an ordinary child process with the operator's own privileges" - stopped
+   * being true the moment this machine could be asked to hold the boundary and answered yes. It now
+   * reads `enforced` only when a confined child really was started, because `unsupported` means this
+   * world holds no boundary here: a world that holds one while saying it does not is the same defect
+   * as one that claims a boundary it never installed, and only the second of those is obvious.
    */
   boundaries(): BoundaryReport {
     const { network } = this.#plan.boundary;
     return {
       network:
         network === "allow" ? "not-requested" : this.#boundaryHeld ? "enforced" : "unsupported",
-      // Unconditional, because there is no policy for which it would be true: see the note above.
-      filesystemWrite: "unsupported",
+      filesystemWrite: this.#confinement?.applied === true ? "enforced" : "unsupported",
       crossings: [...this.#crossings],
     };
   }
@@ -772,10 +785,38 @@ export class LocalWebEnvironment implements EnvironmentAdapter {
 
   #spawn(): ProcessHandle {
     const { command, args } = this.#plan.start;
-    this.#logger.info("environment.start", { command, args, cwd: this.#plan.appPath });
-    const handle = this.#processes.run({
+    // The child is confined here, before it exists, and the vector handed to the runner is the one
+    // this call returns rather than the one the document declared. `readRoots` names the application
+    // directory and nothing else, because that is where the program and everything it serves from
+    // live - an allowance naming nothing would refuse to load the program it was asked to confine.
+    //
+    // The write allowance follows the policy the document actually declared, because the two
+    // policies mean two different things: `deny` gives none, and `sandbox` gives exactly the
+    // application directory. They are not interchangeable - passing an empty list for `sandbox` would
+    // enforce `deny` on a plan that asked to write inside the world, and then report it `enforced`,
+    // which is a stricter world than the operator asked for described as the one they asked for.
+    // (An empty allowance is what `deny` means to a confined child: it cannot open a file for
+    // writing at all.) That the canonical application writes nothing either way was measured rather
+    // than assumed, which is why `deny` is safe for it.
+    const confinement = confineChild({
       command,
       args,
+      readRoots: [this.#plan.appPath],
+      writeRoots: this.#plan.boundary.filesystemWrite === "sandbox" ? [this.#plan.appPath] : [],
+    });
+    this.#confinement = confinement;
+    this.#logger.info("environment.start", {
+      command,
+      args,
+      cwd: this.#plan.appPath,
+      // What was done to the child, on the same line as the child being started, because two events
+      // could otherwise disagree about whether this world confined the program it started.
+      confined: confinement.applied,
+      confinement: confinement.reason,
+    });
+    const handle = this.#processes.run({
+      command: confinement.command,
+      args: confinement.args,
       cwd: this.#plan.appPath,
       env: this.#plan.env,
       // Output is read back through `handle.output()`, which is the single source for the text; these
@@ -785,7 +826,20 @@ export class LocalWebEnvironment implements EnvironmentAdapter {
     });
     this.#child = handle;
     this.#exit = null;
+    // Guarded, because a previous child's exit can be delivered *after* this one is published, and
+    // unguarded `#exit` would hold a dead child's result while `#child` held the live one. `probe()`
+    // reads both, so it would report a running application as stopped and the manager's poll would
+    // never see it ready.
+    //
+    // The window this closes was real and was measured, not imagined: `core/process.ts`'s `stop()`
+    // awaited `exited` on POSIX but returned as soon as `taskkill` closed on Windows, so the old
+    // handle could settle during the rebuild that follows. **That asymmetry is fixed** - both
+    // branches now wait for the child to be gone - and `tests/process.test.ts` holds that reading
+    // directly. The guard stays anyway: it costs one comparison, it makes the invariant local to the
+    // three fields it protects instead of resting on a distant file, and a world that stops and
+    // re-spawns is exactly the shape that would find the next such window first.
     void handle.exited.then((result) => {
+      if (this.#child !== handle) return;
       this.#exit = result;
     });
     return handle;

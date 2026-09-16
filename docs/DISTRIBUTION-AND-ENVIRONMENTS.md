@@ -829,6 +829,27 @@ application's API calls. The simulation boundary and the integration boundary ar
 - **No publishing.** This document makes the package publishable. Running `npm publish` is the
   maintainer's decision, not an agent's, and the name is theirs to claim.
 
+**`BoundaryEnforcement` has four values, and only one of them is about an adapter's reach.** Quoting
+one of them is how the first bullet above becomes a claim that is true and incomplete, so the whole
+vocabulary is printed here:
+
+```
+BoundaryEnforcement  "enforced" | "unsupported" | "unenforceable" | "not-requested"
+```
+
+`enforced` - the world has a mechanism, holds it, and the record says so. `unsupported` - this
+adapter has no mechanism for this boundary and never claimed one. `not-requested` - the document did
+not ask, so there was nothing to hold or to miss. `unenforceable` - a mechanism *should* exist for
+this boundary and demonstrably does not, so the absence is a finding about the platform rather than
+about the adapter. Exactly one world answers that last way: `local-process` reports
+`network: unenforceable` because **Node has no `--allow-net`** - measured with a positive control,
+`--permission` is accepted on this runtime (exit 0) while `--allow-net=127.0.0.1` is rejected as a
+`bad option` (exit 9). `local-web` and `local-api` report `network: enforced` for the same boundary
+because each has a guarded front door every request must pass, and can therefore really refuse one.
+That divergence is the vocabulary working, not a disagreement:
+`tests/boundary-roster.test.ts` derives which world answers which way from the adapters themselves,
+so a twelfth world cannot join either side in silence.
+
 ---
 
 ## 7. What was built, and what was measured rather than assumed

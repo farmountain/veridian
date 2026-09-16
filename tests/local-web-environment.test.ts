@@ -19,6 +19,7 @@ import { describe, it } from "node:test";
 import { EnvironmentError } from "../core/failure.ts";
 import type { Clock, Logger } from "../core/clarification/types.ts";
 import type { EnvironmentPlan, ObservationRequest } from "../core/environment/types.ts";
+import { confinementCapability } from "../core/environment/confinement.ts";
 import type { ProcessHandle, ProcessRequest, ProcessResult, ProcessRunner } from "../core/process.ts";
 import { memoryIo } from "../core/io.ts";
 import type { MemoryIo } from "../core/io.ts";
@@ -118,6 +119,31 @@ interface FakeProcesses {
  */
 type Program = FakeProgram | readonly FakeProgram[];
 
+/**
+ * The key a launched command's program is filed under, derived the way the world itself derives it.
+ *
+ * This is not a convenience. `#spawn` does not hand the runner the command the document declared: it
+ * hands it whatever `core/environment/confinement.ts` returned, and for a Node application that is
+ * the **absolute path to the interpreter** rather than the word `node`. A fake keyed on the declared
+ * spelling alone finds no program for a confined child, reads an empty stdout, and fails every
+ * `start()` here on the readiness wait - a double that cannot follow its own product is a suite about
+ * a world nobody runs. Measured rather than reasoned about: before this helper existed, confining the
+ * adapter failed 35 of these 40 tests, every one of them on the readiness wait.
+ *
+ * So a command that is not a key verbatim is looked up by its basename without a trailing `.exe`,
+ * lowercased - the same rule `confinement.ts` uses to decide whether a command is a Node interpreter
+ * at all. The key is resolved once and used for the launch count as well as the program, because the
+ * two have to agree about which command they are counting; and a command that is neither spelling
+ * still resolves to itself, so a test that starts a non-Node command needs no special case.
+ */
+function programKey(programs: Readonly<Record<string, Program>>, command: string): string {
+  if (programs[command] !== undefined) return command;
+  const base = (command.replace(/\\/g, "/").split("/").pop() ?? command)
+    .replace(/\.exe$/iu, "")
+    .toLowerCase();
+  return programs[base] === undefined ? command : base;
+}
+
 function fakeProcesses(programs: Readonly<Record<string, Program>> = {}): FakeProcesses {
   const launched: FakeHandle[] = [];
   const requests: ProcessRequest[] = [];
@@ -129,9 +155,10 @@ function fakeProcesses(programs: Readonly<Record<string, Program>> = {}): FakePr
     runner: {
       run(request: ProcessRequest): ProcessHandle {
         requests.push(request);
-        const entry = programs[request.command];
-        const index = counts.get(request.command) ?? 0;
-        counts.set(request.command, index + 1);
+        const key = programKey(programs, request.command);
+        const entry = programs[key];
+        const index = counts.get(key) ?? 0;
+        counts.set(key, index + 1);
         const program = Array.isArray(entry)
           ? (entry[Math.min(index, entry.length - 1)] ?? {})
           : (entry ?? {});
@@ -367,8 +394,26 @@ describe("the local-web environment brings an application up", () => {
 
     assert.equal(id, "local-web:examples/shopping-cart");
     const launch = processes.requests[0];
-    assert.equal(launch?.command, "node");
-    assert.deepEqual(launch?.args, ["serve.mjs"]);
+    // The runner is handed the vector `confineChild` returned, not the one the document declared: the
+    // command becomes the interpreter's own path - absolute, so no shell can mangle an allowance - and
+    // the args carry the permission flag and the read allowance ahead of the program's own.
+    //
+    // This used to assert the declared word `node` and `deepEqual(args, ["serve.mjs"])`, and both were
+    // true for exactly as long as nothing confined the child. Asserting them again would pin the
+    // spelling of a document rather than the shape of the process that was really started. The
+    // capability is read rather than assumed for the reason every confinement test reads it: on a
+    // runtime that refuses `--permission` the adapter is behaving exactly as designed when it hands
+    // the runner the unconfined vector, so a suite that pinned the confined shape unconditionally
+    // would fail on a machine where nothing is wrong.
+    const capability = confinementCapability();
+    assert.equal(launch?.command, capability.available ? capability.interpreter : "node");
+    assert.equal(launch?.args.at(-1), "serve.mjs", "the program is still the last argument");
+    assert.equal(launch?.args.includes("--permission"), capability.available);
+    assert.equal(
+      launch?.args.some((arg) => arg.startsWith("--allow-fs-read=")),
+      capability.available,
+      "a confined child with no read allowance cannot open the program it was asked to run",
+    );
     // The application must not be started from Veridian's own working directory: a readiness pattern
     // printed into the wrong cwd is a bug with no symptom until the port never opens.
     assert.equal(launch?.cwd, "/virtual/examples/shopping-cart");
@@ -419,7 +464,15 @@ describe("the local-web environment brings an application up", () => {
     await h.subject.start(id);
 
     assert.equal(processes.requests.length, 1);
-    assert.equal(processes.requests[0]?.command, "node");
+    // Named by the program it runs rather than by the word the document wrote: the one request this
+    // world made is the *confined* child, so the command it carries is whatever `confineChild`
+    // resolved it to. That there is exactly one request is the real claim; the spelling was a second,
+    // weaker claim that happened to hold only until anything confined anything.
+    assert.equal(
+      processes.requests[0]?.args.at(-1),
+      "serve.mjs",
+      "the single request is the application's own bootstrap",
+    );
   });
 
   it("refuses to drive an environment that was never created", async () => {
@@ -536,11 +589,19 @@ describe("the local-web environment resets a world", () => {
 
     await h.subject.reset(id);
 
+    // The reset command keeps its *declared* spelling while the start command above it does not, and
+    // that asymmetry is the fact worth recording rather than an inconsistency: `reset()` runs the
+    // custom command through `runToCompletion` - an ordinary child, unconfined - while the application
+    // itself goes through `#spawn` and therefore through `confineChild`. So this line quotes the
+    // document because this is the one request that really is the document's own vector.
     assert.equal(processes.requests.at(-1)?.command, "node reset-db.mjs");
     // The start command ran once and was not run again: `launched` also collects the reset command's
-    // own handle, so counting handles would count the reset itself as a restart.
+    // own handle, so counting handles would count the reset itself as a restart. Counted by the
+    // program the request runs rather than by the command's spelling, because the confined child's
+    // command is the interpreter's path - a filter on `"node"` counts zero starts, and a test whose
+    // count reads zero because it looked for the wrong word reports its own subject as absent.
     assert.equal(
-      processes.requests.filter((entry) => entry.command === "node").length,
+      processes.requests.filter((entry) => entry.args.at(-1) === "serve.mjs").length,
       1,
       "a custom reset does not restart the application",
     );
@@ -946,17 +1007,86 @@ describe("the local-web environment reports the boundary it actually held", () =
     assert.equal(h.subject.boundaries().network, "unsupported");
   });
 
-  it("reports the filesystem boundary as unsupported, because this adapter cannot hold one", async () => {
+  it("reads the filesystem boundary off the confinement the child was really started with", async () => {
     const environment = plan({ boundary: { network: "deny", allow: [], filesystemWrite: "sandbox" } });
     const browser = fakeBrowser();
     const h = harness(environment, { processes: fakeProcesses({ node: running() }).runner, browser: browser.port });
     const id = await up(h);
     await h.subject.execute(id, request());
 
-    // The application runs as an ordinary child process with the operator's privileges, so `sandbox`
-    // is a word in a file for as long as that is true. Saying `enforced` would be the exact
-    // false-confidence this field exists to remove.
+    // This test read `unsupported` until `core/environment/confinement.ts` landed, and the comment
+    // that stood here said the application "runs as an ordinary child process with the operator's
+    // privileges" - the exact sentence that module was written to make false. `#spawn` now calls
+    // `confineChild`, so the boundary is real whenever the runtime can hold it and the report is read
+    // off the confinement that call returned rather than declared beside it.
+    //
+    // The expectation is derived from the capability rather than pinned, because `unsupported` is the
+    // *correct* answer on a runtime that refuses `--permission`: this world holds no boundary there,
+    // and saying `enforced` would be a claim about a mechanism this machine does not have.
+    assert.equal(
+      h.subject.boundaries().filesystemWrite,
+      confinementCapability().available ? "enforced" : "unsupported",
+    );
+  });
+
+  it("reports an unsupported filesystem boundary when the runtime cannot confine the command it was given", async () => {
+    // The other half of the derivation, and the half no policy can reach. Both policies read
+    // `enforced` when the command is Node - `deny` gives an empty allowance, which is exactly what
+    // `deny` means to a confined child, and `sandbox` gives the application directory - so the report
+    // can only be seen to follow the *child* by handing the world a command the permission model does
+    // not reach.
+    //
+    // `cmd` rather than an invented name on purpose: it is a real program on this machine, so the
+    // request really goes out and the refusal is a stated one rather than a silently dropped child.
+    const environment = plan({
+      start: { command: "cmd", args: ["/c", "echo", "hi"], readyPattern: "hi" },
+    });
+    const processes = fakeProcesses({ cmd: { stdout: "hi\n" } });
+    const h = harness(environment, { processes: processes.runner });
+    const { id } = await h.subject.create();
+    await h.subject.start(id);
+
     assert.equal(h.subject.boundaries().filesystemWrite, "unsupported");
+    // The vector is unchanged, and that is what makes the refusal a *reported* one: a world that
+    // quietly stripped the command would leave this criterion judged against nothing at all.
+    assert.equal(processes.requests[0]?.command, "cmd");
+    assert.deepEqual([...(processes.requests[0]?.args ?? [])], ["/c", "echo", "hi"]);
+  });
+
+  it("gives a `sandbox` plan a write allowance and a `deny` plan none", async () => {
+    // The defect this holds was found by reading a type rather than by any test. `#spawn` passed
+    // `writeRoots: []` unconditionally while `FilesystemWritePolicy` is `"deny" | "sandbox"`, so a
+    // plan that asked to write inside its own world was handed an empty allowance - which is what
+    // `deny` means to a confined child - and was then reported `enforced`. The report matched the act
+    // and the act was not what the document asked for, which is a third kind of wrong beside claiming
+    // a boundary and denying one.
+    //
+    // Both branches are asserted, because either alone is satisfiable by a constant: an unconditional
+    // empty list passes the `deny` half, and an unconditional application directory passes the other.
+    const sandboxPlan = plan({ boundary: { network: "deny", allow: [], filesystemWrite: "sandbox" } });
+    const sandboxed = fakeProcesses({ node: running() });
+    const sandboxHarness = harness(sandboxPlan, { processes: sandboxed.runner });
+    const { id: sandboxId } = await sandboxHarness.subject.create();
+    await sandboxHarness.subject.start(sandboxId);
+
+    const deniedPlan = plan({ boundary: { network: "deny", allow: [], filesystemWrite: "deny" } });
+    const denied = fakeProcesses({ node: running() });
+    const deniedHarness = harness(deniedPlan, { processes: denied.runner });
+    const { id: deniedId } = await deniedHarness.subject.create();
+    await deniedHarness.subject.start(deniedId);
+
+    const allowances = (requests: readonly ProcessRequest[]): readonly string[] =>
+      [...(requests[0]?.args ?? [])].filter((arg) => arg.startsWith("--allow-fs-write="));
+
+    // Read off the request the runner was handed rather than off the report, so this cannot agree with
+    // the report by construction: the two have to be able to be wrong separately, or the assertion is
+    // about the adapter agreeing with itself.
+    assert.deepEqual(allowances(denied.requests), []);
+    assert.deepEqual(
+      allowances(sandboxed.requests),
+      confinementCapability().available ? [`--allow-fs-write=${sandboxPlan.appPath}`] : [],
+      "`sandbox` is the application directory, not an empty allowance",
+    );
   });
 
   it("records a refused request against the criterion that made it", async () => {

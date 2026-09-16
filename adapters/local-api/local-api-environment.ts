@@ -32,9 +32,13 @@
  * Unlike the browser world, this adapter builds every request URL itself, so it can refuse one that
  * leaves the service's origin - and it does, naming the boundary the goal declared. That makes the
  * network policy `enforced` here rather than `unsupported`, and the claim is only made once a guard
- * exists that a request has really passed through. `filesystemWrite` stays `unsupported`: the
- * application runs as an ordinary child process with the operator's own privileges, and nothing in
- * this file confines its writes.
+ * exists that a request has really passed through.
+ *
+ * `filesystemWrite` used to be `unsupported` here, on the true sentence that the application runs as
+ * an ordinary child process with the operator's own privileges. That sentence stopped being true when
+ * `core/environment/confinement.ts` landed: the service is now started through `confineChild`, so the
+ * boundary is real when the mechanism is available and honestly `unsupported` when it is not - and
+ * the report is read off the confinement `#spawn` actually got rather than declared beside it.
  */
 
 import { decodeStep } from "../../core/acceptance/plan.ts";
@@ -46,6 +50,7 @@ import type {
   ApiProcessReading,
 } from "../../core/environment/api-observation.ts";
 import { API_OBSERVATION_KIND } from "../../core/environment/api-observation.ts";
+import { confineChild, type ConfinementResult } from "../../core/environment/confinement.ts";
 import { probeUrl } from "../../core/environment/load.ts";
 import type {
   ArtifactKind,
@@ -146,6 +151,14 @@ export class LocalApiEnvironment implements EnvironmentAdapter {
   #child: ProcessHandle | null = null;
   /** The child's exit result once it settles. Used only to say *why* readiness never arrived. */
   #exit: Awaited<ProcessHandle["exited"]> | null = null;
+  /**
+   * What was done to the service child, or `null` if no child was started.
+   *
+   * Held from `#spawn` rather than recomputed at `boundaries()` time, because the capability is a
+   * property of this machine *now* and the report is a statement about what *this run* did. Asking
+   * again would let a world describe a child it never confined.
+   */
+  #confinement: ConfinementResult | null = null;
 
   /**
    * Everything the origin guard refused, across every criterion.
@@ -526,15 +539,19 @@ export class LocalApiEnvironment implements EnvironmentAdapter {
    * request this adapter sends is built by `#send` and passes the origin guard - which is a claim
    * about code that always runs, not about a third party's installation.
    *
-   * `filesystemWrite` is `unsupported` and not silently. The application runs as an ordinary child
-   * process with the operator's own privileges, so nothing here confines where its routes write. A
-   * service that puts a cache beside its own source is doing something this adapter cannot see, let
-   * alone stop.
+   * `filesystemWrite` is derived from what `#spawn` returned rather than declared, so it cannot
+   * disagree with the child that was actually started. It read `unsupported` unconditionally until
+   * `core/environment/confinement.ts` existed, and the sentence carrying that claim - "the
+   * application runs as an ordinary child process with the operator's own privileges" - stopped
+   * being true the moment this machine could be asked to hold the boundary and answered yes. It
+   * reads `enforced` only when a confined child really was started, because `unsupported` means this
+   * world holds no boundary here, and a world that holds one while saying it does not is the same
+   * defect as one that claims a boundary it never installed.
    */
   boundaries(): BoundaryReport {
     return {
       network: this.#plan.boundary.network === "allow" ? "not-requested" : this.#guarded ? "enforced" : "unsupported",
-      filesystemWrite: "unsupported",
+      filesystemWrite: this.#confinement?.applied === true ? "enforced" : "unsupported",
       crossings: [...this.#crossings],
     };
   }
@@ -628,10 +645,41 @@ export class LocalApiEnvironment implements EnvironmentAdapter {
 
   #spawn(): ProcessHandle {
     const { command, args } = this.#plan.start;
-    this.#logger.info("environment.start", { command, args, cwd: this.#plan.appPath, url: this.#url() });
-    const handle = this.#processes.run({
+    // The child is confined here, before it exists, and the vector handed to the runner is the one
+    // this call returns rather than the one the document declared. `readRoots` names the application
+    // directory: the program is opened from there, and so is anything it serves.
+    //
+    // The write allowance follows the policy the document actually declared, because the two
+    // policies mean two different things: `deny` gives none, and `sandbox` gives exactly the
+    // application directory. They are not interchangeable - passing an empty list for `sandbox` would
+    // enforce `deny` on a plan that asked to write inside the world, and then report it `enforced`,
+    // which is a stricter world than the operator asked for described as the one they asked for.
+    // (An empty allowance is what `deny` means to a confined child: it cannot open a file for
+    // writing at all.)
+    //
+    // The order matters too - the confinement runs *after* the dependency install, in `start()`,
+    // because `npm install` is not a Node interpreter and `confineChild` refuses it by name rather
+    // than confining something it does not reach.
+    const confinement = confineChild({
       command,
       args,
+      readRoots: [this.#plan.appPath],
+      writeRoots: this.#plan.boundary.filesystemWrite === "sandbox" ? [this.#plan.appPath] : [],
+    });
+    this.#confinement = confinement;
+    this.#logger.info("environment.start", {
+      command,
+      args,
+      cwd: this.#plan.appPath,
+      url: this.#url(),
+      // What was done to the child, on the same line as the child being started, because two events
+      // could otherwise disagree about whether this world confined the service it started.
+      confined: confinement.applied,
+      confinement: confinement.reason,
+    });
+    const handle = this.#processes.run({
+      command: confinement.command,
+      args: confinement.args,
       cwd: this.#plan.appPath,
       env: this.#plan.env,
       // Output is read back through `handle.output()`, which is the single source for the text; these
@@ -641,7 +689,20 @@ export class LocalApiEnvironment implements EnvironmentAdapter {
     });
     this.#child = handle;
     this.#exit = null;
+    // Guarded, because a previous child's exit can be delivered *after* this one is published, and
+    // unguarded `#exit` would hold a dead child's result while `#child` held the live one. `probe()`
+    // reads both, so it would report a running service as stopped and the manager's poll would never
+    // see it ready.
+    //
+    // The window this closes was real and was measured, not imagined: `core/process.ts`'s `stop()`
+    // awaited `exited` on POSIX but returned as soon as `taskkill` closed on Windows, so the old
+    // handle could settle during the restart that follows. **That asymmetry is fixed** - both
+    // branches now wait for the child to be gone - and `tests/process.test.ts` holds that reading
+    // directly. The guard stays anyway: it costs one comparison, it makes the invariant local to the
+    // two fields it protects instead of resting on a distant file, and this world's reset path stops
+    // and re-spawns on every iteration.
     void handle.exited.then((result) => {
+      if (this.#child !== handle) return;
       this.#exit = result;
     });
     return handle;

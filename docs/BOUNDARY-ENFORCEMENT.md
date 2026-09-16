@@ -66,10 +66,21 @@ cannot be read apart. `cli/veridian.ts` states it out loud at run start as well.
 `deny`, same-origin is permitted and nothing else is attempted, so no crossing occurs.
 
 **Q4. Is `filesystemWrite: sandbox` enforceable in this adapter?**
-*Resolved: no, and it must say so rather than imply otherwise.* The application runs as an ordinary
+*Answered: no, and it must say so rather than imply otherwise.* The application runs as an ordinary
 child process with the operator's privileges; only real process isolation could hold that boundary,
 and `AGENTS.md` scopes the MVP local and trusted. `local-web` therefore reports
 `filesystemWrite: unsupported` and the record carries it.
+
+> **Superseded — the answer rested on a mechanism claim that measurement falsified.** "Only real
+> process isolation could hold that boundary" is wrong. Node 22's permission model holds it
+> in-process: `--permission --allow-fs-write=<dir>` confines a child's writes with no VM, no
+> container and no image anywhere in the loop, and it is *measured* rather than assumed —
+> `confinementCapability()` in `core/environment/confinement.ts` probes the permitted half first,
+> because a probe whose permitted half fails measures nothing about the refused half. `local-web`,
+> `local-api` and `local-process` now run their children under it and report `filesystemWrite:
+> enforced`. The answer above is kept because it is what the self-prompting produced and because the
+> error is the instructive part: it was a claim about a *runtime*, made without reading the runtime,
+> and it is the fourth time this repository has paid for that shape. See §10.
 
 **Q5. Should the boundary be raised through the clarification ladder as a gap?**
 *Deferred, with reason.* It would demonstrate the protocol at one more lifecycle stage, but a
@@ -112,10 +123,23 @@ contradicts it.**
 keeps `adapters/*` and `validators/*` from depending on each other.
 
 ```
-BoundaryEnforcement  "enforced" | "unsupported" | "not-requested"
+BoundaryEnforcement  "enforced" | "unsupported" | "unenforceable" | "not-requested"
 BoundaryCrossing     { boundary, subject, criterionId, at }
 BoundaryReport       { network, filesystemWrite, crossings }
 ```
+
+**`unenforceable` was added later and is not a synonym for `unsupported`.** `unsupported` means this
+world has no mechanism for this boundary and never claimed one; `unenforceable` means a mechanism
+*should* exist for it and demonstrably does not, so the absence is a finding about the platform rather
+than a property of the adapter. Exactly one world answers that way — `local-process`, whose network
+half reads `unenforceable` because **`node --allow-net` does not exist**: measured with a positive
+control, `--permission` on this runtime is accepted (exit 0) while `--allow-net=127.0.0.1` is rejected
+as a `bad option` (exit 9). `local-web` and `local-api` answer `enforced` for the same boundary,
+because each has a guarded front door every request must pass (Playwright's route interceptor, the
+contract's own request guard) and can therefore really refuse one. **The three worlds that confine a
+child are exactly the three that answer that question with a measurement**, and
+`tests/boundary-roster.test.ts` derives that split from the adapters themselves rather than from this
+paragraph — so a twelfth world cannot join either side in silence.
 
 `EnvironmentAdapter` and `WorldPort` each gain one read-only method, `boundaries(): BoundaryReport`.
 It is **required, not optional**: an optional method is one a real adapter may silently omit, which
@@ -146,7 +170,7 @@ the test that holds it rather than the file that was edited, because an edit is 
 | 1 | `networkAllowList` in the schema, the loader, the derive rules and the required-limit detector | a goal omitting it still resolves with `[]`, and the ladder records the default — `tests/definition-resolution.test.ts`; a non-origin in the list is refused at its own index |
 | 2 | Boundary vocabulary + `EnvironmentPlan.boundary` | `tests/definition-resolution.test.ts`: the plan carries the goal's policy, and its allow list only under `allow-list` |
 | 3 | `PlaywrightSession.newPage` installs a route interceptor when the policy is not `allow` | `tests/playwright-guard.test.ts`: same-origin proceeds, a foreign origin is refused and named, an unparseable URL fails closed. The decision is proven offline; the wiring is proven by `npm run e2e` |
-| 4 | `LocalWebEnvironment#capture` accrues crossings; `boundaries()` reports enforcement per policy | `tests/local-web-environment.test.ts`: a refused request becomes a crossing, `filesystemWrite` reports `unsupported`, and an uninstalled guard reports `unsupported` rather than `enforced` |
+| 4 | `LocalWebEnvironment#capture` accrues crossings; `boundaries()` reports enforcement per policy | `tests/local-web-environment.test.ts`: a refused request becomes a crossing, `filesystemWrite` reports `enforced` because the child is confined, and an uninstalled guard reports `unsupported` rather than `enforced` |
 | 5 | `WorldPort.boundaries()`, live `safetyViolation` in the loop | `tests/execution-loop.test.ts`: a world reporting a crossing yields `FAIL` + `SECURITY_VIOLATION` even though every criterion passed |
 | 6 | `RunOutcome.safetyViolation`, `EnvironmentRecord.boundary`, both serializers | `tests/evidence-bundle.test.ts`: a violation reaches `result.json`, and the environment record pairs policy with enforcement |
 | 7 | CLI disclosure when a declared boundary is unsupported | `npm run demo:no-browser`: the line appears, and the exit code stays 2 |
@@ -212,4 +236,48 @@ browser* — the one case where nothing could have refused a request — and onl
 Warning about `filesystemWrite` on every run would be true and useless, and a signal that fires on
 the default goal is a signal operators learn to skip. The full picture is in `environment.json`,
 where the policy and its enforcement are written as one object.
+
+## 10. What §8 anticipated, and what arrived
+
+§8's first bullet was *"a second adapter that **can** enforce `filesystemWrite` — the record would
+then have to say `enforced` for that world, which is a different reading of the same document."*
+That condition has been met, twice over, and a design document whose stated overturn condition
+arrives is obliged to say so rather than to be quietly outgrown.
+
+**`local-process` met the second bullet, and inverted it.** There is no mechanism to hold a *network*
+boundary for a host child process on this runtime, so the honest answer is not "unsupported by this
+adapter" but "not available on this platform" — which is what `unenforceable` names. It is the
+stronger of the two disclosures: `unsupported` reports an adapter's reach, `unenforceable` reports a
+limit of the world every adapter runs in.
+
+**`local-web`, `local-api` and `local-process` all met the first bullet for the filesystem half**,
+through Node's permission model rather than through a VM. The consequence for this document is the
+one §8 predicted: the same policy now reads differently in different worlds, and that divergence is
+correct rather than inconsistent. A world whose every request passes a guarded front door can really
+refuse one and reports `enforced`; a world with no such door has only the child's own socket to
+reason about and reports `unenforceable`.
+
+**And the audit that produced those three answers found a live defect beneath them.** The two worlds
+that confine their child passed `writeRoots: []` when the policy was `sandbox` — an allowance list
+that permitted nothing. The mechanism worked, the declaration was right, and the *boundary the
+operator asked for was never held*, while `environment.json` said `enforced`. Measured across every
+bundle on disk, the default policy is `sandbox`, so the defect was live on **every recorded run**.
+It is fixed in both adapters, held by `tests/local-web-environment.test.ts` from both directions, and
+falsified by two probes that each force the arm back.
+
+**The last thing found was the root cause of a failure three worlds had each been mitigating
+separately.** `core/process.ts`'s `ProcessHandle.stop()` awaited `exited` on POSIX but returned as
+soon as `taskkill` closed on Windows. So `stop()` could resolve while the old child was still
+closing, and a caller that stopped and immediately re-spawned — which is what every reset does —
+could publish the *dead* child's result into the new child's slot. `probe()` reads the child and its
+exit together, so it reported a world that was up as stopped, and the run aborted with *"never became
+ready"*: an `ENVIRONMENT_FAILURE` naming a cause the environment had not observed. `local-web`,
+`local-api` and `local-process` each carried a `#child !== handle` guard against it — three
+mitigations of one defect, written three times because the defect was one layer below all of them.
+Both branches now share the escalation bound and both await the child's exit, and
+`tests/process.test.ts` holds that reading against a real child process. The three guards stay: they
+make the invariant local to the fields they protect, and a fourth world that stops and re-spawns
+should not have to rediscover why they are there. **The generalisable rule is the one this document
+demonstrates twice — *fix the seam the defect belongs to, not each of the call sites that trip over
+it*; three mitigations at three call sites is the signature of a bug one layer down.**
 

@@ -65,11 +65,31 @@ export interface Observation {
 /**
  * What became of one declared boundary.
  *
- * The three values are kept apart because two of them would otherwise be reported as the same
+ * The four values are kept apart because any two of them would otherwise be reported as the same
  * string. `unsupported` and `not-requested` both mean "nothing was refused", but only one of them
  * means the boundary was ever asked for - and a reader cannot tell them apart from a bare `ok`.
+ * `unenforceable` is the fourth and the newest: `unsupported` says *this world does not hold this
+ * boundary*, which a reader cannot distinguish from *nobody has written the code yet*. A boundary
+ * that was measured and found to have no mechanism on this runtime is a different fact from one
+ * whose mechanism exists and was not applied, and a report that merged them would let a future
+ * reader believe either. It is how `network` is reported by a world whose subject is a program rather
+ * than a front door - `local-process` - because no mechanism exists to hold it there: `node
+ * --allow-net` does not exist, measured rather than assumed (`bad option: --allow-net=127.0.0.1`,
+ * exit 9), while `--permission` on the same runtime is accepted (exit 0). It is deliberately not how
+ * `local-web` and `local-api` report theirs, and those two answers are not a disagreement. A world
+ * whose every request passes a guarded front door - Playwright's route guard, the contract's own
+ * request guard - really can refuse one, so `enforced` is what it measured; a world with no such door
+ * has only the child's own socket to reason about, and that is the case this word names. **The three
+ * worlds that confine a child are exactly the three that answer this question with a measurement**,
+ * and it was measured rather than reasoned: `tests/boundary-roster.test.ts` derives the split from the
+ * adapters themselves, so a twelfth world cannot join either side in silence.
  */
-export const BOUNDARY_ENFORCEMENTS = ["enforced", "unsupported", "not-requested"] as const;
+export const BOUNDARY_ENFORCEMENTS = [
+  "enforced",
+  "unsupported",
+  "not-requested",
+  "unenforceable",
+] as const;
 export type BoundaryEnforcement = (typeof BOUNDARY_ENFORCEMENTS)[number];
 
 /** Which boundary a crossing belongs to. The adapter emits only what its world can hold. */

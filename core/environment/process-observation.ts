@@ -294,9 +294,20 @@ export function commandAbsentReason(data: ProcessObservationData, selector: stri
  * `path.resolve` would happily turn `/etc/passwd` into a path on *this* machine and `../..` into
  * somewhere outside the sandbox, and a world that opened either while calling it the sandbox's would
  * read the developer's own filesystem under a name that says it did not. So a spelling that leaves
- * the root is refused, by this function, and the adapter records the refusal as a boundary crossing
- * rather than reporting a missing file - a resource that is absent and a place that is out of bounds
- * are two different observations, and only one of them is the application's problem.
+ * the root is refused, by this function.
+ *
+ * ## What the caller does with the refusal, and what it must not do
+ *
+ * It does **not** become a boundary crossing. A crossing is the *application* reaching outside the
+ * world, and a target is the *criterion's* spelling of a place - the same criterion written with
+ * `/etc/passwd` instead of `etc/passwd` would then fail a run over a contract typo, and the third
+ * clause of the `PASS` rule ("there was no safety violation") would be answering a question about
+ * the operator's keyboard. `validators/process/process-validators.ts`'s `fileNamed` holds the
+ * distinction where it belongs: a refused spelling is `unusable` - the contract cannot be read as a
+ * question - while a path that is inside the root and simply has no entry in the reading is
+ * `unanswered`, which is the application failing to write something. Absent and out of bounds are
+ * two different observations, exactly as this comment used to say, and they are two different
+ * *statuses* rather than one crossing.
  *
  * A leading separator, a drive letter and a `..` that pops past the root are each refused. A `.` and
  * an internal `..` are resolved, because they name a place that *is* inside.

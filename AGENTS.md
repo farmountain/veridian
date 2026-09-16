@@ -70,8 +70,8 @@ instructions file for this workspace — do not add a second one
 > the sixth world's does, and the pair means the same inverted thing there: `data.call` reads the
 > requests the **application** put to the broker, `data.probe` the ones the **criterion** itself
 > issued, so a criterion's own request cannot be mistaken for evidence about the application.
-> `npx tsc --noEmit` is silent and `node --test` reports 2202 passing tests -
-> Veridian's own 2130 plus the 72 the VS Code Cockpit contributes, which the root runner discovers
+> `npx tsc --noEmit` is silent and `node --test` reports 2249 passing tests -
+> Veridian's own 2177 plus the 72 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Five distribution routes ship - a clone, an npm package, the Cockpit (as
 > a development install and as a `.vsix`), the extension marketplaces that `.vsix` is published to,
 > and a container image - and there is still **no
@@ -785,8 +785,8 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 2202 tests, ~5s. No directory argument.
-                           # 2202 = the root's own 2130 + the Cockpit's 72, because the runner walks
+node --test                # the whole suite. 2249 tests, ~5s. No directory argument.
+                           # 2249 = the root's own 2177 + the Cockpit's 72, because the runner walks
                            # the tree and reaches extension/vscode/src/*.test.ts. Neither figure is
                            # the whole story on its own: the root tsconfig EXCLUDES extension/**, so
                            # `npx tsc --noEmit` here does not typecheck the Cockpit and the root gate
@@ -1852,7 +1852,7 @@ port had none, which is why the defect reached a demo run.
   register.** `README.md` said a step is "one of seven kinds" while `core/acceptance/steps.ts` holds
   **eleven** in `STEP_KINDS` - a figure that had drifted through four new worlds without anything
   reading it. The same pass found `AGENTS.md` quoting `1273` tests and `1213` of the tree's own, where
-  the measured run was `1456` and `1396` - and the count stands at `2202` and `2130` as this is
+  the measured run was `1456` and `1396` - and the count stands at `2249` and `2177` as this is
   written, which is the rule demonstrating itself. *Both are the same defect as a roster printed in a
   document: a number is a claim about the code, and the cheapest way to hold it is to read the code -
   the difference is that a number cannot be pinned by a test the way a name can, so it has to be
@@ -2281,7 +2281,8 @@ port had none, which is why the defect reached a demo run.
 | [`README.md`](./README.md) | The front door: what Veridian is, the two governing rules, the quickstart, the canonical demo's real output, the CLI and its exit codes, M1..M5, the contract formats, the layout, and what is deliberately out of scope. **Keep it true; correct it in the same pass as the change that falsifies it.** |
 | [`docs/PLAN.md`](./docs/PLAN.md) | The authoritative product and architecture specification: product definition, scope boundary, execution lifecycle, acceptance/validation model, MVP scope, repo structure, 4-week build plan, Definition of Done, roadmap. **Read before any non-trivial design decision.** |
 | [`docs/IMPLEMENTATION-PLAN.md`](./docs/IMPLEMENTATION-PLAN.md) | What was actually built against that plan: module inventory, the decisions taken and the ones reversed, the open items. **Read before assuming something is missing.** |
-| [`docs/BOUNDARY-ENFORCEMENT.md`](./docs/BOUNDARY-ENFORCEMENT.md) | Why the goal's safety limits are applied rather than only recorded: the audit that found the third clause of the `PASS` rule unfalsifiable, the self-prompted questions that resolved it, the four-move design, and what the implementation changed about the plan. |
+| [`docs/BOUNDARY-ENFORCEMENT.md`](./docs/BOUNDARY-ENFORCEMENT.md) | Why the goal's safety limits are applied rather than only recorded: the audit that found the third clause of the `PASS` rule unfalsifiable, the self-prompted questions that resolved it, the four-move design, what the implementation changed about the plan, and §10 - what §8 anticipated and what arrived. Its own superseded Q4 answer is kept and marked rather than rewritten, because the error is the instructive part. |
+| [`docs/BOUNDARY-SPINE-DESIGN.md`](./docs/BOUNDARY-SPINE-DESIGN.md) | The design the boundary work was executed against: the eight gaps as they were found, the self-prompted questions each one resolved into, the `confinement.ts` seam and its two-stage probe, and the acceptance criteria the work was judged by. **Read before changing what a world reports about its own boundaries**, because the vocabulary it defines is now derived by `tests/boundary-roster.test.ts` rather than recalled. |
 | [`docs/DISTRIBUTION-AND-ENVIRONMENTS.md`](./docs/DISTRIBUTION-AND-ENVIRONMENTS.md) | What comes after the MVP: the npm, Docker and VS Code routes, the next adapters in the order they can be **proven**, the self-prompting resolution table that ordered them, and §5's reframing of what "blocked" actually means - every remaining row names the `sim-*` world that answers it, because a world may be simulated and a real-infrastructure absence is not a blocker. **Read before promising an adapter.** |
 | [`extension/vscode/README.md`](./extension/vscode/README.md) | The Cockpit's front door. `src/host/activate.ts` points here, so it has to exist and say what the extension is not (VS Code is not Veridian), how to install it for development, and - explicitly - what only a real VS Code test host could exercise and what no check in this tree can reach at all. |
 

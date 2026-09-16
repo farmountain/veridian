@@ -26,14 +26,34 @@
  *
  * ## The boundary it can actually hold
  *
- * **Neither boundary is enforced, and this file says so rather than describing a guard it does not
- * have.** The child runs as an ordinary process with the operator's own privileges: it can open any
- * socket and write any file this user can, and nothing here confines either. `unsupported` is the
- * honest answer for both, and `crossings` is empty *by construction* rather than by omission -
- * nothing in this world observes a crossing, because nothing here could detect one. Reading a path
- * outside the sandbox is refused by `processPath`, and that refusal is a **criterion defect**, not a
- * boundary crossing: only the application's escapes are crossings, and a target spelling is not the
- * application.
+ * **The filesystem boundary is enforced, and the report says so only when it really was.** The child
+ * is started through `confineChild`, which turns the argument vector into
+ * `node --permission --allow-fs-read=<app> --allow-fs-read=<sandbox> --allow-fs-write=<sandbox> ...`
+ * - so a write outside the sandbox is refused by the interpreter, as `ERR_ACCESS_DENIED` on the
+ * application's own stream, with the process alive and its exit code still its own. Measured on the
+ * real demo application: the permitted build produces **byte-identical output and exit 0**, and a
+ * deliberate escape is refused with the file never created. That second half is the whole point -
+ * an enforcement that also broke the permitted work would be a broken world rather than a boundary.
+ *
+ * **The network boundary is `unenforceable`, and that is a measurement rather than a shrug.** There
+ * is no `--allow-net`: `node --allow-net=127.0.0.1` answers `bad option`, exit 9, while `--permission`
+ * on the very same runtime is accepted, exit 0. So no flag could hold this boundary, and `unsupported`
+ * would leave a reader unable to tell "not written yet" from "cannot be written". The child can open
+ * any socket the operator can.
+ *
+ * **The confinement is conditional, and every condition is reported rather than assumed.** It is
+ * applied only when the runtime accepts the flag, only when the command really is a Node interpreter
+ * (the permission model is enforced *by the interpreter*, not by the operating system, so `cmd` is an
+ * ordinary process no matter what is passed to it), and only once `#spawn` has actually done it -
+ * `boundaries()` reads back what `#spawn` returned, so a world that never started a child reports
+ * `unsupported` rather than claiming a boundary over a process that does not exist.
+ *
+ * `crossings` is empty *by construction* rather than by omission. A confinement refusal reaches this
+ * world as text on the application's stderr, after the runtime has already refused it; reading that
+ * as the application escaping would be a claim nothing here observed, since the attempt itself is
+ * never visible. Reading a *target* path outside the sandbox is refused by `processPath` and reported
+ * by the validator that asked - a **criterion defect**, not a boundary crossing, because only the
+ * application's escapes are crossings and a target spelling is not the application.
  *
  * ## One operation per step, and the mutating one is `deploy`
  *
@@ -48,6 +68,7 @@ import { relative } from "node:path";
 import { decodeStep } from "../../core/acceptance/plan.ts";
 import type { StepKind } from "../../core/acceptance/steps.ts";
 import type { Clock, Logger } from "../../core/clarification/types.ts";
+import { confineChild, type ConfinementResult } from "../../core/environment/confinement.ts";
 import type {
   ProcessCommandRecord,
   ProcessCommandState,
@@ -188,6 +209,15 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
   /** The program the world started, or `null` when it starts none. */
   #child: ProcessHandle | null = null;
   #exit: ProcessResult | null = null;
+  /**
+   * What this world did to the child it last started, and why.
+   *
+   * Recorded rather than re-derived, because the report has to describe the child **this world**
+   * started. Asking the capability again at `boundaries()` time would answer a question about the
+   * runtime and call it a question about the run - and on a runtime that gained the flag between the
+   * two reads it would report `enforced` for a child that was started unconfined.
+   */
+  #confinement: ConfinementResult | null = null;
 
   constructor(plan: EnvironmentPlan, options: LocalProcessEnvironmentOptions) {
     this.#plan = plan;
@@ -628,16 +658,36 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
     return { text: text.slice(-this.#maxStreamChars), bytes, truncated: true };
   }
 
-  /** What this world did about the plan's boundaries - which is nothing, stated rather than implied. */
+  /**
+   * What this world did about the plan's boundaries - read back off the child it actually started.
+   *
+   * Both halves are derived from `#confinement`, which is what `#spawn` returned, rather than from a
+   * literal written here. The distinction matters in both directions. A literal `"unsupported"` was
+   * correct until the permission model could be applied and is now an under-claim: the runtime really
+   * refuses a write outside the allowance, and a report saying it does not is as wrong as one saying
+   * it does when it does not. A literal `"enforced"` would be the opposite over-claim, and it is the
+   * one this design exists to avoid - this world confines the child only when the interpreter enforces
+   * the flag, only when the command is a Node interpreter, and only after `#spawn` has actually done
+   * it. Before the first spawn there is no child and therefore nothing held, which is `"unsupported"`
+   * and not a claim about a run.
+   *
+   * `network` is `"unenforceable"` rather than `"unsupported"`, and the difference is a measurement
+   * rather than a preference: `node --allow-net` does not exist (`bad option`, exit 9), while
+   * `--permission` on the same runtime is accepted (exit 0). So there is no flag that could hold this
+   * boundary, and saying `unsupported` would leave a reader unable to tell "nobody wrote the code yet"
+   * from "no code could". The child can still open any socket the operator can.
+   *
+   * `crossings` stays empty by construction. Nothing here observes one: a confinement refusal is
+   * reported to the *application* as `ERR_ACCESS_DENIED` on its own stream, and reading it as the
+   * application escaping would be a claim this world cannot support - it never sees the attempt, only
+   * the refusal the runtime handed back. A target spelling that leaves the root is refused by
+   * `processPath` and reported by the validator that asked, which is a criterion defect and not the
+   * application's escape.
+   */
   boundaries(): BoundaryReport {
     return {
-      network: this.#plan.boundary.network === "allow" ? "not-requested" : "unsupported",
-      filesystemWrite: "unsupported",
-      // Empty by construction rather than by omission. Nothing in this world observes a crossing: the
-      // child runs with the operator's own privileges, so a socket it opens and a file it writes are
-      // both invisible here. A `reset` deliberately does not clear this, for the reason the sibling
-      // adapters record - a reset restores the world, it does not restore the record - and that rule
-      // costs nothing here precisely because there is never anything in it.
+      network: this.#plan.boundary.network === "allow" ? "not-requested" : "unenforceable",
+      filesystemWrite: this.#confinement?.applied === true ? "enforced" : "unsupported",
       crossings: [],
     };
   }
@@ -866,6 +916,18 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
     block: ProcessPlan,
   ): ProcessHandle {
     if (application === null) throw new EnvironmentError(MISSING_APPLICATION);
+    // The child is confined here, before it exists, and the vector handed to the runner is the one
+    // this call returns rather than the one the document declared. `readRoots` names both directories
+    // because they are two: the program file is opened from the application directory, and everything
+    // the criteria read is opened from the sandbox. A read allowance naming only the sandbox would
+    // refuse to load the program it was asked to confine.
+    const confinement = confineChild({
+      command: application.command,
+      args: application.args,
+      readRoots: [this.#plan.appPath, this.#hostRoot(block)],
+      writeRoots: [this.#hostRoot(block)],
+    });
+    this.#confinement = confinement;
     this.#logger.info("environment.start", {
       command: application.command,
       args: application.args,
@@ -875,10 +937,14 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
       // instead of it, for the reason `process.rebuild` records two lines up: they are two readings
       // of one fact and only one of them is a path this machine can open.
       hostRoot: this.#hostRoot(block),
+      // What was done to the child, on the same line as the child being started, because two events
+      // could otherwise disagree about whether this world confined the program it started.
+      confined: confinement.applied,
+      confinement: confinement.reason,
     });
     const handle = this.#processes.run({
-      command: application.command,
-      args: application.args,
+      command: confinement.command,
+      args: confinement.args,
       cwd: this.#plan.appPath,
       env: this.#env(block),
       // Output is read back through `handle.output()`, which is the single source for the text; these
@@ -888,7 +954,21 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
     });
     this.#child = handle;
     this.#exit = null;
+    // Guarded, because a previous child's exit can be delivered *after* this one is published, and
+    // unguarded `#exit` would hold a dead child's result while `#child` held the live one. `probe()`
+    // reads both, so it would report a running world as stopped and the manager's poll would never
+    // see it ready: the run aborting with `never became ready` is a cause this world had not
+    // observed. That failure was seen here four times in one afternoon before the cause was found.
+    //
+    // The window this closes was real and was measured, not imagined: `core/process.ts`'s `stop()`
+    // awaited `exited` on POSIX but returned as soon as `taskkill` closed on Windows, so the old
+    // handle could settle during the rebuild that follows. **That asymmetry is fixed** - both
+    // branches now wait for the child to be gone - and `tests/process.test.ts` holds that reading
+    // directly. The guard stays anyway: it costs one comparison, it makes the invariant local to the
+    // two fields it protects instead of resting on a distant file, and this world is the one whose
+    // child is a *program* rather than a server, so it exits on its own as often as it is stopped.
     void handle.exited.then((result) => {
+      if (this.#child !== handle) return;
       this.#exit = result;
     });
     return handle;
