@@ -207,10 +207,21 @@ export const nodeProcessRunner: ProcessRunner = {
             killer.on("close", () => resolve());
             killer.on("error", () => resolve());
           });
-          return;
+          // **And then wait for the child to be gone, which is the half this branch used to skip.**
+          // `taskkill`'s own exit says the tree was *told* to die; `exited` is the reading that says
+          // it has, and it is what the POSIX branch already awaits. Returning here instead resolved
+          // `stop()` while the old child was still closing, so a caller that stopped and immediately
+          // re-spawned could publish the *dead* child's result into the new child's slot - which
+          // `local-web`, `local-api` and `local-process` each observed as an intermittent
+          // "the application never became ready" for a world that was, in fact, up. Those three
+          // adapters carry their own guard against it, because a doubled guard at a seam like this
+          // costs one comparison and one defect class; this is the fix, and theirs is the belt.
+        } else {
+          spawned.kill("SIGTERM");
         }
 
-        spawned.kill("SIGTERM");
+        // Shared by both platforms, so neither can drift: the escalation bound is what keeps a child
+        // that ignores every signal from holding `stop()` open forever.
         const escalate = setTimeout(() => {
           if (!settled) spawned.kill("SIGKILL");
         }, graceMs);
