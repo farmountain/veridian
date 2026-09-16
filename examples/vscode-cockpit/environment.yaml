@@ -1,4 +1,4 @@
-# The tenth demo's environment, and the third whose subject is Veridian itself.
+# The twelfth demo's environment, and the only demo whose application is Veridian's own client.
 #
 # This world is a plain sim-vscode world. What makes it different from `examples/sim-vscode` is only
 # *what is installed into it*: that demo's application is a small extension written for the demo,

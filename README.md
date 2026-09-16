@@ -4,7 +4,7 @@
 
 **The sandbox testing and validation layer for AI coding agents.**
 
-**v0.2.2** - eleven reproducible sandbox worlds, across five distribution routes.
+**v0.3.0** - eleven reproducible sandbox worlds, across five distribution routes.
 
 Coding agents are good at producing code and have an *environmental* problem: they cannot tell
 whether their code actually works. An agent saying "I believe this is fixed" is not a result.
@@ -52,9 +52,12 @@ and a `Dockerfile` that has never been built is a claim.
 git clone <this-repository-url> veridian
 cd veridian
 npm ci                    # runtime dependency: yaml. dev: typescript, @types/node.
-npm run gate              # tsc --noEmit, then the whole test suite. 2202 tests, about five seconds
-                          # (this tree's own 2130 plus the Cockpit's 72, which the runner discovers
+npm run gate              # tsc --noEmit, then the whole test suite. 2259 tests, about five seconds
+                          # (this tree's own 2187 plus the Cockpit's 72, which the runner discovers
                           # because it walks the tree; the extension has its own gate as well).
+npm run acceptance        # Veridian judged by Veridian: its own contract - goal, criteria, world -
+                          # run TWICE, so the world the second run inherits is proved to be one it
+                          # rebuilt rather than one the first left behind
 
 npm run e2e:install       # one-time, ~150 MB: fetch the Playwright browser
 npm run demo              # the canonical demo: 3 defects, FAIL -> repair -> PASS
@@ -124,6 +127,16 @@ are two different measurements, and only the second one is the product: the Cock
 suite was green both before and after the two defects this world found. It is the one demo that needs
 `out/` to exist, so **run `npm run build` inside `extension/vscode` first** - the demo refuses by name
 and names that command rather than skipping, because a skipped check reports a green suite.
+
+That list is the demos, and `npm run acceptance` is deliberately not one of them. A demo shows a
+defect found and repaired; Veridian's own contract - `acceptance/veridian-mvp.yaml` with its seven
+criteria and its world - is observed once with `--no-repair`, because the application under it is the
+CLI itself and there is nothing to repair. It exists because a tool whose whole claim is *"I decide
+whether software works"* should be answerable to its own verdict rather than only to its unit suite.
+It runs the contract **twice inside one invocation** on purpose: run 1 leaves its own `config.yaml`
+behind and run 2 inherits it, so a pass that came from a world the run inherited rather than rebuilt
+is a failure rather than a pass. Measured: run 1 and run 2 both
+`PASS (COMPLETED, 1 iteration(s))`, 7/7 criteria, exit 0.
 
 Requires **Node 22.18.0 or newer**.
 
@@ -1087,7 +1100,7 @@ the demo says so and names `npm run build` rather than quietly judging a stale c
 *a skipped check does not fail, it silently reduces coverage while reporting a green suite.*
 
 **Its expectations move with the version, so a version bump moves them.** `vscode.identity` pins
-`veridian-cockpit 0.2.2`, which is the version in the manifest the demo stages. Bumping the extension
+`veridian-cockpit 0.3.0`, which is the version in the manifest the demo stages. Bumping the extension
 means editing that expectation in the same pass; if you do not, the run will judge the artifact it
 claims to judge only by accident, and `tests/vscode-cockpit-demo.test.ts` fails naming both versions
 rather than letting it through.
@@ -1204,7 +1217,8 @@ validators/data/        data.node, data.topic, data.layout, data.partition, data
                         data.value, data.group, data.member, data.commit, data.call, data.probe,
                         data.meter
 schemas/                goal / acceptance / environment / run / result / ambiguity
-scripts/                bootstrap and build steps that must run before anything is checked
+scripts/                bootstrap and build steps that must run before anything is checked, beside
+                        `acceptance.mjs` - the runner for the contract below
 examples/shopping-cart/ the canonical demo: correct app, defect overlay, goal, contract, world
 examples/inventory-db/  the second demo: the same loop against a world with no process, no socket,
                         no page and no console
@@ -1238,7 +1252,12 @@ examples/vscode-cockpit/ the twelfth demo, and the only one whose application is
 extension/vscode/       the VS Code Cockpit: a thin client, no validation logic. The one directory
                         with a build step, because the extension host is not Node's loader
                         (`npm run package` produces the `.vsix` you can hand to somebody else)
-tests/                  2202 tests in a root `node --test` run: this tree's own 2130 plus the
+acceptance/             Veridian judged by Veridian: `veridian-mvp.yaml` (the goal),
+                        `acceptance.yaml` (7 criteria, judged by the `local-process` world) and
+                        `environment.yaml`. `npm run acceptance` runs it TWICE - a first run that
+                        passes and a second that fails is the signature of a world a run inherited
+                        rather than built
+tests/                  2259 tests in a root `node --test` run: this tree's own 2187 plus the
                         Cockpit's 72
 
 dist/                   GENERATED by `npm run build`. Never edited, never committed.

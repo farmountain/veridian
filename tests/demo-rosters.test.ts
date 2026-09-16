@@ -59,17 +59,50 @@ function commandsIn(body: string): readonly string[] {
   return [...names];
 }
 
-function declaredDemoScripts(manifest: string): readonly string[] {
+function declaredScripts(manifest: string): Record<string, string> {
   const parsed: unknown = JSON.parse(manifest);
   assert.ok(
     typeof parsed === "object" && parsed !== null && "scripts" in parsed,
     "package.json no longer carries a `scripts` object for this roster to be held against",
   );
 
-  const scripts = (parsed as { scripts: Record<string, string> }).scripts;
-  return Object.keys(scripts)
+  return (parsed as { scripts: Record<string, string> }).scripts;
+}
+
+function declaredDemoScripts(manifest: string): readonly string[] {
+  return Object.keys(declaredScripts(manifest))
     .filter((name) => name === "demo" || name.startsWith("demo:"))
     .sort();
+}
+
+/**
+ * Whether a workflow really *runs* a command rather than mentioning one.
+ *
+ * Two things make this a line rather than a substring. A `#` comment naming a script is a note about
+ * CI, and a roster that accepted one would be satisfied by the sentence explaining why the command
+ * exists - so the line has to *be* the command, with nothing before `npm` but indentation or the
+ * `run:` key itself. And the file uses both spellings of that key, which the first version of this
+ * function did not: `run: |` followed by bare command lines (the demo loop) and `run: npm run x` as
+ * an inline scalar (the self-acceptance step). Only the block form was matched, so the check failed
+ * against a workflow that was correctly running the command - *a guard has to read every spelling of
+ * the thing it is looking for, or it reports a correct document as wrong.*
+ */
+function runsInWorkflow(body: string, name: string): boolean {
+  return workflowRunIndex(body, name) >= 0;
+}
+
+/**
+ * Where in a workflow the line that runs `name` sits, or `-1` when no line does.
+ *
+ * The single definition of "this line is the command": `runsInWorkflow` asks whether such a line
+ * exists, and the ordering check in the fourth roster asks *where* it is. Two regexes would be two
+ * answers to one question, which is the divergence this repository has a whole entry about, so the
+ * shape lives here and both callers read it.
+ */
+function workflowRunIndex(body: string, name: string): number {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`^[ \\t]*(run:[ \\t]*)?npm run ${escaped}[ \\t]*$`, "m").exec(body);
+  return match?.index ?? -1;
 }
 
 /**
@@ -122,6 +155,16 @@ const declared = declaredDemoScripts(manifest);
 const inReadme = commandsIn(readme);
 const inAgents = commandsIn(agents);
 const inWorkflow = demosInWorkflow(workflow);
+
+/**
+ * The self-acceptance route, which is a roster of one and deliberately not a demo.
+ *
+ * Held here rather than in a file of its own because it is the same question asked about the same
+ * four places - the manifest, the two command blocks and the workflow - and a second file asking it
+ * would be the second implementation of one rule this repository keeps paying for.
+ */
+const ACCEPTANCE = "acceptance";
+const acceptanceBody = declaredScripts(manifest)[ACCEPTANCE] ?? null;
 
 /**
  * The one declared demo `README.md` is not required to put in its quickstart block.
@@ -236,6 +279,89 @@ describe("every declared demo is run by a CI job", () => {
       [],
       "the workflow runs a demo `package.json` does not declare, so the job fails on a missing " +
         "script - or, worse, on a script that was deleted and whose world is now unrun",
+    );
+  });
+});
+
+/**
+ * The fourth roster, and the first whose subject is not a demo: Veridian's own acceptance contract.
+ *
+ * `acceptance/` holds the goal, the contract and the environment, `scripts/acceptance.mjs` drives
+ * them, and the application under test is the CLI itself - so the route is a thing a reader can walk,
+ * which makes it a name that has to appear in the same four places the demo roster does.
+ *
+ * It is *not* a `demo:*` script, and naming it one would have been the cheaper edit: the existing
+ * derivation would have picked it up with no change to this file at all. A demo shows a defect being
+ * found and repaired, and this contract has no defect to repair - `maxIterations: 1` with `--no-repair`
+ * makes it a control rather than a demonstration - so borrowing the prefix would have enrolled it in
+ * three checks above that would then have been satisfied by a lie, and `it` #7 would have started
+ * requiring a *refusal* demo's worth of narrative about a script that refuses nothing. The roster it
+ * actually belongs to is this one, and the reason it needs a check at all is the defect this
+ * repository has now paid for four times: a name declared somewhere and read by nothing.
+ */
+describe("the self-acceptance route is reachable from every place that names it", () => {
+  it("is declared by the manifest, so the command a reader is promised exists", () => {
+    assert.ok(
+      acceptanceBody !== null,
+      "package.json declares no `acceptance` script, so `npm run acceptance` - the command " +
+        "README.md and AGENTS.md hand a reader - fails with `Missing script`",
+    );
+    assert.match(
+      acceptanceBody,
+      /scripts\/acceptance\.mjs/,
+      "the `acceptance` script no longer drives scripts/acceptance.mjs, so whatever it runs now is " +
+        "a command this file's other assertions are not about",
+    );
+  });
+
+  it("is named in README.md's quickstart block", () => {
+    assert.ok(
+      inReadme.includes(ACCEPTANCE),
+      "README.md's quickstart never names `npm run acceptance`, so the front door does not offer the " +
+        "one route that answers 'does Veridian work?', as opposed to 'do its tests pass?'",
+    );
+  });
+
+  it("is named in AGENTS.md's command block", () => {
+    assert.ok(
+      inAgents.includes(ACCEPTANCE),
+      "AGENTS.md's `Running things:` block never names `npm run acceptance`, so the hand-off to the " +
+        "next agent does not carry the contract that judges this repository with its own product",
+    );
+  });
+
+  it("is run by a CI job, rather than only described by one", () => {
+    assert.ok(
+      runsInWorkflow(workflow, ACCEPTANCE),
+      ".github/workflows/ci.yml never runs `npm run acceptance`, so the contract is declared, " +
+        "documented twice and executed by nothing - which is exactly the defect the demo half of " +
+        "this file was written for",
+    );
+  });
+
+  it("runs it before the demo loop, so the artifact's newest reading is the Cockpit's", () => {
+    const selfAt = workflowRunIndex(workflow, ACCEPTANCE);
+    const loopAt = /^[ \t]*for world in [^\n]*; do[ \t]*$/m.exec(workflow)?.index ?? -1;
+
+    assert.ok(
+      selfAt >= 0,
+      "the self-acceptance step is not in .github/workflows/ci.yml, so its position cannot be " +
+        "checked at all",
+    );
+    assert.ok(
+      loopAt >= 0,
+      ".github/workflows/ci.yml no longer carries a `for world in ...; do` loop, so there is " +
+        "nothing for the self-acceptance step to be ordered against",
+    );
+    assert.ok(
+      selfAt < loopAt,
+      "the self-acceptance step runs *after* the demo loop. Every run in this job writes the same " +
+        "`.veridian/latest-result.json`, and the upload step at the end carries the whole of " +
+        "`.veridian/` - so the reading a reader opens first is whichever run wrote that file last, " +
+        "and the upload step's own comment says that has to be `cockpit`. Below the loop, this " +
+        "step is the last writer instead, and the artifact's comment goes on describing a bundle " +
+        "it no longer carries. A comment about CI is read by nothing; this is that comment as an " +
+        "assertion",
     );
   });
 });

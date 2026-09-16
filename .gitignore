@@ -127,6 +127,21 @@ examples/vscode-cockpit/app/extension/
 # tree this rule excludes are the same one by construction.
 examples/vscode-cockpit/app/sandbox/
 
+# The state directory the self-acceptance contract's world builds - the one generated tree in this
+# repository that is not under an example's `app/`. The reasoning is the `sim-posix` one, and it is
+# sharper here because the world's root and the CLI's `--state-dir` are the *same* directory:
+# `acceptance/environment.yaml` declares `app: ..` and `process.root: sandbox`, so the tree the world
+# creates, the tree this rule excludes and the directory `init` writes into are one path by
+# construction. That is what `#rebuild` removes between iterations, and it is the only reason a second
+# invocation of the contract starts from an empty tree instead of finding the first invocation's
+# `config.yaml` in place - where AC-002's own `init` would refuse and a criterion would report a
+# defect against a program that was correct.
+#
+# The rule is anchored to the repository root rather than spelled `sandbox/`, and the anchor is not
+# tidiness: an unanchored pattern matches a directory of that name at any depth, which would silence a
+# future world that tracks one on purpose. This contract is the only thing that writes here.
+/sandbox/
+
 # Editors / OS
 .DS_Store
 Thumbs.db

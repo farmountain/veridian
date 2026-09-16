@@ -1,0 +1,91 @@
+# The world Veridian is judged in: itself, run as a real child process.
+#
+# This is the thirteenth *contract* in the repository, and the only one whose application is the
+# command line `cli/veridian.ts` itself. It adds no adapter and asks for no new step kind:
+# `local-process` is the world whose subject is a program, and a command line is a program.
+# Everything below is expressible today, which is the point - a contract that needed a world change
+# to be written would be a contract about the world rather than about the program.
+#
+# Nothing here is a substitute and nothing is stood in. The exit codes these criteria compare were
+# produced by this machine's kernel, the streams were read off real pipes, and every file a
+# criterion reads is a file on this disk.
+
+adapter: local-process
+
+# `..` is the repository root, and that is a boundary fact rather than a shorthand.
+#
+# `local-process` confines the child it starts with `--allow-fs-read` on exactly two directories: the
+# application directory and the sandbox. The program under test is `cli/veridian.ts`, which is read
+# through `node:fs` like any other file - so an application directory that did not hold it would
+# make the world refuse to load the very program it was asked to confine. The application directory
+# is therefore the directory that holds the CLI, and it is also why the criteria below can name
+# `examples/` and `schemas/` without those reads being crossings: they are inside the allowance, and
+# the allowance is the repository rather than the whole disk.
+#
+# That allowance is only ever installed on the program this world *starts*, and this contract starts
+# none: `process.application` is deliberately absent below, because every criterion here acts in the
+# world with `run` steps and needs no daemon. So no confinement is installed at all, `boundaries()`
+# reports `filesystemWrite: unsupported`, and this contract claims nothing about enforcement
+# anywhere. A report reading `enforced` here would be describing the child the world never spawned
+# while the criteria that actually wrote files ran unconfined - which is the one thing a boundary
+# report must not do, and it is why no `application` was added to make the reading look stronger.
+#
+# What is exercised instead is a fact each criterion reads off the filesystem rather than a limit the
+# world held: the files the CLI wrote are inside the `--state-dir` it was given.
+app: ..
+
+# Null means "the program under test has no dependencies to install". Veridian's runtime dependency
+# is `yaml`, already present in the checkout; nothing is fetched, so the whole contract runs from a
+# clean clone with no network.
+dependencyInstall: null
+
+process:
+  host: veridian-cli
+
+  # Relative to `app`, so this is `<repository>/sandbox`. It is named here rather than defaulted for
+  # the reason the schema gives: every path a criterion names is resolved inside it, so a defaulted
+  # root would judge the contract against whichever directory the run happened to start in. It is
+  # also the directory the CLI is given as `--state-dir`, which is what keeps the run's own state
+  # out of the operator's `.veridian/` - a self-acceptance run must not overwrite the history it is
+  # standing next to.
+  root: sandbox
+
+# Required of every world, and stated plainly rather than dressed up, because a reader will look for
+# what it starts: **nothing runs it.** `core/environment/load.ts` refuses a document without one
+# ("an environment with no start command describes a world nobody can enter") and the ladder asks for
+# it before that, with no defensible default - a guess here would be a command the operator never
+# chose. But `local-process` reads exactly one field of the plan's `start`, `readyPattern`, and
+# `start()` returns before it reads even that when the world declares no `process.application`. This
+# document declares none, deliberately: `ProcessPlan`'s own doc comment says requiring a daemon
+# "would make the simplest shape of this world unwritable", and a contract that provisions nothing
+# and judges everything through `run` steps is that shape.
+#
+# So the command below is the one that *would* be this world's application - the program under test,
+# the CLI itself - named so the field is not a placeholder. The honest reading of this block is that
+# it is a legal document describing an unused field, not a daemon the run depends on.
+start:
+  command: node
+  args: [cli/veridian.ts, help]
+
+  # Omitted, and the omission is the statement: a readiness pattern is a promise that the world
+  # waits for a line before calling itself started. Nothing is started, so nothing is waited for.
+  # It cannot be spelled `null` - `schemas/environment.schema.json` types it as a string only - and
+  # `load.ts` reads an absent pattern as `null`, which `#awaitReady` returns on.
+
+# Reset is first-class here for the same reason it is everywhere else: each iteration must be judged
+# in a world holding nothing the previous one wrote. There is no `application`, so a `restart` reset
+# is a rebuild of the sandbox - and the contract depends on that, because AC-003 asserts that a
+# second `init` refuses *because the first one's file is still there*. The reset is also what makes
+# AC-003 self-contained: `sandbox/second` is emptied between iterations, so the criterion creates its
+# own precondition instead of inheriting one from a neighbour.
+#
+# The same rebuild is what makes a *second invocation of this contract* legal, and that is not a
+# convenience. `process.root` and the `--state-dir` the criteria pass are one directory, so without
+# the rebuild AC-002's own `init` would find the previous invocation's `config.yaml` already in place,
+# refuse, and report a defect against a program that was correct. Measured rather than argued: the
+# contract has been run twice in a row and passed both times, which a contract reading an inherited
+# tree could not do. It is the shape the tenth world's port was fixed for earlier in this repository,
+# and the reason the rule holds is the reason the two spellings are one path - a world a run inherits
+# is not a world that run built.
+reset:
+  strategy: restart

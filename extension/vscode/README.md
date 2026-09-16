@@ -1,8 +1,13 @@
 # Veridian Cockpit
 
-A thin client for Veridian inside VS Code: run a sandbox validation, see the verdict, open the
-evidence. Veridian builds eleven reproducible sandbox worlds and decides whether the software works;
-the agent stays external.
+A thin client for Veridian inside VS Code: run a sandbox validation, read the verdict, open the
+evidence it was reached from. Veridian builds eleven reproducible sandbox worlds, records which
+limits each one enforces, and decides whether the software works. The coding agent stays external
+and never decides whether it succeeded.
+
+This paragraph is the extension's marketplace description: both storefronts take the short form from
+the `description` field of `package.json` and the long form from this file, so the two are written
+one above the other rather than kept in step by hand.
 
 **VS Code is not Veridian.** This extension is a *client* of Veridian Core, exactly as the CLI is. It
 contains no validation logic, does not know what a validator is, and cannot decide whether anything
@@ -20,7 +25,7 @@ estimated:
 | Tests | `node --test` | 72 tests, 0 failing |
 | Build | `npm run build` | `out/` - 6 files |
 | Compiled artifact | `npm run smoke:out` | 15 checks, exit 0 |
-| Packaged archive | `npm run package` | `veridian-cockpit-0.2.2.vsix` - 12 files, 119.22 KB |
+| Packaged archive | `npm run package` | `veridian-cockpit-0.3.0.vsix` - 12 files, 119.32 KB |
 | Archive contents | `npm run smoke:vsix` | 34 checks, exit 0 |
 | All of the above but the archive | `npm run gate` | exit 0 |
 

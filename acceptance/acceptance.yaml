@@ -1,0 +1,404 @@
+# The contract: seven deterministic acceptance criteria over Veridian's own command line.
+#
+# `AGENTS.md` says this file "has not been written" and that the reason it once could not be is
+# spent. It is written now, and the paragraph it replaces is worth reading against what follows,
+# because the two are the same shape of claim one layer apart: the CLI's exit codes are read off a
+# real process, so a criterion about them cannot be `INCONCLUSIVE` - it either observed the code or
+# it did not run.
+#
+# Read the targets as a grammar, because two different kinds of thing are named here and each is
+# refused with its own message:
+#
+#   `process.host`                 no target at all - the host is the reading's
+#   `process.argv`, `process.state`,
+#   `process.exitcode`,            a command: `app` (the program this world started and keeps
+#   `process.run`, `process.stdout`,  running) or a position counted from 1 naming which `run` step
+#   `process.stderr`               is meant
+#   `process.file`, `process.kind`,  a path inside the world's own root - the sandbox the plan
+#   `process.contents`, `process.size`  names, so `config.yaml` means `<repository>/sandbox/config.yaml`
+#
+# Three consequences of that grammar decide the shape below.
+#
+# A command can only be judged if *this* criterion ran it. `observe()` records no commands at all, so
+# every command-targeted expectation sits beside the `run` step that produced it - and a criterion
+# that read position 1 without running anything would not fail, it would be `INCONCLUSIVE`, which is
+# the honest answer to a question nobody put to the world. That is why AC-001 and AC-004 each run
+# their own command rather than sharing one.
+#
+# A path is only read when some expectation names it - the read set is derived from the expectations
+# and not from the steps - so a criterion judging a file has to mention the file.
+#
+# Byte counts are not pinned. `process.run` composes how a command ended with each stream's size, and
+# a `contains` that reached past the size would be comparing a directory name on this machine: the
+# refusal in AC-006 quotes the absolute path it could not read, and the usage text is long enough
+# that its length is a fact about the usage text rather than about the CLI. Where a length *is* the
+# question, `process.size` is the validator that asks it.
+#
+# `goal_id` is declared and is not optional in practice: it is what the cross-goal contradiction guard
+# reads, and a contract without one leaves that guard dormant. `examples/sim-os/acceptance.yaml` did
+# not carry one for a while and the guard that stops one goal's criteria being evaluated against
+# another goal's environment was silently unexercised for it - a guard whose unreached branch is
+# silent by construction.
+
+version: 1
+goal_id: veridian-mvp
+
+criteria:
+  # ---------------------------------------------------------------------------------------------
+  # AC-001 - the world names its host and its root, and the CLI answers `help` with the usage text.
+  #
+  # This is the criterion every other one stands on, and it earns that position by being the one whose
+  # failure means the world is wrong rather than the program. It asserts four separate things. The
+  # host is what every reading in this family carries, so a result read later says which machine and
+  # which sandbox produced it - and it compares the *rendering*, which is the host composed with the
+  # world's own spelling of its root, because `renderHost` has produced both since it was written and
+  # a criterion naming only the host is written against a rendering that never existed.
+  #
+  # `process.argv` is the command line the world recorded, and it is compared against the vector this
+  # criterion wrote rather than against the confined one the runner was handed. Those are two
+  # different strings and both are legitimate: the reading is about the declaration, so an operator
+  # comparing the bundle to their contract sees the contract's own words. It is asserted here, once,
+  # because every other criterion below asserts a *consequence* of a command and this is the only one
+  # that asserts the command itself.
+  #
+  # `process.stderr` is asserted to be empty, and it is the assertion in this criterion that is doing
+  # the most work. `cli/support.ts` sends every log line to stderr deliberately - the run's result is
+  # a file and stdout is the summary a caller reads, so progress chatter in stdout would make the one
+  # machine-readable stream on the command line machine-unreadable - and `help` returns from `main`
+  # before any subcommand runs. The logger is constructed on the line above that branch, which is why
+  # the expectation is about what was *written* and not about what was built: a logger that exists and
+  # is never called emits nothing, and an operator scripting against Veridian therefore reads exactly
+  # one stream. A help path that started logging would break every caller that parses it, and no other
+  # criterion in this contract would notice.
+  #
+  # The two `process.stdout` expectations are lines of the usage text that were measured rather than
+  # recalled: `veridian validate [options]` is unique to the command list, and `Exit codes` heads the
+  # block that states the four codes this contract spends seven criteria testing. Both are long enough
+  # that a rewrite of the usage text is likelier to keep them than to keep any single line of prose.
+  #
+  # `process.host` is compared against the *declared* root and not a resolved one, and that distinction
+  # is what this criterion measures. `root: sandbox` in the environment document is resolved against
+  # `app: ..`, and the world records the result relative to the application directory so that the
+  # string is the same on every machine - the alternative was measured and recorded at
+  # `#declaredRoot`: an absolute `--goal` moved this criterion and only this criterion, because a
+  # resolved path is a fact about this checkout's depth rather than about the CLI.
+  #
+  # The first run of this contract reported `veridian-cli (root ../../sandbox)` here, and the reading
+  # was right - the defect was in Veridian, not in the criterion. A document one directory below the
+  # repository that declares `app: ..` collapsed that directory to the empty string, and
+  # `resolveSibling` joined the declared `sandbox` onto it as `/sandbox`, which its own rooted-path
+  # check then read as a root. The world looked for `D:/sandbox` while the CLI it judged wrote to
+  # `<repository>/sandbox`, and this criterion is the only thing in the repository that could see the
+  # two disagree. An expectation that had been relaxed to `../../sandbox` to make the run go green
+  # would have deleted the only witness.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-001
+    description: the world is the world this goal names, and help prints the usage text on stdout and nothing on stderr
+    steps:
+      - run: [node, cli/veridian.ts, help]
+    evidence: [json]
+    expect:
+      - validator: process.host
+        equals: "veridian-cli (root sandbox)"
+        message: the readings name a host or a root other than the ones this goal's environment document declares
+      - validator: process.argv
+        target: "1"
+        equals: node cli/veridian.ts help
+        message: the command line this world recorded is not the argument vector this criterion wrote
+      - validator: process.exitcode
+        target: "1"
+        equals: 0
+        message: veridian help did not exit zero, so the usage text is unreachable for a caller that checks
+      - validator: process.stdout
+        target: "1"
+        contains: veridian validate [options]
+        message: the usage text no longer names the validate command
+      - validator: process.stdout
+        target: "1"
+        contains: Exit codes
+        message: the usage text no longer states the exit codes a caller scripts against
+      - validator: process.stderr
+        target: "1"
+        equals: ""
+        message: veridian help wrote to stderr; the log stream and the summary stream are meant to be separate
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-002 - init creates the state directory it was given, inside the sandbox, and says so.
+  #
+  # The state directory is spelled `sandbox` and the world's root is spelled `sandbox` in the
+  # environment document, because the working directory of every command here is the *application*
+  # directory - the repository root - and the root is `sandbox` inside it. So the path the CLI is
+  # handed and the world's own name for the directory are the same string, and the file targets below
+  # (`config.yaml`, `runs`) are that directory's own children. One place, one spelling: the earlier
+  # draft passed `--state-dir sandbox/state` and read back `state/config.yaml`, which meant the two
+  # halves of one criterion described the same directory in two different words.
+  #
+  # This is the criterion that makes the whole contract safe to run anywhere: a self-acceptance run
+  # that wrote into the default `.veridian/` would overwrite the operator's own run history with this
+  # contract's bundle, and the defect would be invisible - the run would pass, and the history it
+  # destroyed is the thing nothing reads. Passing an explicit state directory is what keeps the
+  # contract's world and the operator's world from being the same directory.
+  #
+  # The two file expectations are deliberately one of each kind, and the two vocabularies are
+  # deliberately not the same list. `process.file` answers *whether* a path is there, and its
+  # `equals` takes the closed presence vocabulary `true`, `false`, `present`, `absent`. `process.kind`
+  # answers *what* is there and compares a rendering, so its `equals` takes one of the readings that
+  # rendering can produce - `file`, `directory`, `other`, `absent`.
+  #
+  # This was measured rather than reasoned about: the first draft of this criterion asked
+  # `process.file` for `equals: a file`, and the run reported
+  # `"equals" wants true, false, "present" or "absent"; it received "a file"`. The reading was
+  # correct and the expectation was the wrong question's answer - a defect that presents as a
+  # product fault, because the criterion ERRORs rather than FAILs.
+  #
+  # `process.contents` asks for the bytes, and the substring is a line of the starter configuration
+  # rather than its length: `headless: true` is a value an operator reads and edits, so pinning it
+  # asserts that the file `init` wrote is the file the documentation describes.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-002
+    description: init creates the state directory and its starter configuration, writes them inside the sandbox, and reports it
+    steps:
+      - run: [node, cli/veridian.ts, init, --state-dir, sandbox]
+    evidence: [json]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 0
+        message: veridian init did not exit zero
+      - validator: process.stdout
+        target: "1"
+        contains: Created sandbox/ with environments, goals, runs, snapshots and config.yaml.
+        message: init did not print the summary line it prints on success, so a caller has no way to know what it created
+      - validator: process.stderr
+        target: "1"
+        contains: state directory ready
+        message: init did not report the state directory on the log stream
+      - validator: process.file
+        target: config.yaml
+        equals: present
+        message: init did not write a starter configuration into the state directory it was given
+      - validator: process.kind
+        target: runs
+        equals: directory
+        message: init did not create the runs directory that run bundles are written into
+      - validator: process.contents
+        target: config.yaml
+        contains: 'headless: true'
+        message: the starter configuration does not carry the browser defaults the documentation describes
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-003 - a second init refuses rather than overwriting, and says nothing was changed.
+  #
+  # The control for AC-007, and the pair is the reason both exist: the same command line, one switch
+  # apart, must produce two different outcomes *and two different messages*. A CLI that refused
+  # without saying why, or that overwrote silently, would pass AC-002 and fail here.
+  #
+  # ---------------------------------------------------------------------------------------------
+  # Why this criterion runs `init` twice, and why into a directory of its own.
+  #
+  # The first draft was one step into `--state-dir sandbox`, exactly as AC-002 runs it, on the
+  # reasoning that AC-002 would have created the file by the time AC-003 ran. `veridian clarify`
+  # refused the whole contract over it, and it was right twice over.
+  #
+  # It was right first because of what the contract *said*: two criteria declaring identical steps and
+  # expecting `0` and `3` from the same observable are asserting something no application can satisfy,
+  # and the contradiction detector keys on exactly `(observable, scenario)` where a scenario is the
+  # declared steps. A criterion whose meaning depends on another criterion having run is not a
+  # criterion - it is a note about the order of a file.
+  #
+  # It was right second because the reasoning was false anyway. Reset is per *iteration*, not per
+  # criterion: within one iteration the world is shared and the criteria run in array order, so a
+  # two-step AC-003 reusing `sandbox` would find the file AC-002 had just written on its *first* step
+  # and read `3` where it asserted `0`. The step vector would have differed and the detector would
+  # have stayed quiet - which is the more dangerous of the two failures, because the criterion would
+  # then have failed at run time for a reason nothing had flagged.
+  #
+  # So the precondition is created and *observed* here: `sandbox/second` is a directory no other
+  # criterion names, the first `init` is asserted to have succeeded, and the second is asserted to
+  # have refused. That is strictly more than the original draft claimed, and it claims nothing about
+  # the order of the file. `exit 3` and the two message expectations are asserted on position `2`,
+  # because position 2 is the command this criterion is about.
+  #
+  # `exit 3` rather than `1`, and the distinction is a product rule rather than a preference: `1` is
+  # what a *crash* produces, `2` is INCONCLUSIVE, and a command line the operator can fix is neither.
+  # `cli/veridian.ts` documents exactly this, and an operator whose script branches on `1` must not be
+  # sent looking for a stack trace over a file that exists.
+  #
+  # The refusal is asserted on stdout and not on stderr, which is worth stating because it looks
+  # backwards: the *logs* go to stderr, but a refusal the operator has to read is the run's summary
+  # and belongs on the stream a caller parses. That is the same split AC-001 holds from the other side.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-003
+    description: a second init into the same new directory refuses to overwrite, exits 3, and says nothing was changed
+    steps:
+      - run: [node, cli/veridian.ts, init, --state-dir, sandbox/second]
+      - run: [node, cli/veridian.ts, init, --state-dir, sandbox/second]
+    evidence: [json]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 0
+        message: the first init into a fresh directory failed, so this criterion never established the precondition its refusal is about
+      - validator: process.exitcode
+        target: "2"
+        equals: 3
+        message: init overwrote an existing configuration, or reported a caller error as a crash
+      - validator: process.stdout
+        target: "2"
+        contains: already exists; nothing was changed
+        message: the refusal does not tell the operator that nothing was changed, so the safe reading and the unsafe one look alike
+      - validator: process.stdout
+        target: "2"
+        contains: Pass --force to overwrite.
+        message: the refusal does not name the switch that would proceed, so a caller cannot act on it
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-004 - an option the parser does not know is refused, and the usage text is printed with it.
+  #
+  # This is the criterion about the failure mode a user meets most often, and its assertion is that
+  # the message names the option *and* that the usage text follows it. A refusal alone is a dead end
+  # for someone who mistyped a flag; a refusal that also prints the flags that exist is not.
+  #
+  # It is also the one criterion here that must not print `M2`/`M3`-style claims about a run it never
+  # attempted, and it is the reason this criterion runs its own command rather than borrowing AC-001's:
+  # the step that produced this exit code is this criterion's step, and a criterion that read a
+  # neighbour's command would be reporting an observation it did not make.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-004
+    description: an unknown option is refused with exit 3, names itself, and prints the usage text
+    steps:
+      - run: [node, cli/veridian.ts, --bogus]
+    evidence: [json]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 3
+        message: an unknown option was not reported as a caller error
+      - validator: process.stdout
+        target: "1"
+        contains: 'unknown option "--bogus"'
+        message: the refusal does not name the option the operator mistyped
+      - validator: process.stdout
+        target: "1"
+        contains: veridian validate [options]
+        message: the refusal did not print the usage text, so a mistyped flag leaves the operator with no way forward
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-005 - metrics over an empty history is INCONCLUSIVE and exits 2.
+  #
+  # The single most load-bearing status rule in the product, judged against the product: *"nothing to
+  # measure" is not success*. The history is empty because AC-002 created `runs/` and nothing has
+  # ever written a bundle into it - which is a fact this contract establishes rather than assumes, and
+  # the reason AC-005 sits after AC-002 instead of before it.
+  #
+  # `exit 2` is asserted together with the `INCONCLUSIVE` line, and the two are asserted separately on
+  # purpose. A CLI that printed the word and exited zero would be claiming a clean history it had not
+  # measured; one that exited 2 with no explanation would leave a caller unable to tell an empty
+  # history from a crashed one. `cli/arguments.ts` documents this exit code as "INCONCLUSIVE, or a
+  # definition that could not be resolved. Neither is success." - and that sentence is the criterion.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-005
+    description: metrics over an empty history reports INCONCLUSIVE, names what is missing, and exits 2
+    steps:
+      - run: [node, cli/veridian.ts, metrics, --state-dir, sandbox]
+    evidence: [json]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 2
+        message: metrics reported an empty history as success, which is the status rule the whole product rests on
+      - validator: process.stdout
+        target: "1"
+        contains: 'metrics: INCONCLUSIVE - no run bundle to measure under sandbox/runs.'
+        message: metrics did not print the INCONCLUSIVE verdict, or did not name the directory it looked in
+      - validator: process.stdout
+        target: "1"
+        contains: Run a goal first
+        message: the INCONCLUSIVE verdict does not tell the operator what to do about it
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-006 - a goal that is not there is refused with exit 3, and the refusal names the file.
+  #
+  # A caller error, and it is asserted here because the alternative is the defect this repository has
+  # paid for more than once: an error that names a cause the reporter never observed. The path below
+  # does not exist, and the assertion is that the refusal quotes the path *as the operator spelled it*
+  # rather than resolving it into something unrecognisable or reporting the state directory instead.
+  #
+  # The path is relative to the process's working directory, which is the application directory, so it
+  # is spelled `acceptance/absent-goal.yaml` and not `absent-goal.yaml`. That is a fact about this
+  # world rather than about the CLI, and it is worth stating because the contract is the one document
+  # a reader consults to learn which paths are resolved against what.
+  #
+  # `--state-dir sandbox` is passed even though the run never reaches the state directory, because a
+  # command that did reach it must not write outside the sandbox. A criterion whose command can only
+  # be safe if it fails early is a criterion resting on an assumption about a code path.
+  #
+  # `--no-memory` is passed for a reason that has nothing to do with the boundary, and it is the one
+  # flag here that is about the *criterion* rather than about the CLI. Resolving a definition consults
+  # the memory substrate by default, so without it this criterion would depend on whether a HipCortex
+  # server happens to be listening on this machine - and a criterion whose verdict moves with an
+  # unrelated process is not judging the command line. `cli/veridian.ts` measured: the default path
+  # logs `memory=http://127.0.0.1:3030` while `--no-memory` does not, and the stdout and the exit code
+  # are identical either way.
+  #
+  # stderr is asserted to *contain* the resolution line rather than to be empty, and that is a
+  # correction the measurement forced. The first draft asserted `equals: ""` on the strength of the
+  # `write()` calls in `main`'s catch being the only output - and it was wrong: `runValidate` logs
+  # `resolving the definition` at info level *before* the loader refuses, so a caller sees the failed
+  # definition on stdout and the fact that resolution was attempted on stderr. Both are true and
+  # neither is a defect, which is exactly the distinction an expectation written from the code's shape
+  # would have missed and an expectation written from a reading did not.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-006
+    description: a goal document that is not there is refused with exit 3, and the refusal quotes the path as it was spelled
+    steps:
+      - run: [node, cli/veridian.ts, validate, --goal, acceptance/absent-goal.yaml, --state-dir, sandbox, --no-memory]
+    evidence: [json]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 3
+        message: a missing goal document was reported as a failed run rather than as a command line this build cannot run
+      - validator: process.stdout
+        target: "1"
+        contains: acceptance/absent-goal.yaml
+        message: the refusal does not quote the path the operator supplied, so they cannot check it
+      - validator: process.stdout
+        target: "1"
+        contains: does not exist
+        message: the refusal does not say the goal document is missing, so the operator is sent looking for a cause that was not observed
+      - validator: process.stderr
+        target: "1"
+        contains: resolving the definition
+        message: the resolution attempt was not reported on the log stream, so a failure has no context on the terminal a user is watching
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-007 - init with --force overwrites rather than refusing.
+  #
+  # AC-003's positive control, and the reason the pair is worth the two criteria: the command line is
+  # byte-identical except for one switch, and the two outcomes are opposite. That is what makes AC-003
+  # a measurement rather than an observation - a CLI whose `init` simply always refused would pass
+  # AC-003 perfectly and be useless, and one that always overwrote would pass this and destroy data.
+  #
+  # It is last, after AC-005 and AC-006, so that the configuration it rewrites is one nothing after it
+  # depends on. Order in this array is execution order within an iteration, and a contract whose
+  # criteria are order-sensitive has to say so where the order is visible.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-007
+    description: init with --force overwrites the existing configuration and exits zero
+    steps:
+      - run: [node, cli/veridian.ts, init, --state-dir, sandbox, --force]
+    evidence: [json]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 0
+        message: init --force did not proceed, so the switch that AC-003 says would act does nothing
+      - validator: process.stdout
+        target: "1"
+        contains: Created sandbox/ with environments, goals, runs, snapshots and config.yaml.
+        message: init --force proceeded without reporting what it wrote
+      - validator: process.file
+        target: config.yaml
+        equals: present
+        message: the configuration is gone after a forced init, so the switch removed the file instead of rewriting it

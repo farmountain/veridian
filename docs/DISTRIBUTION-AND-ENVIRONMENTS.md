@@ -160,7 +160,7 @@ rather than asserted, in the note after the gate table below:
 | Decisions, headless | `node --test` | 72 tests, 0 failing |
 | Build | `npm run build` | `out/` - 6 files |
 | **Compiled artifact** | `npm run smoke:out` | 15 checks, exit 0 |
-| Package | `npm run package` | `veridian-cockpit-0.2.2.vsix` - 12 files, 119.22 KB |
+| Package | `npm run package` | `veridian-cockpit-0.3.0.vsix` - 12 files, 119.32 KB |
 | **Packaged archive** | `npm run smoke:vsix` | 34 checks, exit 0 |
 | All of the above | `npm run gate` | exit 0 |
 
@@ -210,7 +210,7 @@ opposite - that packaging needs `@vscode/vsce`, that the output had never been p
 machine, and that adding a package script nobody had run would be the same unverified claim this
 document refuses for a Dockerfile. That reasoning was right, and the fix was to run it rather than to
 keep declining: `@vscode/vsce` is now a dev dependency, `npm run package` produces
-`veridian-cockpit-<version>.vsix` (12 files, 119.22 KB) and `npm run smoke:vsix` reads it back as a zip - by
+`veridian-cockpit-<version>.vsix` (12 files, 119.32 KB) and `npm run smoke:vsix` reads it back as a zip - by
 hand, with `node:zlib`, because this tree has no runtime dependency and adding one to read an archive
 would be the tail wagging the dog. The archive is a **fourth** artifact that nothing else here can
 load, so the same discipline `smoke:dist` and `smoke:out` follow one runtime further out applies:
@@ -246,7 +246,7 @@ gate`, so a package whose own tests are red cannot leave the machine, where `pri
 - **A version is written in four files and reconciled by nothing.** The extension's `package.json`,
   this repository's root `package.json`, and each of their `package-lock.json` root entries carry the
   same figure by convention and no mechanism, so the marketplace's version and the CLI's reported
-  `veridianVersion` can drift apart silently. They are all `0.2.2` as this is written. **This entry
+  `veridianVersion` can drift apart silently. They are all `0.3.0` as this is written. **This entry
   used to claim the check was `npm run package`, and that was wrong about its own subject** - what
   `package` proves is narrower: the archive is named `veridian-cockpit-<manifest version>.vsix`
   because the `package` script passes no `--out`, so the *filename and the manifest it packaged*
@@ -1518,7 +1518,11 @@ repository now holds is the one `smoke:dist`, `smoke:out` and `smoke:vsix` alrea
 out, applied to the artifact that leaves this machine: **after every repackage, read the attached asset
 back and hash it.** `v0.2.2` was read four ways - downloaded back byte for byte (`122,078 bytes`,
 SHA-256 `45B8196F...`), its `vscode-port.js` read for both repairs, its manifest read for `0.2.2`, and
-the release API queried for its asset list.
+the release API queried for its asset list. The same read was performed for the `0.3.0` build before
+it left this machine, with the one difference that the archive was measured where `npm run package`
+wrote it rather than downloaded back, because the upload is the maintainer's step (below): `122,183
+bytes`, SHA-256 `A352EB79...`, 12 entries, and `npm run smoke:vsix` 34 checks, exit 0. The four-way
+read is owed again once that archive is attached - an upload's success line is not the evidence.
 
 **Regression tests.** `tests/vscode-cockpit-demo.test.ts` (8 tests) holds what a test can hold about a
 demo whose artifact the root gate does not build: the identity it pins, the validators and evidence

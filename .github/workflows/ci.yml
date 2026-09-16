@@ -120,6 +120,27 @@ jobs:
       - name: build the Cockpit, so the one demo with a build prerequisite has an artifact
         run: npm ci && npm run build
         working-directory: extension/vscode
+      # Veridian judged by Veridian: the one contract whose application is the CLI itself, run twice
+      # inside one invocation. It is not a `demo:*` script, so the `for world` loop below cannot carry
+      # it, and this step is what keeps it from being a command the manifest declares and nothing
+      # executes - a defect this repository has now paid for four times (`db.query`, `db.rowCount`,
+      # `web.visible`, and the four demos no CI job ran).
+      #
+      # It sits *above* the loop rather than after it on purpose. Every run in this job writes the same
+      # `.veridian/latest-result.json`, and the upload step at the end carries the whole of `.veridian/`
+      # - so the reading a reader opens first is whichever run wrote that file last, and the world
+      # comment below wants that to be `cockpit`. Added after the loop, this step becomes the last
+      # writer instead, and the artifact's own comment would go on describing a bundle it no longer
+      # carried.
+      #
+      # The *second* run is the check, and it is why this is a script rather than a bare `veridian
+      # validate`. `#rebuild` in `adapters/local-process` empties the sandbox at `create()`, so run 1
+      # starts clean on every machine; run 1 then leaves its own `config.yaml` behind, because nothing
+      # removes the tree at the end of a run - only at the start of the next one. So run 2 inherits
+      # exactly the state run 1 wrote, here as much as anywhere. A single run on this fresh checkout
+      # would pass over a world that never rebuilt at all.
+      - name: Veridian must accept its own contract, twice in a row
+        run: npm run acceptance
       # Eleven of the thirteen declared demos, and until this job existed **none of them was run by
       # CI** - the `demo` job above covers the canonical browser demo and `--browser none`, and nothing
       # else. Every one of these passes on a developer's machine, and "passes on a developer's machine"
@@ -163,15 +184,22 @@ jobs:
             echo "these worlds did not demo green:$failed"
             exit 1
           fi
-      # The bundle is single-slot - `.veridian/runs` is the layout, not a per-world directory - so what
-      # travels here is the *last* world's bundle, and the step says so rather than implying it carries
-      # eleven. `cockpit` is ordered last above precisely so the artifact a reader opens is the newest
-      # demo's, which is also the only one whose application is Veridian's own client.
-      - name: upload the last world's evidence bundle
+      # The artifact carries every run this job made, not one: `.veridian/runs` holds a directory per
+      # run and nothing removes them, so it holds eleven demo bundles plus the *two* the
+      # self-acceptance contract writes, because that contract is invoked twice. What is single-slot
+      # is `.veridian/latest-result.json` - the summary an external agent reads first - and it is
+      # written by whichever run went last, which is why `cockpit` is ordered last above and why the
+      # self-acceptance step sits above the loop. So the *latest* reading in the artifact is the
+      # Cockpit's, the only demo whose application is Veridian's own client.
+      #
+      # The name says "worlds" rather than "sim" because three of the eleven stand nothing in - `db` is
+      # a real SQLite file, `api` a real service and `local-process` a real program - and the job also
+      # runs Veridian's own contract, which is real too.
+      - name: upload every world's evidence bundle
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: veridian-sim-evidence
+          name: veridian-worlds-evidence
           path: .veridian/
           include-hidden-files: true
           if-no-files-found: error

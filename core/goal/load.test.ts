@@ -53,6 +53,44 @@ describe("resolveSibling", () => {
     const source = goalAt(".");
     assert.equal(resolveSibling(source, "acceptance.yaml"), "acceptance.yaml");
   });
+
+  /**
+   * A reference that collapses its directory away must not make the *next* join absolute.
+   *
+   * `app: ..` one directory below the repository is the shape that produced this. Joining `..` onto
+   * `acceptance` collapses to the empty string, and the empty string is not a directory: it is what
+   * the next join inserted a separator in front of, so the declared `sandbox` became `/sandbox` and
+   * the rooted check read that separator as a root marker. Measured on the self-acceptance contract -
+   * the world opened `D:/sandbox` while the CLI it judged wrote to `<repository>/sandbox`, and the
+   * one criterion that could see the two disagree reported `veridian-cli (root ../../sandbox)`.
+   *
+   * This is the same seam the absolute cases above guard, and it survived that fix for the reason
+   * the collapse's own comment gives: an empty first segment *inside* an absolute path and an empty
+   * *directory* in front of a relative one are the same string to a walk that reads a leading
+   * separator as a root.
+   */
+  it("answers `.` rather than the empty string when a reference collapses its directory away", () => {
+    assert.equal(resolveSibling(goalAt("acceptance"), ".."), ".");
+  });
+
+  it("does not invent a root out of an empty directory, which is what a collapse once handed it", () => {
+    assert.equal(resolveSibling(goalAt(""), "sandbox"), "sandbox");
+  });
+
+  it("keeps a child of a collapsed directory relative, which is the defect that reached a run", () => {
+    const collapsed = resolveSibling(goalAt("acceptance"), "..");
+    assert.equal(resolveSibling(goalAt(collapsed), "sandbox"), "sandbox");
+  });
+
+  it("still re-roots a child when the collapsed directory really was a root", () => {
+    const collapsed = resolveSibling(goalAt("/repo"), "..");
+    assert.equal(collapsed, "/");
+    assert.equal(resolveSibling(goalAt(collapsed), "sandbox"), "/sandbox");
+  });
+
+  it("collapses a reference that walks past the top of a relative directory to `.`", () => {
+    assert.equal(resolveSibling(goalAt("a/b"), "../.."), ".");
+  });
 });
 
 describe("dirOf", () => {

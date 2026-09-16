@@ -1,0 +1,79 @@
+# Veridian judged by Veridian.
+#
+# This is the goal `AGENTS.md` recorded as *not yet written*. The paragraph it corrects is worth
+# quoting, because the reason it could not be written has been spent and pretending otherwise would
+# be the same defect as a validator reporting a pass it did not observe:
+#
+#   "It could not be written inside the MVP ... at the time, the only registered adapter was
+#    `local-web` and all eight registered validators were browser observations, so a contract about a
+#    CLI would have made every criterion INCONCLUSIVE and exited 2."
+#
+# That is still true of `local-web`. It stopped being true of the product when `local-process`
+# landed: a world whose subject is a program can judge a command line, and the CLI's exit codes are
+# the program's own output rather than an inference about it.
+#
+# What this goal deliberately does NOT claim: it is not a substitute for `node --test`, and no
+# criterion below asserts that the suite passes or fails. A suite that has never failed has never
+# been read; this contract exists because *"test passed" and "actually works" are two different
+# measurable acceptance criteria*, and the second one has to be measured against the shipped
+# program. It measures the parts of Veridian a user meets first - the usage text, the state
+# directory, the refusal paths and the exit codes - because those are the parts whose defects reach
+# a user before any validator does.
+
+version: 1
+id: veridian-mvp
+
+statement: |
+  Veridian's own command line behaves as its documentation says it does, when it is run as an
+  ordinary program by a world that confines the filesystem it may write to.
+
+  Three things must hold. The CLI's three commands that a user reaches before any run - `help`,
+  `init` and `metrics` - must reach the exit code the usage text promises, and must write the
+  summary a caller reads to stdout rather than to the stream the logs use. `init` must create the
+  state directory it names and must refuse to overwrite a configuration that is already there unless
+  it is told to. And every command the contract runs must have written only inside the sandbox the
+  environment document declares, because a state directory that escaped its world would put the
+  operator's own history where a criterion could read it.
+
+# Declared rather than defaulted, because this is the one contract in the repository that is about
+# the boundary rather than merely subject to it. `sandbox` is what makes the adapter hand the child
+# `--allow-fs-write=<repository>/sandbox`; `deny` is what it records as unenforceable rather than as
+# held, and the environment record carries both answers beside the policy they answer.
+#
+# `maxIterations: 1` is the control made structural. Every other goal in this repository bounds a
+# repair loop; this one has nothing to repair. A bound of one means the run cannot re-observe the
+# application even if a human is sitting at the terminal and answers the manual gate - which is the
+# second half of the same guarantee `--no-repair` gives at the command line. Stated in both places
+# because a reader of the goal sees only this number, and a reader of the CI job sees only the flag.
+limits:
+  maxIterations: 1
+  maxRuntimeMs: 300000
+  maxCriterionMs: 30000
+  networkPolicy: deny
+  filesystemWrite: sandbox
+
+acceptance: acceptance.yaml
+environment: environment.yaml
+
+context: |
+  The contract has no defects, so it must pass on its first iteration. That is on purpose: it is the
+  control the twelve demo contracts are read against. Each of those descends a failing count to zero
+  by repairing a table of deliberate defects, and a descending count only means what a reader thinks
+  it means if the same world can also hold perfectly still. A contract with nothing wrong in it that
+  fails is a defect in the world, the criterion or the substitute - and this is the one contract
+  where the substitute is Veridian itself, so a false failure here is a false failure about
+  everything else.
+
+  The repair agent is not involved, and no `--repair` command is declared, so a failure would be
+  re-observed unchanged until the iteration bound - which is exactly the shape a reader wants from a
+  control: it does not drift towards green. It is invoked with `--no-repair` so that it can run where
+  nobody is watching: without the flag the loop asks a human whether to observe again, and a check
+  that waits for an answer no CI job can give is a check that only ever runs on a developer's
+  machine. `--no-repair` is also what makes the sentence above true rather than merely intended - the
+  gate answers `stop` before the bound is reached, so the run finishes with the verdict it has rather
+  than reporting `MAX_ITERATIONS` for a failure that was measured.
+
+tags:
+  - acceptance
+  - self
+  - cli

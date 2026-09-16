@@ -28,10 +28,24 @@ export function dirOf(path: string): string {
 
 /** Join a relative reference onto a source's directory, collapsing `.` and `..`. */
 export function resolveSibling(source: SourceRef, relative: string): string {
-  const combined = (relative.startsWith("/") ? relative : `${source.dir}/${relative}`).replace(
-    /\\/g,
-    "/",
-  );
+  const dir = source.dir.replace(/\\/g, "/");
+  const reference = relative.replace(/\\/g, "/");
+  /**
+   * A reference is joined to its directory only when there is a directory to join it to.
+   *
+   * An empty directory means the current directory, so inserting one in front of the reference would
+   * invent a leading separator that nothing asked for. That is not a cosmetic difference, because the
+   * collapse below reads a leading separator as a root marker. Measured: a document one directory
+   * below the repository that declares `app: ..` collapses to the empty directory, and
+   * `${""}/${"sandbox"}` is `/sandbox`, so the run looked for `D:/sandbox` - two levels above the
+   * sandbox the document describes - and the one field whose whole job is to let a reader compare the
+   * reading against their own document reported it as `(root ../../sandbox)`.
+   *
+   * The clause is reachable only through this function's own entry, since the collapse at the end
+   * never returns `""` and `dirOf` spells "no directory" as `"."` - which this test removes the need
+   * to special-case, because `./sandbox` and `sandbox` collapse alike where `/sandbox` does not.
+   */
+  const combined = reference.startsWith("/") || dir === "" ? reference : `${dir}/${reference}`;
   /**
    * Whether the result is rooted decides whether the root survives the collapse below.
    *
@@ -52,7 +66,18 @@ export function resolveSibling(source: SourceRef, relative: string): string {
     if (part === "..") parts.pop();
     else parts.push(part);
   }
-  return `${rooted ? "/" : ""}${parts.join("/")}`;
+  const collapsed = rooted ? `/${parts.join("/")}` : parts.join("/");
+  /**
+   * A reference that collapses to nothing names the directory it was resolved against, and the empty
+   * string is not a directory.
+   *
+   * It is the second half of the defect above rather than a tidiness: every caller that uses this
+   * result as a base builds `${base}/${child}` with it, which is how the leading separator gets back
+   * in. Returning `"."` keeps the answer a directory at every stage, so no caller has to know that
+   * one spelling of "here" is safe and the other is not. The POSIX root is unaffected - it collapses
+   * to `"/"`, which is not empty.
+   */
+  return collapsed === "" ? "." : collapsed;
 }
 
 /**
