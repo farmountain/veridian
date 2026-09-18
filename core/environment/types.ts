@@ -1,6 +1,7 @@
 import type { FailureKind } from "../failure.ts";
 import type { FilesystemWritePolicy, NetworkPolicy } from "../goal/types.ts";
 import type { ContainerPlatform } from "./container-observation.ts";
+import type { MobilePlatform } from "./mobile-observation.ts";
 import type { OsFamily } from "./os-observation.ts";
 
 /**
@@ -79,10 +80,13 @@ export interface Observation {
  * `local-web` and `local-api` report theirs, and those two answers are not a disagreement. A world
  * whose every request passes a guarded front door - Playwright's route guard, the contract's own
  * request guard - really can refuse one, so `enforced` is what it measured; a world with no such door
- * has only the child's own socket to reason about, and that is the case this word names. **The three
- * worlds that confine a child are exactly the three that answer this question with a measurement**,
- * and it was measured rather than reasoned: `tests/boundary-roster.test.ts` derives the split from the
- * adapters themselves, so a twelfth world cannot join either side in silence.
+ * has only the child's own socket to reason about, and that is the case this word names. **Three of
+ * the twelve worlds answer this question with a measurement, and the separation is a front door rather
+ * than a child** - now that every world in this tree hands the runner a file allowance, `confines a
+ * child` no longer distinguishes anything, while the two that hold a route guard every request of
+ * theirs passes answer `enforced` and `local-process` answers `unenforceable`. The other nine answer
+ * `unsupported`. It was measured rather than reasoned: `tests/boundary-roster.test.ts` derives the
+ * split from the adapters themselves, so a thirteenth world cannot join either side in silence.
  */
 export const BOUNDARY_ENFORCEMENTS = [
   "enforced",
@@ -382,6 +386,25 @@ export interface EnvironmentDefinitionShape {
     readonly host?: unknown;
     readonly port?: unknown;
   };
+  /**
+   * The device declaration, when the world is one.
+   *
+   * Three fields and no more. `device` is the identity every reading names, so a result says which
+   * device produced it; `platform` is a *rule* rather than a label - it decides how a path inside the
+   * device's own storage is spelled - which is why the loader refuses a platform this substitution
+   * does not implement rather than accepting it as written; and `root` is the sandbox on this machine
+   * the world's bundles, keychain entries and device state live in.
+   *
+   * `apiLevel` is deliberately absent. A real device's API level is a property of the platform rather
+   * than a choice the operator makes, so this world carries it as a constant of the substitution, and
+   * a document able to state a level the substitute does not answer as would be a document asserting
+   * something no reading could corroborate.
+   */
+  readonly mobile?: {
+    readonly device?: unknown;
+    readonly platform?: unknown;
+    readonly root?: unknown;
+  };
   readonly health?: {
     readonly path?: unknown;
     readonly expectStatus?: unknown;
@@ -587,6 +610,17 @@ export interface EnvironmentPlan {
    * the document afterwards, because `port: 0` means the port is decided at bind time.
    */
   readonly data: DataPlan | null;
+  /**
+   * The device this world stands in for, or `null` when the world is not one.
+   *
+   * The eleventh of the same field, one per kind of world, and read for the same reason as the other
+   * ten: the first question asked of a result is *which world produced it*. A device reading answers
+   * that with the device identity and the platform, and the platform is the one of the two that is a
+   * rule rather than a label - it decides how a path inside the device's own storage is spelled, so a
+   * result that named the device but not the platform would not say which grammar its paths were
+   * resolved by.
+   */
+  readonly mobile: MobilePlan | null;
   readonly health: HealthPolicy;
   readonly reset: { readonly strategy: ResetStrategy; readonly command: string | null };
   readonly browser: BrowserPolicy;
@@ -846,4 +880,34 @@ export interface DataPlan {
   readonly host: string;
   /** The port the substitute binds, or `0` for "the operating system chooses one". */
   readonly port: number;
+}
+
+/**
+ * The device declaration, resolved.
+ *
+ * The eleventh of the same interface, one per kind of world, and the first whose subject is a *device*
+ * rather than a system, a cluster, an account, a runtime, a host or a service. Two of the three fields
+ * are read for the same reason the neighbours' are - `device` is what a reading names, `root` is where
+ * the world's own files live - and the third is the one that makes this block unlike most of them.
+ *
+ * `platform` is a *rule* rather than a label, which is why `readMobile` refuses a platform this
+ * substitution does not implement instead of accepting it as written. It decides how a path inside the
+ * device's own storage is spelled, so a document naming a platform the substitute does not answer as
+ * would be a document whose every criterion resolved paths by the wrong grammar - and the refusal
+ * happens before a world exists, which is the only place it can name the reason with the operator's
+ * own document in hand.
+ *
+ * There is deliberately no `apiLevel`. A real device's level is a property of the platform rather than
+ * a choice the operator makes, so the substitution carries it as a constant; and because nothing in
+ * this world is booted, drawn, prompted for or delivered, a document able to state a level would be
+ * able to assert something no reading could corroborate. The absence is recorded rather than left to
+ * be inferred from this interface's silence.
+ */
+export interface MobilePlan {
+  /** The device identity the readings name, e.g. `sim-cart-device`. Declared, never inferred. */
+  readonly device: string;
+  /** The platform this substitution implements, which decides the device's own path grammar. */
+  readonly platform: MobilePlatform;
+  /** The sandbox on this machine the world's bundles, keychain entries and device state live in. */
+  readonly root: string;
 }

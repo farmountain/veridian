@@ -10,10 +10,42 @@
  * Those two cannot share one `run()` signature without one of them lying about what it wants, so the
  * port exposes the process rather than the outcome, and `runToCompletion` is written on top for the
  * finite case.
+ *
+ * **It is also the one place a child is confined**, which is the whole reason the allowance is a field
+ * on a request rather than a call each caller makes. An allowance is a *value*, and twelve worlds have
+ * twelve different ones - one writes a SQLite file, another writes nothing and only prints command
+ * vectors - so it cannot live here. But *applying* it is one mechanism, and a dozen copies of the
+ * application would be a dozen places for the claim `applied: true` to be made without the mechanism
+ * having run. So a request carries its allowance, the runner applies it, and the runner **reports what
+ * it did** on the handle and in every result: a world's `boundaries()` answer is then a reading of
+ * something that happened rather than a recomputation of a decision nobody has to agree with.
+ *
+ * `confinement === undefined` means *this world did not ask for an allowance*, which is an honest
+ * thing for a request to say and is why the field is optional: every caller that existed before this
+ * one is unchanged, and a request that asked for nothing reports nothing.
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { isAbsolute } from "node:path";
+
+import { confineChild, type ConfinementResult } from "./environment/confinement.ts";
+
+/**
+ * What a caller asks the runner to *confine* the child to.
+ *
+ * Deliberately not `ConfinementRequest`: that type is what `confineChild` takes, and it names the
+ * command and the args, which the request already names. A caller that had to repeat its command here
+ * would be able to write a different one from the one that runs, and the two would disagree in the
+ * direction that matters - the allowance would describe a program that was never started.
+ */
+export interface ProcessConfinement {
+  /** Paths the child may read. The application directory belongs here beside the sandbox. */
+  readonly readRoots: readonly string[];
+  /** Paths the child may write. A world whose application writes nothing names its sandbox anyway. */
+  readonly writeRoots: readonly string[];
+  /** Whether the child may start children of its own. Off unless a world needs it. */
+  readonly allowChildProcess?: boolean;
+}
 
 export interface ProcessRequest {
   readonly command: string;
@@ -22,6 +54,12 @@ export interface ProcessRequest {
   readonly cwd: string;
   /** Merged over `process.env`. An empty map means "inherit", not "no environment". */
   readonly env?: Readonly<Record<string, string>>;
+  /**
+   * Ask the runner to confine the child before starting it. Omitted means the caller asked for no
+   * allowance, and the child is started as declared - which is what the repair gate and the CLI need,
+   * because a program that edits the source tree is the actor rather than the application under test.
+   */
+  readonly confinement?: ProcessConfinement;
   /** Called for each stdout chunk as it arrives, for readiness patterns. */
   readonly onStdout?: (chunk: string) => void;
   readonly onStderr?: (chunk: string) => void;
@@ -34,12 +72,24 @@ export interface ProcessResult {
   readonly stderr: string;
   /** True when the process was still running at the deadline and had to be stopped. */
   readonly timedOut: boolean;
+  /**
+   * What the runner did with the allowance on the request, or `null` when there was none. Carried on
+   * the *result* as well as on the handle because the finite-child worlds have no handle by the time
+   * they answer a boundary question - `runToCompletion` has already consumed it.
+   */
+  readonly confinement?: ConfinementResult | null;
 }
 
 export interface ProcessHandle {
   readonly pid: number | null;
   /** Settles when the process exits. Never rejects: a failure to spawn is a result, not a throw. */
   readonly exited: Promise<ProcessResult>;
+  /**
+   * The confinement the child was started under, known **synchronously** because the decision is made
+   * before the process exists. `null` means the request asked for no allowance; a `reason` is stated
+   * either way, so a world that reports `unsupported` can quote why instead of guessing.
+   */
+  readonly confinement?: ConfinementResult | null;
   /** Everything written to stdout so far, concatenated. */
   output(): string;
   /** Everything written to stderr so far. */
@@ -78,6 +128,11 @@ const wantsShell = (command: string): boolean =>
  * A spawn failure is reported as an exit with code `null`, so that every caller has one shape to
  * handle. ENOENT for a missing command is the common case and must read as "the environment could
  * not be started", never as "the application is broken".
+ *
+ * The confinement reading is deliberately *not* a parameter here. `finish` stamps every result the
+ * runner produces, which is one place rather than three, so a spawn failure cannot be the one shape
+ * that forgets to say whether the child was confined - and it is still the truth about the vector
+ * rather than about a process that never existed.
  */
 function failedToSpawn(error: unknown, stdout: string, stderr: string): ProcessResult {
   const message = error instanceof Error ? error.message : String(error);
@@ -102,22 +157,51 @@ export const nodeProcessRunner: ProcessRunner = {
       for (const waiter of [...waiters]) waiter();
     };
 
+    /**
+     * The decision is made **before the process exists**, so it is available synchronously on the
+     * handle - which is what lets a world answer a boundary question at any point in its life rather
+     * than only after a child has exited. `null` means the request asked for no allowance, and that is
+     * a different statement from "the allowance was refused": the first is the caller's choice, the
+     * second is a `reason` from `confineChild`.
+     */
+    const confinement: ConfinementResult | null =
+      request.confinement === undefined
+        ? null
+        : confineChild({
+            command: request.command,
+            args: request.args,
+            readRoots: request.confinement.readRoots,
+            writeRoots: request.confinement.writeRoots,
+            ...(request.confinement.allowChildProcess === undefined
+              ? {}
+              : { allowChildProcess: request.confinement.allowChildProcess }),
+          });
+
+    // The vector that is actually started. When the allowance was applied this is the Node
+    // interpreter with the permission flags in front, and the command replacement is not cosmetic:
+    // `wantsShell` below hands a *bare* name to `cmd.exe`, which joins the file and its arguments
+    // into one string and would damage an `--allow-fs-read=D:\a path\...` argument.
+    const command = confinement === null ? request.command : confinement.command;
+    const args = confinement === null ? [...request.args] : [...confinement.args];
+
+    /** One place every result is created, so no shape can omit the reading. */
     const finish = (value: ProcessResult): void => {
       if (settled) return;
       settled = true;
-      result = value;
-      resolveExited(value);
+      const stamped: ProcessResult = { ...value, confinement };
+      result = stamped;
+      resolveExited(stamped);
       notify();
     };
 
     try {
-      child = spawn(request.command, [...request.args], {
+      child = spawn(command, args, {
         cwd: request.cwd,
         env: { ...process.env, ...(request.env ?? {}) },
         // Windows resolves `npm` and other `.cmd` shims only through a shell. Veridian is a Windows
         // -first tool, so this is not optional for a bare name; it costs nothing on POSIX. An absolute
         // path is deliberately excluded - see `wantsShell`.
-        shell: wantsShell(request.command),
+        shell: wantsShell(command),
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -126,6 +210,7 @@ export const nodeProcessRunner: ProcessRunner = {
       return {
         pid: null,
         exited,
+        confinement,
         output: () => stdoutChunks.join(""),
         error: () => stderrChunks.join(""),
         waitForPattern: async () => false,
@@ -161,6 +246,7 @@ export const nodeProcessRunner: ProcessRunner = {
     const handle: ProcessHandle = {
       pid: spawned.pid ?? null,
       exited,
+      confinement,
       output: () => stdoutChunks.join(""),
       error: () => stderrChunks.join(""),
       async waitForPattern(pattern: string, timeoutMs: number): Promise<boolean> {

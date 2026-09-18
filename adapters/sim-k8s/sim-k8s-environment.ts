@@ -54,6 +54,7 @@ import { decodeStep } from "../../core/acceptance/plan.ts";
 import type { Clock, Logger } from "../../core/clarification/types.ts";
 import { K8S_OBSERVATION_KIND, K8S_SIMULATED_SURFACES } from "../../core/environment/k8s-observation.ts";
 import type { K8sObservationData } from "../../core/environment/k8s-observation.ts";
+import { dependencyReadRoots, type ConfinementResult } from "../../core/environment/confinement.ts";
 import type {
   ArtifactKind,
   BoundaryCrossing,
@@ -142,6 +143,17 @@ export class SimK8sEnvironment implements EnvironmentAdapter {
   #api: string | null = null;
   /** Whether this world's deploy program has run in *this* environment's lifetime. */
   #deployed = false;
+
+  /**
+   * What the **runner** answered when the deploy program was started, or `null` before it has been.
+   *
+   * Read off the result rather than recomputed here, and that distinction is the whole of the seam:
+   * this adapter states *what the world allows*, and only the runner knows what it actually applied.
+   * A world that answered this question from its own plan field would be reporting a decision nobody
+   * had to agree with. It sits on the **result** rather than on a handle because `runToCompletion`
+   * has already consumed the handle by the time this adapter looks - the same shape `local-db` reads.
+   */
+  #confinement: ConfinementResult | null = null;
 
   /**
    * Every manifest this world refused because it lay outside the application directory.
@@ -453,24 +465,34 @@ export class SimK8sEnvironment implements EnvironmentAdapter {
   /**
    * What this world did about the plan's boundaries.
    *
-   * `unsupported` for both, and not silently.
+   * **The write boundary is now a reading rather than a sentence.** It used to say `unsupported`
+   * unconditionally, which was honest while nothing applied the plan's `filesystemWrite` at all - but
+   * the mechanism lives in the runner now, and a world that hands a child an allowance and then
+   * reports `unsupported` is describing a decision it did not make. `enforced` therefore means one
+   * specific thing here: the deploy child this world started was really confined, and the runner said
+   * so. It is read off the result rather than assumed, so a command the confinement model cannot
+   * reach (anything that is not a Node interpreter) reports `unsupported` truthfully rather than
+   * naming a mechanism that never ran.
    *
-   * The network policy is the one place a reader might expect better of a cluster world, because a
-   * cluster *is* where a network policy belongs. But the substitute enforces nothing: the application
-   * runs as an ordinary child process and can open any socket it likes, and a criterion's `apply` step
-   * is an in-process call rather than a route the adapter could filter. Reporting `enforced` on the
-   * strength of a guard over *manifests* would be an overclaim of exactly the kind the boundary path
-   * exists to remove - the guard stops a criterion reading the wrong file, not the application
-   * reaching the wrong host.
+   * The network policy is still the one place a reader might expect better of a cluster world, because
+   * a cluster *is* where a network policy belongs. But the substitute still enforces nothing about
+   * it: the confinement mechanism gates the filesystem and nothing else, the application can open any
+   * socket it likes, and a criterion's `apply` step is an in-process call rather than a route the
+   * adapter could filter. Reporting `enforced` on the strength of a guard over *manifests* would be an
+   * overclaim of exactly the kind the boundary path exists to remove - the guard stops a criterion
+   * reading the wrong file, not the application reaching the wrong host.
    *
    * The crossings list is reported even when empty, because its emptiness means one specific thing
    * here - the guard never saw an escape - and a reader has to be able to pair it with the two
-   * `unsupported` policies above to see that it is one guard rather than a boundary.
+   * policies above to see that it is one guard rather than a boundary.
    */
   boundaries(): BoundaryReport {
     return {
       network: this.#plan.boundary.network === "allow" ? "not-requested" : "unsupported",
-      filesystemWrite: "unsupported",
+      // A reading, not a plan field: the runner may have refused the allowance by name, and a world
+      // that reported `enforced` on the strength of a request it made would be claiming a mechanism
+      // it never watched run.
+      filesystemWrite: this.#confinement?.applied === true ? "enforced" : "unsupported",
       crossings: [...this.#crossings],
     };
   }
@@ -611,6 +633,33 @@ export class SimK8sEnvironment implements EnvironmentAdapter {
    * The environment variables are injected rather than taken from the document, and
    * {@link CLUSTER_ENV} says why: the address is decided by `listen()`, which happens immediately
    * before this call.
+   *
+   * **This world's allowance is its application directory for writing, and that directory plus the
+   * dependencies it imports for reading.** The registry is inside the application tree rather than
+   * beside it: `cluster.images` is resolved against `app` by the loader, so the program that writes
+   * the images and the program that reads them back are the same directory tree. It is also the only
+   * tree this world is allowed to *write*, because everything a manifest names is resolved against
+   * `appPath` and refused if it leaves - a `writeRoots` wider than the directory the confinement
+   * already guards would make the guard and the boundary describe different worlds.
+   *
+   * **The read allowance is wider, and reading the two as one question was a live defect.** This is
+   * the only world here whose application imports a package rather than only Node builtins -
+   * {@link ../examples/sim-k8s/app/deploy.mjs} parses manifests with the engine's own `yaml` library
+   * deliberately, rather than with a hand-rolled subset. The permission model enforces its allowlists
+   * against the interpreter's *module resolution*, so an allowance naming only `appPath` refused
+   * `node_modules/yaml/package.json` **before the program's first statement ran**: the child exited 1,
+   * the world reported that exit code as the application's failure, and the run aborted at
+   * `environment preparation` with `0 iteration(s)` - an `ENVIRONMENT_FAILURE` wearing the
+   * application's clothes, for a program that was never given the chance to be wrong. The write
+   * allowance is unchanged by the repair, so the boundary `filesystemWrite` measures is exactly what
+   * it was; only the read side moved, and it moved to the roots Node would search anyway.
+   *
+   * **Only this child is confined, and that is a decision rather than an omission.** The same
+   * distinction `local-process` and `local-db` record: this command is the application's own deploy
+   * program, written by the agent under test and therefore not something Veridian controls, while a
+   * `custom` reset command comes out of the operator's environment document. One word -
+   * `filesystemWrite` - cannot describe both authors, so the allowance goes on the child whose author
+   * Veridian does not control, and the operator's own command starts as declared.
    */
   async #deployApplication(): Promise<void> {
     const { command, args, readyPattern } = this.#plan.start;
@@ -630,11 +679,28 @@ export class SimK8sEnvironment implements EnvironmentAdapter {
         args,
         cwd: this.#plan.appPath,
         env: this.#clusterEnv(),
+        confinement: {
+          // The application tree **and the dependencies it imports**, because the program below
+          // imports one and the interpreter refuses an unallowed read before it runs a statement.
+          // Derived rather than listed: see `dependencyReadRoots`, which walks up the way Node does.
+          readRoots: [this.#plan.appPath, ...dependencyReadRoots(this.#plan.appPath)],
+          writeRoots: [this.#plan.appPath],
+        },
         onStdout: (chunk) => this.#logger.debug("deploy.stdout", { chunk: chunk.trimEnd() }),
         onStderr: (chunk) => this.#logger.warn("deploy.stderr", { chunk: chunk.trimEnd() }),
       },
       this.#deployTimeoutMs,
     );
+
+    // Read off the result the runner produced, never recomputed from the plan beside it. The log line
+    // names both halves for the reason `local-process`'s does: a reader asking "was this child
+    // confined" and a reader asking "why not" are two questions, and one of them is a `reason` only
+    // the runner ever held.
+    this.#confinement = result.confinement ?? null;
+    this.#logger.info("environment.deploy.confinement", {
+      applied: this.#confinement?.applied ?? false,
+      reason: this.#confinement === null ? "no allowance was requested" : this.#confinement.reason,
+    });
 
     if (result.timedOut) {
       throw new EnvironmentError(

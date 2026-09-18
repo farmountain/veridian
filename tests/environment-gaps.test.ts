@@ -162,9 +162,9 @@ describe("environment gaps: HTTP questions are not asked of a world with no HTTP
   /**
    * The document keys that stand for a shape with no HTTP surface of its own.
    *
-   * This is the detector's own vocabulary - the nine clauses of `hasNoHttp` in
+   * This is the detector's own vocabulary - the ten clauses of `hasNoHttp` in
    * `core/clarification/detect.ts` - written once here so the *members* can be derived rather than
-   * listed. A world named below is one whose own declaration says which of the nine it is; a world
+   * listed. A world named below is one whose own declaration says which of the ten it is; a world
    * that names none of them is asked every HTTP question, which is the other half.
    *
    * `data` is a clause here and not a socket world, which is the distinction the list is made of:
@@ -182,6 +182,7 @@ describe("environment gaps: HTTP questions are not asked of a world with no HTTP
     "vscode",
     "process",
     "data",
+    "mobile",
   ];
 
   it("skips them for every world whose own declaration says it has no socket", () => {
@@ -223,6 +224,7 @@ describe("environment gaps: HTTP questions are not asked of a world with no HTTP
         "sim-container",
         "sim-data",
         "sim-k8s",
+        "sim-mobile",
         "sim-os",
         "sim-posix",
         "sim-vscode",
@@ -242,7 +244,7 @@ describe("environment gaps: HTTP questions are not asked of a world with no HTTP
 
     // And the same question asked of the **register** rather than of `local-web`, because the two
     // directions of one predicate are one property: every world whose own declaration names none of
-    // the nine no-HTTP shapes must be asked for an address, and a world that is silently skipped is
+    // the ten no-HTTP shapes must be asked for an address, and a world that is silently skipped is
     // the `sim-k8s` abort one family out with its sign flipped. `local-api` is the world that made
     // this necessary - it is the first world that is *real* and reached over a socket, so the only
     // thing that distinguishes it from a `local-db` is the shape its requirement names, and a

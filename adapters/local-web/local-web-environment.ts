@@ -40,7 +40,7 @@ import type {
   Observation,
   ObservationRequest,
 } from "../../core/environment/types.ts";
-import { confineChild, type ConfinementResult } from "../../core/environment/confinement.ts";
+import { type ConfinementResult } from "../../core/environment/confinement.ts";
 import { probeUrl } from "../../core/environment/load.ts";
 import type { WebObservationData, WebTargetObservation } from "../../core/environment/web-observation.ts";
 import { WEB_OBSERVATION_KIND } from "../../core/environment/web-observation.ts";
@@ -785,10 +785,10 @@ export class LocalWebEnvironment implements EnvironmentAdapter {
 
   #spawn(): ProcessHandle {
     const { command, args } = this.#plan.start;
-    // The child is confined here, before it exists, and the vector handed to the runner is the one
-    // this call returns rather than the one the document declared. `readRoots` names the application
-    // directory and nothing else, because that is where the program and everything it serves from
-    // live - an allowance naming nothing would refuse to load the program it was asked to confine.
+    // The allowance is a value; applying it is `core/process.ts`'s job. `readRoots` names the
+    // application directory and nothing else, because that is where the program and everything it
+    // serves from live - an allowance naming nothing would refuse to load the program it was asked to
+    // confine.
     //
     // The write allowance follows the policy the document actually declared, because the two
     // policies mean two different things: `deny` gives none, and `sandbox` gives exactly the
@@ -798,12 +798,23 @@ export class LocalWebEnvironment implements EnvironmentAdapter {
     // (An empty allowance is what `deny` means to a confined child: it cannot open a file for
     // writing at all.) That the canonical application writes nothing either way was measured rather
     // than assumed, which is why `deny` is safe for it.
-    const confinement = confineChild({
+    const handle = this.#processes.run({
       command,
       args,
-      readRoots: [this.#plan.appPath],
-      writeRoots: this.#plan.boundary.filesystemWrite === "sandbox" ? [this.#plan.appPath] : [],
+      cwd: this.#plan.appPath,
+      env: this.#plan.env,
+      confinement: {
+        readRoots: [this.#plan.appPath],
+        writeRoots: this.#plan.boundary.filesystemWrite === "sandbox" ? [this.#plan.appPath] : [],
+      },
+      // Output is read back through `handle.output()`, which is the single source for the text; these
+      // callbacks exist so a long boot is visible while it is happening rather than only in the bundle.
+      onStdout: (chunk) => this.#logger.debug("app.stdout", { chunk: chunk.trimEnd() }),
+      onStderr: (chunk) => this.#logger.warn("app.stderr", { chunk: chunk.trimEnd() }),
     });
+    // Read back rather than recomputed: the runner decided before the process existed, so this is
+    // available synchronously and is a reading of something that happened.
+    const confinement = handle.confinement ?? null;
     this.#confinement = confinement;
     this.#logger.info("environment.start", {
       command,
@@ -811,18 +822,8 @@ export class LocalWebEnvironment implements EnvironmentAdapter {
       cwd: this.#plan.appPath,
       // What was done to the child, on the same line as the child being started, because two events
       // could otherwise disagree about whether this world confined the program it started.
-      confined: confinement.applied,
-      confinement: confinement.reason,
-    });
-    const handle = this.#processes.run({
-      command: confinement.command,
-      args: confinement.args,
-      cwd: this.#plan.appPath,
-      env: this.#plan.env,
-      // Output is read back through `handle.output()`, which is the single source for the text; these
-      // callbacks exist so a long boot is visible while it is happening rather than only in the bundle.
-      onStdout: (chunk) => this.#logger.debug("app.stdout", { chunk: chunk.trimEnd() }),
-      onStderr: (chunk) => this.#logger.warn("app.stderr", { chunk: chunk.trimEnd() }),
+      confined: confinement?.applied === true,
+      confinement: confinement === null ? "no allowance was requested" : confinement.reason,
     });
     this.#child = handle;
     this.#exit = null;

@@ -45,6 +45,7 @@ export {
   type HealthPolicy,
   type HealthProbe,
   type HealthReport,
+  type MobilePlan,
   type Observation,
   type ObservationRequest,
   type OsPlan,

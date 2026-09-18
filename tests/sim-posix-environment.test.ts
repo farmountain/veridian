@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { SimPosixEnvironment, POSIX_ENV } from "../adapters/sim-posix/sim-posix-environment.ts";
+import { confineChild, confinementCapability, type ConfinementResult } from "../core/environment/confinement.ts";
 import type { PosixExecRecord, PosixObservationData } from "../core/environment/posix-observation.ts";
 import { POSIX_OBSERVATION_KIND, isPosixObservationData } from "../core/environment/posix-observation.ts";
 import type { EnvironmentPlan, ObservationRequest } from "../core/environment/types.ts";
@@ -56,6 +57,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => ({
   vscode: null,
   process: null,
   data: null,
+  mobile: null,
   health: { path: null, expectStatus: null, timeoutMs: 5_000, intervalMs: 10, readyPattern: null },
   reset: { strategy: "restart", command: null },
   browser: { enabled: false, viewport: { width: 1280, height: 720 }, locale: null, timezoneId: null },
@@ -168,17 +170,51 @@ function fakePort(
   };
 }
 
+interface FakeProcesses extends ProcessRunner {
+  /** Every request the adapter handed this runner, in order. */
+  readonly calls: readonly ProcessRequest[];
+  /**
+   * What this runner answered about each child, in order - `null` when no allowance was requested.
+   *
+   * Kept beside `calls` rather than read off the handle, because the request and the answer are two
+   * different facts: the request is what this world *asked for*, the answer is what the runtime
+   * *did*. A double holding only the first makes the boundary reading untestable - and a double
+   * holding a hand-written second would make it a claim nobody measured.
+   */
+  readonly confined: readonly (ConfinementResult | null)[];
+}
+
 function fakeProcesses(
   answers: readonly Partial<ProcessResult>[] = [{}],
   /** A delay before `exited` resolves, so a real deadline can elapse in front of it. */
   delayMs = 0,
-): ProcessRunner & { readonly calls: readonly ProcessRequest[] } {
+): FakeProcesses {
   const calls: ProcessRequest[] = [];
+  const confined: (ConfinementResult | null)[] = [];
   let index = 0;
   return {
     calls,
+    confined,
     run(processRequest: ProcessRequest) {
       calls.push(processRequest);
+      // The allowance is applied here because applying it is the *runner's* job - that is the whole
+      // of the seam this double stands in for. `confineChild` is the real mechanism, so the answer
+      // recorded is the one the product would have produced for this request: a double that returned
+      // a hand-written `applied: true` would agree with the adapter about a mechanism neither had
+      // run, and the boundary reading would be a sentence two files had rehearsed.
+      const conveyance: ConfinementResult | null =
+        processRequest.confinement === undefined
+          ? null
+          : confineChild({
+              command: processRequest.command,
+              args: processRequest.args,
+              readRoots: processRequest.confinement.readRoots,
+              writeRoots: processRequest.confinement.writeRoots,
+              ...(processRequest.confinement.allowChildProcess === undefined
+                ? {}
+                : { allowChildProcess: processRequest.confinement.allowChildProcess }),
+            });
+      confined.push(conveyance);
       const answer = answers[Math.min(index, answers.length - 1)] ?? {};
       index += 1;
       const settled: ProcessResult = {
@@ -187,6 +223,10 @@ function fakeProcesses(
         stdout: "",
         stderr: "",
         timedOut: false,
+        // Stamped, exactly as `core/process.ts` stamps it - the reading the adapter takes is the one
+        // the runner produced, and a double that dropped it would make the guard untestable rather
+        // than making it pass.
+        confinement: conveyance,
         ...answer,
       };
       const exited =
@@ -200,9 +240,9 @@ function fakeProcesses(
       return {
         pid: 1,
         exited,
+        confinement: conveyance,
         output: () => settled.stdout,
         error: () => settled.stderr,
-        write: () => undefined,
         waitForPattern: async () => true,
         stop: async () => undefined,
       };
@@ -214,7 +254,7 @@ interface Harness {
   readonly subject: SimPosixEnvironment;
   readonly port: FakePort;
   readonly io: ReturnType<typeof memoryIo>;
-  readonly processes: ProcessRunner & { readonly calls: readonly ProcessRequest[] };
+  readonly processes: FakeProcesses;
   readonly logger: ReturnType<typeof recordingLogger>;
 }
 
@@ -542,12 +582,67 @@ describe("a criterion acts through `run` steps, and only through them", () => {
     );
   });
 
-  it("reports both boundary policies unsupported, and its containment guard separately", async () => {
+  it("reports an unenforceable network beside a containment guard measured on its own child", async () => {
     const { subject } = await ready();
     const report = subject.boundaries();
     assert.equal(report.network, "unsupported");
-    assert.equal(report.filesystemWrite, "unsupported");
     assert.deepEqual([...report.crossings], []);
+  });
+
+  it("asks the runner for an allowance over the sandbox, and names the application directory as readable", async () => {
+    const { processes } = await ready();
+    // Two read roots because they are two directories: the program file is opened from the
+    // application directory and everything the world holds is opened from the sandbox. A read
+    // allowance naming only the sandbox would refuse to load the program it was asked to confine.
+    assert.deepEqual(processes.calls[0]?.confinement, {
+      readRoots: ["/virtual/app", "/virtual/app/.sandbox"],
+      writeRoots: ["/virtual/app/.sandbox"],
+    });
+  });
+
+  it("reports the write boundary enforced once a Node child really was confined", async () => {
+    const capability = confinementCapability();
+    assert.equal(
+      capability.available,
+      true,
+      `this suite asserts enforcement, so it can only run where enforcement exists: ${capability.reason}`,
+    );
+    const { subject, processes } = await ready();
+    assert.equal(processes.confined[0]?.applied, true, "the child really was confined");
+    assert.equal(processes.confined[0]?.command, process.execPath);
+    assert.equal(processes.confined[0]?.args[0], "--permission");
+    assert.equal(subject.boundaries().filesystemWrite, "enforced");
+  });
+
+  it("does not report enforcement for a provisioning program the confinement model cannot reach", async () => {
+    // An ordinary process with the operator's own privileges is not a confined one, and the reading
+    // has to say so. This is the half that keeps the other half from being an over-claim: the value
+    // is derived from the runner's answer and not from the *presence* of an allowance.
+    const { subject, processes } = await ready(plan({ start: { command: "sh", args: ["provision.sh"], readyPattern: null } }));
+    assert.equal(processes.confined[0]?.applied, false);
+    assert.equal(processes.confined[0]?.command, "sh");
+    assert.notEqual(
+      subject.boundaries().filesystemWrite,
+      "enforced",
+      "a program the runtime does not confine is not a boundary this world holds",
+    );
+  });
+
+  it("keeps the operator's own custom reset command unconfined, because one word cannot describe two authors", async () => {
+    const { subject, id, processes } = await ready(plan({ reset: { strategy: "custom", command: "node" } }));
+    await subject.reset(id);
+    assert.equal(processes.calls.length, 2, "the provisioning program, then the operator's reset command");
+    assert.notEqual(processes.calls[0]?.confinement, undefined);
+    assert.equal(
+      processes.calls[1]?.confinement,
+      undefined,
+      "a reset command carries an argv the *operator* wrote, and the allowance belongs on the child whose author Veridian does not control",
+    );
+    assert.equal(
+      subject.boundaries().filesystemWrite,
+      "enforced",
+      "the reading names the application's child, and a later unconfined child does not retract it",
+    );
   });
 
   it("distinguishes a boundary the operator never asked for from one it cannot enforce", async () => {

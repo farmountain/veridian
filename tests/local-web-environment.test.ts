@@ -19,7 +19,7 @@ import { describe, it } from "node:test";
 import { EnvironmentError } from "../core/failure.ts";
 import type { Clock, Logger } from "../core/clarification/types.ts";
 import type { EnvironmentPlan, ObservationRequest } from "../core/environment/types.ts";
-import { confinementCapability } from "../core/environment/confinement.ts";
+import { confineChild, confinementCapability, type ConfinementResult } from "../core/environment/confinement.ts";
 import type { ProcessHandle, ProcessRequest, ProcessResult, ProcessRunner } from "../core/process.ts";
 import { memoryIo } from "../core/io.ts";
 import type { MemoryIo } from "../core/io.ts";
@@ -54,13 +54,29 @@ class FakeHandle implements ProcessHandle {
   readonly exited: Promise<ProcessResult>;
   readonly request: ProcessRequest;
   readonly program: FakeProgram;
+  /**
+   * What the fake runner did with the allowance on the request, exactly as the real one reports it.
+   *
+   * The real runner decides before the process exists and stamps both the handle and every result, so
+   * a reading is available to a world at any point in its life. A fake that skipped this would leave
+   * `handle.confinement` undefined, and `boundaries()` - which is written to read that field rather
+   * than recompute the decision - would report `unsupported` for a world that had just handed over a
+   * perfectly good allowance. The double has to reproduce the property the reading is about.
+   */
+  readonly confinement: ConfinementResult | null;
   stopped = false;
   #settle!: (result: ProcessResult) => void;
 
-  constructor(pid: number, request: ProcessRequest, program: FakeProgram) {
+  constructor(
+    pid: number,
+    request: ProcessRequest,
+    program: FakeProgram,
+    confinement: ConfinementResult | null,
+  ) {
     this.pid = pid;
     this.request = request;
     this.program = program;
+    this.confinement = confinement;
     this.exited = new Promise<ProcessResult>((resolve) => {
       this.#settle = resolve;
     });
@@ -120,15 +136,16 @@ interface FakeProcesses {
 type Program = FakeProgram | readonly FakeProgram[];
 
 /**
- * The key a launched command's program is filed under, derived the way the world itself derives it.
+ * The key a launched command's program is filed under, derived the way the runner derives the vector
+ * before starting it.
  *
- * This is not a convenience. `#spawn` does not hand the runner the command the document declared: it
- * hands it whatever `core/environment/confinement.ts` returned, and for a Node application that is
- * the **absolute path to the interpreter** rather than the word `node`. A fake keyed on the declared
- * spelling alone finds no program for a confined child, reads an empty stdout, and fails every
- * `start()` here on the readiness wait - a double that cannot follow its own product is a suite about
- * a world nobody runs. Measured rather than reasoned about: before this helper existed, confining the
- * adapter failed 35 of these 40 tests, every one of them on the readiness wait.
+ * This is not a convenience. The adapter hands the runner the command the document declared, and the
+ * runner replaces it with **the absolute path to the interpreter** when it applies the allowance - so
+ * the program that really starts is `C:\Program Files\nodejs\node.exe`, not the word `node`. A fake
+ * keyed on the declared spelling alone finds no program for a confined child, reads an empty stdout,
+ * and fails every `start()` here on the readiness wait - a double that cannot follow its own product
+ * is a suite about a world nobody runs. Measured rather than reasoned about: before this helper
+ * existed, confining the adapter failed 35 of these 40 tests, every one of them on the readiness wait.
  *
  * So a command that is not a key verbatim is looked up by its basename without a trailing `.exe`,
  * lowercased - the same rule `confinement.ts` uses to decide whether a command is a Node interpreter
@@ -155,14 +172,31 @@ function fakeProcesses(programs: Readonly<Record<string, Program>> = {}): FakePr
     runner: {
       run(request: ProcessRequest): ProcessHandle {
         requests.push(request);
-        const key = programKey(programs, request.command);
+        // The allowance is applied here because applying it is the *runner's* job - that is the whole
+        // of the seam this double stands in for. `confineChild` is the real mechanism, so the answer
+        // recorded on the handle is the one the product would have produced for this request.
+        const confinement =
+          request.confinement === undefined
+            ? null
+            : confineChild({
+                command: request.command,
+                args: request.args,
+                readRoots: request.confinement.readRoots,
+                writeRoots: request.confinement.writeRoots,
+                ...(request.confinement.allowChildProcess === undefined
+                  ? {}
+                  : { allowChildProcess: request.confinement.allowChildProcess }),
+              });
+        // The vector that is really started, which is the confined one when there was an allowance.
+        const command = confinement === null ? request.command : confinement.command;
+        const key = programKey(programs, command);
         const entry = programs[key];
         const index = counts.get(key) ?? 0;
         counts.set(key, index + 1);
         const program = Array.isArray(entry)
           ? (entry[Math.min(index, entry.length - 1)] ?? {})
           : (entry ?? {});
-        const handle = new FakeHandle(nextPid++, request, program);
+        const handle = new FakeHandle(nextPid++, request, program, confinement);
         launched.push(handle);
         return handle;
       },
@@ -327,7 +361,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => ({
   env: { PORT: "4173" },
   dependencyInstall: null,
   start: { command: "node", args: ["serve.mjs"], readyPattern: "Listening on" },
-  url: "http://127.0.0.1:4173",  api: null,  databasePath: null,  cluster: null,  posix: null,  os: null,  cloud: null,  container: null,  vscode: null,  process: null,  data: null,  health: { path: "/health", expectStatus: 200, timeoutMs: 5_000, intervalMs: 100, readyPattern: null },
+  url: "http://127.0.0.1:4173",  api: null,  databasePath: null,  cluster: null,  posix: null,  os: null,  cloud: null,  container: null,  vscode: null,  process: null,  data: null,  mobile: null,  health: { path: "/health", expectStatus: 200, timeoutMs: 5_000, intervalMs: 100, readyPattern: null },
   reset: { strategy: "restart", command: null },
   browser: { enabled: true, viewport: { width: 1280, height: 720 }, locale: null, timezoneId: null },
   boundary: { network: "deny", allow: [], filesystemWrite: "deny" },
@@ -394,23 +428,32 @@ describe("the local-web environment brings an application up", () => {
 
     assert.equal(id, "local-web:examples/shopping-cart");
     const launch = processes.requests[0];
-    // The runner is handed the vector `confineChild` returned, not the one the document declared: the
-    // command becomes the interpreter's own path - absolute, so no shell can mangle an allowance - and
-    // the args carry the permission flag and the read allowance ahead of the program's own.
+    // The adapter hands the runner the vector **the document declared** plus an *allowance*, and
+    // applying the allowance is the runner's job. That is the seam: one mechanism, in one place,
+    // rather than one per world.
     //
-    // This used to assert the declared word `node` and `deepEqual(args, ["serve.mjs"])`, and both were
-    // true for exactly as long as nothing confined the child. Asserting them again would pin the
-    // spelling of a document rather than the shape of the process that was really started. The
-    // capability is read rather than assumed for the reason every confinement test reads it: on a
-    // runtime that refuses `--permission` the adapter is behaving exactly as designed when it hands
-    // the runner the unconfined vector, so a suite that pinned the confined shape unconditionally
-    // would fail on a machine where nothing is wrong.
+    // This used to assert that the request carried `confineChild`'s own answer - the interpreter's
+    // absolute path, the permission flag and the read allowance ahead of the program's own - because
+    // the adapter really did call `confineChild` itself. Neither half of that is true any more, and
+    // asserting it again would pin the spelling of a document rather than the shape of the process
+    // that was really started. What the request must say is now two things: the declared command, and
+    // an allowance a runner can act on.
+    assert.equal(launch?.command, "node");
+    assert.deepEqual([...(launch?.args ?? [])], ["serve.mjs"]);
     const capability = confinementCapability();
-    assert.equal(launch?.command, capability.available ? capability.interpreter : "node");
-    assert.equal(launch?.args.at(-1), "serve.mjs", "the program is still the last argument");
-    assert.equal(launch?.args.includes("--permission"), capability.available);
+    assert.deepEqual(
+      [...(launch?.confinement?.readRoots ?? [])],
+      [plan().appPath],
+      "a confined child with no read allowance cannot open the program it was asked to run",
+    );
+    // And the runner really applied it - read off the handle rather than recomputed, because the
+    // world reports its boundary from exactly this field.
+    const started = processes.launched[0]?.confinement ?? null;
+    assert.equal(started?.command, capability.available ? capability.interpreter : "node");
+    assert.equal(started?.args.at(-1), "serve.mjs", "the program is still the last argument");
+    assert.equal(started?.args.includes("--permission") ?? false, capability.available);
     assert.equal(
-      launch?.args.some((arg) => arg.startsWith("--allow-fs-read=")),
+      started?.args.some((arg) => arg.startsWith("--allow-fs-read=")) ?? false,
       capability.available,
       "a confined child with no read allowance cannot open the program it was asked to run",
     );
@@ -1016,9 +1059,9 @@ describe("the local-web environment reports the boundary it actually held", () =
 
     // This test read `unsupported` until `core/environment/confinement.ts` landed, and the comment
     // that stood here said the application "runs as an ordinary child process with the operator's
-    // privileges" - the exact sentence that module was written to make false. `#spawn` now calls
-    // `confineChild`, so the boundary is real whenever the runtime can hold it and the report is read
-    // off the confinement that call returned rather than declared beside it.
+    // privileges" - the exact sentence that module was written to make false. The world now hands the
+    // runner an *allowance* and reads its answer back, so the boundary is real whenever the runtime
+    // can hold it and the report is a reading rather than a declaration.
     //
     // The expectation is derived from the capability rather than pinned, because `unsupported` is the
     // *correct* answer on a runtime that refuses `--permission`: this world holds no boundary there,
@@ -1047,10 +1090,13 @@ describe("the local-web environment reports the boundary it actually held", () =
     await h.subject.start(id);
 
     assert.equal(h.subject.boundaries().filesystemWrite, "unsupported");
-    // The vector is unchanged, and that is what makes the refusal a *reported* one: a world that
-    // quietly stripped the command would leave this criterion judged against nothing at all.
+    // The *request* names the program the document declared and that is what really starts, because
+    // the runner refuses the allowance by name rather than confining something the permission model
+    // does not reach. That refusal is what makes this a *reported* boundary: a world that quietly
+    // stripped the command would leave its criteria judged against nothing at all.
     assert.equal(processes.requests[0]?.command, "cmd");
     assert.deepEqual([...(processes.requests[0]?.args ?? [])], ["/c", "echo", "hi"]);
+    assert.equal(processes.launched[0]?.confinement?.applied, false, "refused, and said so, rather than silently applied");
   });
 
   it("gives a `sandbox` plan a write allowance and a `deny` plan none", async () => {
@@ -1075,16 +1121,14 @@ describe("the local-web environment reports the boundary it actually held", () =
     const { id: deniedId } = await deniedHarness.subject.create();
     await deniedHarness.subject.start(deniedId);
 
-    const allowances = (requests: readonly ProcessRequest[]): readonly string[] =>
-      [...(requests[0]?.args ?? [])].filter((arg) => arg.startsWith("--allow-fs-write="));
-
     // Read off the request the runner was handed rather than off the report, so this cannot agree with
     // the report by construction: the two have to be able to be wrong separately, or the assertion is
-    // about the adapter agreeing with itself.
-    assert.deepEqual(allowances(denied.requests), []);
+    // about the adapter agreeing with itself. The allowance is the adapter's *asking*; whether it was
+    // applied is the runner's answer, and that is what the separate boundary test reads.
+    assert.deepEqual([...(denied.requests[0]?.confinement?.writeRoots ?? ["missing"])], []);
     assert.deepEqual(
-      allowances(sandboxed.requests),
-      confinementCapability().available ? [`--allow-fs-write=${sandboxPlan.appPath}`] : [],
+      [...(sandboxed.requests[0]?.confinement?.writeRoots ?? [])],
+      [sandboxPlan.appPath],
       "`sandbox` is the application directory, not an empty allowance",
     );
   });

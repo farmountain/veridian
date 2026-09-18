@@ -72,6 +72,7 @@ import {
   CLOUD_SIMULATED_SURFACES,
 } from "../../core/environment/cloud-observation.ts";
 import type { CloudObservationData } from "../../core/environment/cloud-observation.ts";
+import { type ConfinementResult } from "../../core/environment/confinement.ts";
 import type {
   ArtifactKind,
   BoundaryCrossing,
@@ -189,6 +190,15 @@ export class SimCloudEnvironment implements EnvironmentAdapter {
   #deployed = false;
   /** The provisioning program's combined output, kept so `probe()` can answer truthfully. */
   #deployOutput: string | null = null;
+  /**
+   * What the **runner** answered when the application's provisioning program was started, or `null`.
+   *
+   * Read off the result rather than recomputed here, and that distinction is the whole of the seam:
+   * this adapter states *what the world allows*, and only the runner knows what it actually applied.
+   * A helper that decided for itself would make every adapter report `enforced` for a world where
+   * nothing was enforced - the exact overclaim the boundary path exists to remove.
+   */
+  #confinement: ConfinementResult | null = null;
 
   /**
    * Every criterion request this world refused because it named a host this world does not serve.
@@ -550,24 +560,34 @@ export class SimCloudEnvironment implements EnvironmentAdapter {
   /**
    * What this world did about the plan's boundaries.
    *
-   * `unsupported` for both, and not silently - including for the filesystem, where it is not an
-   * adapter limitation but a fact about the world. An account holds **no files**: there is no
-   * directory to write to, no path in the plan to resolve and no `write` step kind this adapter
-   * performs. Reporting `enforced` there would name a guard that does not exist, and reporting it as
-   * `not-requested` would suggest the policy was honoured when there is nothing for it to be true of.
+   * The two policies are answered by two different kinds of evidence, and the difference is the
+   * point rather than a detail.
+   *
+   * `filesystemWrite` is a **measurement**. An account holds no files, so this world has no sandbox
+   * tree of its own, no path in the plan to resolve and no `write` step kind - but the application's
+   * provisioning program is nevertheless an ordinary host child running with the operator's own
+   * privileges, which means that without this it could write anywhere the operator can, and being an
+   * *account* would have been no protection from that at all. The runner confines that child to the
+   * application directory and answers with what it applied; this arm is derived from that answer
+   * rather than from a sentence, so a child the mechanism cannot reach - anything but the runtime's
+   * own interpreter, and the operator's `custom` reset command - reads `unsupported` instead of being
+   * flattered as guarded.
    *
    * The network policy is the one a reader might expect better of, because a cloud account *is* where
-   * a network boundary belongs. But nothing here enforces which hosts the application reaches: the
-   * provisioner runs as an ordinary child process and can open any socket it likes, and the guard
-   * this world really does hold is over a *criterion's* `call` target - it stops a criterion putting
-   * a request somewhere else, not the application reaching somewhere else. Reporting `enforced` on
-   * the strength of that would be the exact overclaim the boundary path exists to remove, which is
-   * why the crossings list is reported beside the two policies rather than instead of them.
+   * a network boundary belongs. There is no `--allow-net`. Measured with a positive control: a
+   * confined child really did connect over loopback, so the permission flag set is a filesystem-and-
+   * child-process allowlist and nothing more, and that is a permanent property of the runtime rather
+   * than a gap in this world. So nothing here enforces which hosts the application reaches - the
+   * provisioner can open any socket it likes. The guard this world really does hold is over a
+   * *criterion's* `call` target: it stops a criterion putting a request somewhere else, not the
+   * application reaching somewhere else. Reporting `enforced` on the strength of that would be the
+   * exact overclaim the boundary path exists to remove, which is why the crossings list is reported
+   * beside the two policies rather than instead of them.
    */
   boundaries(): BoundaryReport {
     return {
       network: this.#plan.boundary.network === "allow" ? "not-requested" : "unsupported",
-      filesystemWrite: "unsupported",
+      filesystemWrite: this.#confinement?.applied === true ? "enforced" : "unsupported",
       crossings: [...this.#crossings],
     };
   }
@@ -742,11 +762,26 @@ export class SimCloudEnvironment implements EnvironmentAdapter {
         args,
         cwd: this.#plan.appPath,
         env,
+        // The allowance is the application directory for both halves. Every other world's plan
+        // carries one of `appPath`/`databasePath`/`cluster` and an account carries *none* - there is
+        // no `VERIDIAN_CLOUD_ROOT` and no directory, as `CLOUD_ENV` says - so `appPath` is the one
+        // path this world can honestly name, exactly as `sim-k8s` and `sim-data` do. A `writeRoots`
+        // naming a sandbox would name a place that does not exist.
+        confinement: {
+          readRoots: [this.#plan.appPath],
+          writeRoots: [this.#plan.appPath],
+        },
         onStdout: (chunk) => this.#logger.debug("deploy.stdout", { chunk: chunk.trimEnd() }),
         onStderr: (chunk) => this.#logger.warn("deploy.stderr", { chunk: chunk.trimEnd() }),
       },
       this.#deployTimeoutMs,
     );
+
+    this.#confinement = result.confinement ?? null;
+    this.#logger.info("environment.deploy.confinement", {
+      applied: this.#confinement?.applied ?? false,
+      reason: this.#confinement === null ? "no allowance was requested" : this.#confinement.reason,
+    });
 
     // Kept whatever happened next, including on a timeout: the partial output of a program that never
     // finished is the evidence that explains why, and `probe()` reports the readiness signal from

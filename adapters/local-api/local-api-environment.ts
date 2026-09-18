@@ -36,9 +36,10 @@
  *
  * `filesystemWrite` used to be `unsupported` here, on the true sentence that the application runs as
  * an ordinary child process with the operator's own privileges. That sentence stopped being true when
- * `core/environment/confinement.ts` landed: the service is now started through `confineChild`, so the
- * boundary is real when the mechanism is available and honestly `unsupported` when it is not - and
- * the report is read off the confinement `#spawn` actually got rather than declared beside it.
+ * `core/environment/confinement.ts` landed, and the mechanism no longer lives in this file: the
+ * service's request carries an *allowance* and `core/process.ts` applies it, so the boundary is real
+ * when the mechanism is available and honestly `unsupported` when it is not - and the report is read
+ * off the confinement the runner answered with rather than declared beside it.
  */
 
 import { decodeStep } from "../../core/acceptance/plan.ts";
@@ -50,7 +51,7 @@ import type {
   ApiProcessReading,
 } from "../../core/environment/api-observation.ts";
 import { API_OBSERVATION_KIND } from "../../core/environment/api-observation.ts";
-import { confineChild, type ConfinementResult } from "../../core/environment/confinement.ts";
+import { type ConfinementResult } from "../../core/environment/confinement.ts";
 import { probeUrl } from "../../core/environment/load.ts";
 import type {
   ArtifactKind,
@@ -645,9 +646,8 @@ export class LocalApiEnvironment implements EnvironmentAdapter {
 
   #spawn(): ProcessHandle {
     const { command, args } = this.#plan.start;
-    // The child is confined here, before it exists, and the vector handed to the runner is the one
-    // this call returns rather than the one the document declared. `readRoots` names the application
-    // directory: the program is opened from there, and so is anything it serves.
+    // The allowance is a value; applying it is `core/process.ts`'s job. `readRoots` names the
+    // application directory: the program is opened from there, and so is anything it serves.
     //
     // The write allowance follows the policy the document actually declared, because the two
     // policies mean two different things: `deny` gives none, and `sandbox` gives exactly the
@@ -658,14 +658,25 @@ export class LocalApiEnvironment implements EnvironmentAdapter {
     // writing at all.)
     //
     // The order matters too - the confinement runs *after* the dependency install, in `start()`,
-    // because `npm install` is not a Node interpreter and `confineChild` refuses it by name rather
-    // than confining something it does not reach.
-    const confinement = confineChild({
+    // because `npm install` is not a Node interpreter and the runner refuses it by name rather than
+    // confining something it does not reach.
+    const handle = this.#processes.run({
       command,
       args,
-      readRoots: [this.#plan.appPath],
-      writeRoots: this.#plan.boundary.filesystemWrite === "sandbox" ? [this.#plan.appPath] : [],
+      cwd: this.#plan.appPath,
+      env: this.#plan.env,
+      confinement: {
+        readRoots: [this.#plan.appPath],
+        writeRoots: this.#plan.boundary.filesystemWrite === "sandbox" ? [this.#plan.appPath] : [],
+      },
+      // Output is read back through `handle.output()`, which is the single source for the text; these
+      // callbacks exist so a long boot is visible while it is happening rather than only in the bundle.
+      onStdout: (chunk) => this.#logger.debug("app.stdout", { chunk: chunk.trimEnd() }),
+      onStderr: (chunk) => this.#logger.warn("app.stderr", { chunk: chunk.trimEnd() }),
     });
+    // Read back rather than recomputed: the runner decided before the process existed, so this is
+    // available synchronously and is a reading of something that happened.
+    const confinement = handle.confinement ?? null;
     this.#confinement = confinement;
     this.#logger.info("environment.start", {
       command,
@@ -674,18 +685,8 @@ export class LocalApiEnvironment implements EnvironmentAdapter {
       url: this.#url(),
       // What was done to the child, on the same line as the child being started, because two events
       // could otherwise disagree about whether this world confined the service it started.
-      confined: confinement.applied,
-      confinement: confinement.reason,
-    });
-    const handle = this.#processes.run({
-      command: confinement.command,
-      args: confinement.args,
-      cwd: this.#plan.appPath,
-      env: this.#plan.env,
-      // Output is read back through `handle.output()`, which is the single source for the text; these
-      // callbacks exist so a long boot is visible while it is happening rather than only in the bundle.
-      onStdout: (chunk) => this.#logger.debug("app.stdout", { chunk: chunk.trimEnd() }),
-      onStderr: (chunk) => this.#logger.warn("app.stderr", { chunk: chunk.trimEnd() }),
+      confined: confinement?.applied === true,
+      confinement: confinement === null ? "no allowance was requested" : confinement.reason,
     });
     this.#child = handle;
     this.#exit = null;

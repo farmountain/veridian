@@ -4,6 +4,7 @@ import type { ReadonlyIoPort } from "../io.ts";
 import { SCHEMA_URIS, type SchemaSet } from "../schema/index.ts";
 import { principalProblem } from "./cloud-observation.ts";
 import { CONTAINER_PLATFORMS } from "./container-observation.ts";
+import { MOBILE_PLATFORMS } from "./mobile-observation.ts";
 import { OS_FAMILIES, PRIVILEGED_OS_ACCOUNTS } from "./os-observation.ts";
 import {
   RESET_STRATEGIES,
@@ -16,6 +17,7 @@ import {
   type DataPlan,
   type EnvironmentPlan,
   type HealthPolicy,
+  type MobilePlan,
   type OsPlan,
   type PosixPlan,
   type ProcessPlan,
@@ -685,6 +687,71 @@ function readData(raw: unknown): DataPlan | null {
   return { cluster, nodeId, host, port };
 }
 
+/**
+ * The device declaration, resolved.
+ *
+ * The eighth time the rule of {@link readCluster}, {@link readPosix}, {@link readOs}, {@link readCloud},
+ * {@link readContainer}, {@link readVSCode} and {@link readData} is written out - absent means not this
+ * world, present-but-incomplete is **refused** - and the second time one of these readers validates a
+ * *rule* rather than accepting a label, after `container.platform`.
+ *
+ * `device` and `root` are refused when blank for the reason every identity and every sandbox before
+ * them is. A defaulted device name would be a name the plan and every reading agree on by construction
+ * and that nothing in the document ever said, so the first question a result answers - *which device
+ * produced this* - would be answered with a value nobody chose; and a defaulted root would judge a
+ * contract against whichever directory the process happened to be started in.
+ *
+ * `platform` is a rule rather than a label: it decides how a path inside the device's own storage is
+ * spelled. The schema also constrains it, so from a *validated* document this check cannot be reached - 
+ * the `enum` refuses an unimplemented platform first, and the reader below is left with the blank case
+ * only. It is kept for the reason `readContainer` and `readOs` keep theirs: the loader is also reached
+ * through the partial path the clarification ladder uses, where the schema is relaxed and a value the
+ * enumeration would have refused arrives here instead. A reader that trusted the schema would leave that
+ * path judging a document by a path grammar its own document never named.
+ */
+function readMobile(raw: unknown, appPath: string): MobilePlan | null {
+  if (raw === undefined || raw === null) return null;
+  if (!isPlainObject(raw)) {
+    throw defect(
+      "$.mobile",
+      "mobile must be an object naming the device this world stands in for, the platform it answers " +
+        "as, and the sandbox root it holds its bundles and device state in",
+    );
+  }
+  const device = asString(raw["device"]).trim();
+  const platform = asString(raw["platform"]).trim();
+  const root = asString(raw["root"]).trim();
+  const missing = [
+    device === "" ? "device" : null,
+    platform === "" ? "platform" : null,
+    root === "" ? "root" : null,
+  ].filter((entry): entry is string => entry !== null);
+  if (missing.length > 0) {
+    throw defect(
+      `$.mobile.${missing[0] ?? "device"}`,
+      `the device declaration is missing ${missing.join(", ")}. The device is what every reading ` +
+        "names, the platform is what decides how a path inside the device is spelled, and the root is " +
+        "the directory on this machine the world's bundles and device state live in - defaulting any " +
+        "of them would produce a verdict about a device nobody described.",
+    );
+  }
+  if (!(MOBILE_PLATFORMS as readonly string[]).includes(platform)) {
+    throw defect(
+      "$.mobile.platform",
+      `this world stands in for ${MOBILE_PLATFORMS.join(" and ")} devices, and the document names ` +
+        `${JSON.stringify(platform)}. The platform is not a label on the readings - it is what decides ` +
+        "how a path inside the device's own storage is spelled - so a document naming one this " +
+        "substitution does not implement is a document whose every criterion would resolve paths by " +
+        "the wrong grammar.",
+    );
+  }
+  return {
+    device,
+    platform: platform as MobilePlan["platform"],
+    root: resolveSibling({ dir: appPath, path: "", text: "" }, root),
+  };
+}
+
 function readBoundary(limits: GoalLimits): BoundaryPolicy {
   return {
     network: limits.networkPolicy,
@@ -771,6 +838,7 @@ export function finalizeEnvironment(
     vscode: readVSCode(raw["vscode"], appPath),
     process: readProcess(raw["process"], appPath),
     data: readData(raw["data"]),
+    mobile: readMobile(raw["mobile"], appPath),
     health: readHealth(raw["health"], url !== "", readyPattern),
     reset: { strategy: strategy as ResetStrategy, command: resetCommand },
     browser: readBrowser(raw["browser"], url !== ""),

@@ -153,6 +153,17 @@
       "required": ["cluster", "nodeId"],
       "additionalProperties": false
     },
+    "mobile": {
+      "type": ["object", "null"],
+      "description": "The device this world stands in for, when the world is one. Present for a simulated device such as `sim-mobile`; absent for every other world. Same reasoning as `data`: stated here rather than as an adapter-private option, so the plan every reader sees names the same device, platform and sandbox the run measured, and so that 'this world is not a device' stays distinguishable from 'nobody filled the field in'. A world declaring `mobile` has no url, no cluster, no posix, no os, no cloud, no container, no vscode, no process and no data, exactly as a database world has no url. Nothing in this block is drawn, prompted for, booted or delivered: the device is a record the substitute holds, so a screen is reported as recorded rather than rendered, a permission as declared rather than prompted for, and a notification as accepted rather than delivered. That is why `apiLevel` is not a field - the platform carries it as a constant of the substitution, and a document able to state a level the substitute does not answer as would be a document asserting something no reading could corroborate.",
+      "properties": {
+        "device": { "type": "string", "minLength": 1, "description": "The device identity the readings name, so a result says which device produced it. A free string rather than an enumeration: a device name decides nothing a criterion can observe, and enumerating it would let a label act as a rule." },
+        "platform": { "type": "string", "enum": ["android"], "description": "The device platform this world stands in for, which decides how a path inside the device's own storage is spelled. A rule rather than a label, which is why it is validated rather than accepted as written - so a document naming a platform the substitution does not implement is refused rather than judged by the wrong path grammar." },
+        "root": { "type": "string", "minLength": 1, "description": "The directory on this machine the world's installed bundles, its keychain entries and its device state live in. A sandbox rather than the application directory, on the same reasoning as `posix.root`: the world is destroyed and rebuilt on every reset, so pointing it at the application would delete the code under test on the first iteration." }
+      },
+      "required": ["device", "platform", "root"],
+      "additionalProperties": false
+    },
     "health": {
       "type": "object",
       "properties": {

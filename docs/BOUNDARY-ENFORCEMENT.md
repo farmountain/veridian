@@ -141,6 +141,16 @@ child are exactly the three that answer that question with a measurement**, and
 `tests/boundary-roster.test.ts` derives that split from the adapters themselves rather than from this
 paragraph — so a twelfth world cannot join either side in silence.
 
+> **Corrected, and kept as it was written.** The bolded sentence above was true when this section was
+> written, because only three worlds confined a child at all. The confine seam has since moved into
+> `core/process.ts`, so **every** world hands the runner a file allowance and *"confines a child"* now
+> denotes all of them — the equality above has a left side that grew and a right side that did not. The
+> separation that survived is **a front door, not a child**. Two worlds whose every request passes a
+> guarded route answer `enforced`. One world with no door answers `unenforceable`. The other eight
+> answer `unsupported`. The corrected wording is in `core/environment/types.ts` and in the guard; it is
+> recorded here rather than substituted so the reader can see which claim a change invalidated and why
+> the guard over it could not have caught it.
+
 `EnvironmentAdapter` and `WorldPort` each gain one read-only method, `boundaries(): BoundaryReport`.
 It is **required, not optional**: an optional method is one a real adapter may silently omit, which
 is F1 exactly.

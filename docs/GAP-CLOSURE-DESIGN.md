@@ -37,7 +37,7 @@ operator's desk at all.
 |---|----------|--------------|-----------|
 | S1 | What does "fully implemented" mean for isolation (gaps 1 and 6)? | **Propagate the measured mechanism at the seam; design the real-isolation substrate; do not build it here.** | The substrate is *measured absent* on this machine (no container runtime; `Dockerfile` is a distribution route built in CI only). `BOUNDARY-ENFORCEMENT.md` §7 records real filesystem isolation as out of scope; `DISTRIBUTION-AND-ENVIRONMENTS.md` §6 forbids a stub. Building what cannot be run here would produce exactly the unverifiable claim this repository refuses - and the recorded instruction in `BOUNDARY-SPINE-DESIGN.md` §6 already names the narrower work as *"the immediate next step"*. |
 | S2 | Should `sim-mobile` be built, or does its recorded deferral stand? | **Build it.** | It is the **only** world row left `planned`, the request names "all sandbox environments we planned", and it is **absent from the blocked table** in `DISTRIBUTION-AND-ENVIRONMENTS.md` §5 - which is the list of things this repository has decided cannot be answered here. A row that is unbuilt rather than blocked, in a request that names every planned world, is the one row with nothing standing behind its deferral. |
-| S3 | How should the plan treat HipCortex, whose substrate refuses every write with `HTTP 403`? | **Report the refusal; keep writing; change no product code.** | The client side is already correct and already tested: `IMPLEMENTATION-PLAN.md` §3.7 specifies that a *refusal* is not an unreachability and that the log says so, and `tests/memory-port.test.ts` holds both halves. The gap is operational, not architectural, and the honest response to an operational refusal is a disclosure - the same discipline as `veridian info:` writing to stderr on purpose. |
+| S3 | How should the plan treat HipCortex, whose substrate refuses every write with `HTTP 403`? | **Report the refusal; keep writing; change no product code.** | The client side is already correct and already tested: `IMPLEMENTATION-PLAN.md` §3.7 specifies that a *refusal* is not an unreachability and that the log says so, and `tests/memory-port.test.ts` holds both halves. The gap is operational, not architectural, and the honest response to an operational refusal is a disclosure - the same discipline as `veridian info:` writing to stderr on purpose. **Corrected during execution: the substrate does *not* refuse every write.** The premise of this question was measured twice more and falsified; see the correction under §4 W7. The answer taken is unchanged - report the refusal, keep writing, change no product code - because that answer never depended on the refusal being universal. |
 | S4 | Where does this document live? | **`docs/GAP-CLOSURE-DESIGN.md`.** | Resolved by self-prompting, not deferred: the brainstorming skill says `docs/superpowers/specs/`, but `AGENTS.md`'s documentation index is flat and lists five files in `docs/`, and both existing design documents sit at `docs/*-DESIGN.md`. Creating the first subdirectory in `docs/` would make the index wrong in the same pass - which is gap 4 itself. |
 | S5 | In what form is gap 4's correction made? | **In place, with a landed/reversed column.** | The plan's value is as an audit trail, and its assumptions log already establishes the pattern (A5, A11 and A12 are reversals recorded beside the assumptions they reversed rather than replaced). |
 | S6 | Is gap 2 closed at the seam or at each adapter? | **At the seam.** | `BOUNDARY-ENFORCEMENT.md` §10 states the rule in this repository's own words: *"fix the seam the defect belongs to, not each of the call sites that trip over it; three mitigations at three call sites is the signature of a bug one layer down."* §2.2 measures that this is the same signature. |
@@ -182,6 +182,14 @@ This is the measurement that decides gap 2's shape.
 | Adapters reporting `filesystemWrite: "unsupported"` | **8** - `local-db`, `sim-cloud`, `sim-container`, `sim-data`, `sim-k8s`, `sim-os`, `sim-posix`, `sim-vscode` |
 | Sites importing `node:child_process` directly | **3 files**, each with a private `#spawn()` - the same three |
 
+**This table is a reading at `da4831e` and is left as it was measured**, because it is the measurement
+the design of W1 was taken against - and a measurement edited to agree with its own outcome is no
+longer a measurement. Two of its rows have moved since, and §9 carries the figures that replaced them:
+`confineChild(` callers went 3 -> **0 in `adapters/**`** (the runner applies it now), and the eight
+worlds reporting `unsupported` became **11 of 11 reporting `enforced`**, each derived from the runner's
+own answer rather than asserted. The `runToCompletion(` count and the `ProcessRunner` count are
+unchanged.
+
 And the seam is a single function pair:
 
 ```
@@ -209,7 +217,7 @@ eleven. The correction belongs at the seam.
 | 4 | Documentation currency | `IMPLEMENTATION-PLAN.md` §1 is **factually wrong in two rows**: the Cockpit (built) and Kubernetes/cloud/mobile/VM (six `sim-*` worlds exist). The Level-3 MCP row is correctly still deferred | **W3** | S |
 | 5 | Optional Playwright peer | `package.json` has **no `peerDependencies` key**. The honest degradation is built and tested | **W4** | S |
 | 6 | Worlds declaring limits they do not enforce | True for `network` (a platform limit, `unenforceable`) and for the declared-not-enforced limits inside `sim-container` and `sim-data` (stated in the compared value). **False for `filesystemWrite` on eight worlds** | **W1** turns the false case into a held one; W2's new world is written with its limits in the compared value from its first line | S / M |
-| 7 | HipCortex operational continuity | Code side closed and tested; the substrate refuses writes | **W7** - disclosure, no code | S |
+| 7 | HipCortex operational continuity | Code side closed and tested; the substrate refused writes when the gap was measured, and accepts them now | **W7** - disclosure, no code | S |
 | - | `sim-mobile` | Only `planned` row; **absent from the blocked table** | **W2** | M |
 
 ### 3.1 Reconciling "seven gaps" with the "eight-gap request"
@@ -328,7 +336,7 @@ silently did less than the criterion read.
 conventions rather than inventing any: lower-case names, the family prefix, a `targetNoun` per
 validator so the clarification ladder asks "which bundle" rather than "which element", and renderings
 that print what an operator reads. First members: `device`, `os`, `screen`, `orientation`, `bundle`,
-`installed`, `permission`, `deep-link`, `notification`, `logs`, `call`, `probe`.
+`installed`, `permission`, `deeplink`, `notification`, `logs`, `call`, `probe`.
 
 **`examples/sim-mobile/`** carries four defects and a **control structure before a headline**: D2, D3
 and D4 each read by exactly one criterion, so a reader watches one edit move one reading; then D1
@@ -427,6 +435,21 @@ is) but "has the ladder ever been *observed*, in a run, doing the work the reque
    `rungsAttempted` is bounded - so the claim is measured over the run's own `clarifications.json`
    rather than asserted in a document.
 
+> **Correction, written after execution (§12).** There is no `clarifications.json`: the record lives in
+> a run's `result.json`, under its `clarifications` field, because the bundle's layout names an
+> artifact by what it is about and the clarification report is part of the result rather than a file
+> beside it. Two further corrections from the same pass. The bound on `rungsAttempted` is **not** among
+> the outer contract's criteria - it is held by `tests/schema-vocabulary.test.ts`, so three of the four
+> claims are in the contract and one is in the guard. And every criterion in this contract reads the
+> record of a **nested** run it starts itself, never the outer run's: `AC-001`'s `process.argv` needle
+> quotes the `veridian validate --goal
+> acceptance/ladder/fixtures/goal.yaml --state-dir sandbox/ladder/fixture/ac-001 ...` vector, and
+> `AC-002`..`AC-004` each pin `process.contents` on `ac-00N/latest-result.json` - a path under the
+> **world's** root, while the outer run's own state directory is the sibling `sandbox/ladder/outer`, so
+> the file a criterion reads can only have been written by the run that criterion issued. The seven
+> origins are therefore read off a run whose gaps the fixture author arranged, rather than off the
+> outer run's own build-time four.
+
 **Why this is a work item and not a test.** Because the request's central requirement has been
 implemented for several versions and has never been *demonstrated*, and this repository's recorded
 rule is that a capability report must be derived from what the code did rather than from a literal
@@ -477,6 +500,29 @@ genuine `ECONNREFUSED` still does. So:
   that a refusal is not an unreachability, and that the honest response is to report the reason it
   gave - because a rule that says "write after every decision" and a substrate that refuses every
   write are two facts a reader has to be able to hold at once.
+
+> **Correction, taken during execution of W7. The premise above was falsified, and the falsification is
+> the finding.** The paragraph says the substrate refuses **every** write, and that is what was measured
+> when it was written - but a measurement of a substrate is a reading of a running process, not a
+> property of the code, and this one moved. Two consecutive writes succeeded while W4 was being
+> executed, each answered with a record id rather than a status: `1a66e84b-66b7-42e4-bbb1-3fd342c327e3`
+> and `63f6b838-2432-47a1-b167-4473e5399371`. So the honest statement is the weaker one: **the substrate
+> *may* refuse a write, and a refusal is a content precondition rather than an outage.**
+>
+> **What the correction does not change, and this is the part worth keeping.** Every mechanism above was
+> read out of the code and is still exactly right - a refusal is not an unreachability, `HttpMemory#post()`
+> carries the substrate's own stated cause, and `tests/memory-port.test.ts` holds both halves of the
+> discrimination. The answer taken in substitution S3 stands unchanged. What the correction removes is a
+> claim about a **frequency** that nothing in the tree could have held: `refuses every write` was never
+> checkable from `core/memory/**`, because the port cannot see how many writes have been attempted, only
+> what the substrate said to the one in front of it.
+>
+> **The two sites that carried the same premise are corrected the same pass rather than left standing** -
+> the substitution-log row S3 above and the §3 gap-table row 7 - because a premise recorded in three
+> places is three claims, and the earlier failure in this repository was a premise invalidated by a change
+> that never opened the file it lived in. They are corrected in the place they were written, and the
+> original wording is kept above rather than replaced, so a reader can see what was believed, what was
+> measured, and which of the two moved.
 
 ---
 
@@ -586,3 +632,465 @@ Every measurement in §2 and §3 is a reading of this tree at commit `da4831e`:
 scope-boundary source material W6 will need) and `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` beyond §7.
 W6 depends on the first, and the plan that executes this design must read them before it starts rather
 than assume them.
+
+---
+
+## 9. Executing W1: what the migration decided, and what it found
+
+W1's three moves landed, and all eleven worlds now declare an allowance at the request seam. **What
+the section above could not have anticipated is the set of decisions the migration had to take on its
+own**, because each one is a question about *which actor* a site belongs to, and the design above
+describes the mechanism rather than the sites. They are recorded here in the same audit-trail register
+as §1.1, because the operator's review is of the reasoning and not only of the result.
+
+**The census moved, and the movement is the outcome rather than the change.** Measured before:
+`confineChild(` callers **3**, worlds reporting `filesystemWrite: "unsupported"` **8**. Measured
+after: direct `confineChild(` callers in `adapters/**` **0**, sites declaring `confinement: {` **11 -
+exactly one per world** - and `filesystemWrite` **`enforced` in 11 of 11**, each value read from the
+runner's own answer. So the three mitigations at three call sites are gone, and what replaced them is
+eleven *declarations* of a value beside one *implementation* of a mechanism. That is the shape §10 of
+`BOUNDARY-ENFORCEMENT.md` asked for, and the number that says so is a count of declarations rather than
+of copies.
+
+**F1 - A criterion's `run` step and an operator's `reset.command` are not the application's child, and
+one word cannot describe two authors.**
+
+`adapters/sim-data/sim-data-environment.ts:390` and `adapters/sim-cloud/sim-cloud-environment.ts:432`
+are the two sites the migration deliberately leaves **unconfined**. Both are the same decision, taken
+twice, and the reasoning is one sentence: the allowance is the *application's*, and a command a
+criterion issued into the world - or a command the operator named in `reset.command` - is somebody
+else's child. A world that widened its allowance to cover them would be reporting one
+`filesystemWrite` value for two different authors, which is the class of overclaim the boundary path
+exists to remove, one layer in.
+
+The rule is held by a test whose title states it rather than by a comment:
+*"keeps the operator's own custom reset command unconfined, because one word cannot describe two
+authors"*, which asserts of the **same** world and the **same** `reset()` call that the provisioner's
+request carried a `confinement` and the operator's did not, and that the world's `filesystemWrite`
+reading is unchanged by the second. The last assertion is the one that matters: it says the decision
+is a decision rather than a slip.
+
+**F2 - An account has no path, so the allowance names `appPath`.**
+
+`sim-k8s`, `sim-data` and `sim-cloud` name `this.#plan.appPath` for **both** halves of the request.
+This is not a convenience. A cluster, a broker and a provider account each have **no `*_ROOT`
+environment name and no sandbox directory** - the substitute's state lives in memory, and in
+`sim-data`'s and `sim-cloud`'s case on the far side of a real socket - so a `writeRoots` naming a
+sandbox would name a place that does not exist, and `confineChild` would hand the child an
+`--allow-fs-write` for a path nothing can create. `appPath` is the one directory this world can
+honestly name, which is why the comment sits at the field in each adapter rather than in this document:
+the next author of a world reads the adapter, not the design.
+
+**F3 - The absence of `--allow-net` does not break a socket-using world, and that is the finding W1
+needed rather than the one it expected.**
+
+§2.6 and `core/environment/confinement.ts:34-43` already record the flag's absence as a *permanent
+property of the runtime* rather than a gap in a world - `--permission` is accepted while
+`--allow-net=127.0.0.1` is answered `bad option` (exit 9). The open question the design left is the
+consequence: **does confining a child also confine its socket?** It does not. A `--permission` child
+opens a TCP connection to a loopback listener and completes the exchange, which is why the migration
+was safe to apply to the two worlds whose entire subject is a socket - and the evidence is not the flag
+list but the two demos: `sim-data` **20/20** and `sim-cloud` **27/27**, both with a confined
+application child, both `PASS` with exit 0.
+
+So no world needs an `--allow-net` that does not exist. `network` stays `unsupported` where the
+mechanism cannot reach it and `not-requested` where the operator did not ask, **and that reading is now
+independent of whether the application uses the network at all** - which is a stronger statement than
+the design made, and the one a reader would actually want before confining a broker client.
+
+**F4 - The six port-level spawns are the substitute acting, not the application provisioning, and they
+are left alone on purpose.**
+
+`adapters/sim-container/container-port.ts` (`:738`, `:1167`), `adapters/sim-vscode/vscode-port.ts`
+(`:118`, `:781`, `:1012`) and `adapters/sim-os/os-port.ts` (`:302`) start children **inside the
+substitute**, and the migration gives them no allowance. The reason is visible in the code rather than
+inferred: `container-port.ts`'s `runInside` is the shared implementation behind both a container's own
+start and a `container exec`, and it is *the runtime doing what the application asked it to do* - a
+real container runtime runs that command itself, from outside the application's process, after the
+application's request has already been answered. Handing it the application's allowance would describe
+the world's own behaviour as the application's, which is exactly the conflation F1 refuses, applied to
+a different pair of actors. **These are substitutes standing in for a runtime's exec, so the question
+"is the application confined" does not have them as an answer.**
+
+**F5 - The guard was broken on purpose, and both halves moved.**
+
+`tests/boundary-roster.test.ts` was re-derived, because W1 moved the mechanism off the call site the
+old derivation searched for: it now reads the worlds that **ask** for an allowance
+(`confinement:\s*\{` in `adapters/**/*-environment.ts`) and the worlds that **derive** their answer
+from one (`#confinement`), and asserts the two sets agree with the register. Two probes were run
+against `sim-cloud`, with each file's own line ending detected and printed, each anchor asserted
+present before the edit and the edit asserted to have changed the file, and each file restored byte for
+byte afterwards:
+
+| Probe | What it broke | World suite | Roster |
+|-------|---------------|-------------|--------|
+| baseline | nothing | 53 pass / 0 fail | 14 pass / 0 fail |
+| P1 | removed the `confinement` declaration from the application's request | 47 / 6 - naming the allowance test and every derived reading | 11 / 3 - naming *"asks the runner for an allowance in every world"* and *"never lets a world name `enforced` for the write boundary without having asked for one"* |
+| P2 | kept the declaration and asserted the old literal instead of the runner's answer | 49 / 4 - naming the enforcement readings only | 12 / 2 - naming *"derives the filesystem answer from the confinement instead of declaring it"* |
+
+The two probes failing on *different* assertions is the point: P1 moves the worlds that ask, P2 moves
+the worlds that derive, and a single guard that could not tell the two apart would have reported one
+fact where there are two. Restored, the suites read 53/0 and 14/0 again.
+
+**F6 - W1 falsified the premise of the boundary vocabulary's own explanation of its split, and that is
+the one thing in this section that was a defect rather than a decision.**
+
+`core/environment/types.ts`'s doc block for `BOUNDARY_ENFORCEMENTS` ended with a bolded invariant:
+
+> **The three worlds that confine a child are exactly the three that answer this question with a
+> measurement**
+
+That sentence was true when it was written, because only three worlds confined a child at all - the
+other eight actions of that era had no allowance to hand over, so *"confines a child"* happened to
+coincide with *"can measure a network answer"*. **W1 gave every world an allowance**, so the phrase now
+denotes **all eleven rows** while the predicate still holds of three, and an equality whose left side
+grew and whose right side did not is simply false. The same premise was repeated in
+`tests/boundary-roster.test.ts`: its top doc comment explained the other eight as worlds that *"act in
+process and hold no boundary to measure"*, and the fifth assertion was titled *"the worlds which answer
+the network question with a measurement are the three that confine a child"* with the message *"a world
+that starts a host child is one that answers the network question with a measurement"* - a sentence
+that is now false about eight worlds that all start host children.
+
+Nothing failed. The assertion's **set** - `["local-api", "local-process", "local-web"]` - is still
+correct, because W1 deliberately left the network arm alone, and it still fails when disturbed. What
+went stale is the **reason**, which is the same shape this repository has recorded five times over: *a
+name, a count or an explanation in a document is read by nothing that could disagree with it.* The
+distinction that survived is narrower and is now what all three places say: the separation is **a front
+door**, not a child - `local-web` and `local-api` hold a route guard every request of theirs passes and
+so answer `enforced`; `local-process` holds no door, has only the child's own socket to reason about,
+and answers `unenforceable` because `node --allow-net` does not exist on this runtime; the other eight
+answer `unsupported`.
+
+Three corrections were made in the same pass as the change that falsified them: the vocabulary's
+sentence, the roster's explanation of the split, and the roster's assertion title and message. The
+guard over the document was then **measured rather than assumed** to be useless here, by patching the
+false sentence back into `core/environment/types.ts` and running the roster against it: exit 0, **14
+pass / 0 fail**, with the file's own line ending detected first (`types.ts="\r\n"`), the anchor asserted
+present, the edit asserted to have changed the file, and the file restored byte for byte afterwards
+(14/0 again on the restored tree). The reason the false sentence passes is structural rather than a
+miss: that block reads the doc block and asserts only that it **names** all four enforcement values and
+all three worlds - *a guard that holds a vocabulary's membership cannot hold its meaning.* That is
+stated rather than papered over, because the next author of the next sentence in that block should know
+which of the two they are protected by.
+
+**What this section is not claiming.** `network` is still not enforced anywhere, and F3 does not change
+that - it says the absence is harmless rather than that it is filled. Real isolation is still W6's
+subject and is still unbuilt. And the eleven `enforced` readings are all `enforced` **for a child the
+mechanism could reach**: a world whose application is not a Node process is answered `unsupported` with
+the runner's stated reason, by the same four refusal branches `confinement.ts` already documents, which
+is why the roster's assertion is about derivation rather than about a constant.
+
+---
+
+## 10. Executing W4: the route is declared, and a prose defect the guard caught
+
+W4 landed, and it is falsified rather than trusted. Measured on this machine, `git diff --stat` over the
+three files it touches reads `README.md | 23 ++++++++++++++---------`,
+`package-lock.json | 8 ++++++++`, `package.json | 8 ++++++++` - so the lockfile's root entry moved in
+the same pass, which is the half of the item §4 records as having been paid for once already, when the
+lockfile said `UNLICENSED` while the manifest said `MIT` and when `bin` still named `cli/veridian.ts`
+after the manifest had moved.
+
+**The guard.** `tests/package-manifest.test.ts` - eight tests - reads `package.json`,
+`package-lock.json` and `README.md` rather than restating the range, and every derivation is **lazy**:
+`peersOf()`, `peerMetaOf()` and `lockedRootOf()` are called inside the `it` that needs them. That is not
+style. The interesting failure is a block *removed* from the manifest, and a guard that read it at import
+time would report that as a file that could not be loaded - one unhelpful message standing in for three
+named properties. A missing block is instead refused by name, at the pointer, by the `it` that wanted it.
+
+**Four probes, each reverted byte for byte**, on a harness that detected and printed every file's ending
+first (`package.json="\r\n" package-lock.json="\r\n" README.md="\r\n"`), asserted each anchor present
+before editing, asserted each edit to have changed the file, and re-measured the baseline after restoring:
+
+| Probe | What it broke | Failures | Which |
+|-------|---------------|----------|-------|
+| baseline | nothing | 0 | - |
+| P1 | removed `peerDependencies` from `package.json` | 3 | the declaration, the lower bound, the lockfile pin |
+| P2 | flipped `optional` to `false` in both files | 1 | the optional marking |
+| P3 | dropped the range from the lockfile's root entry alone | 1 | the lockfile pin |
+| P4 | restored the README's two older claims | 2 | both README subtests |
+
+P1's reach is the finding rather than an inconvenience: **a missing block is not an isolated property**,
+so the three assertions that read it cannot fail independently, and a table claiming one failure per
+probe would have been a claim about the guard's shape rather than a reading of it. P4 is the pair that
+proves the README half is load-bearing in both directions - the positive subtest (the new vocabulary is
+present) and the negative one (the old wording is gone) each fail on its own.
+
+**F7 - The probe's first anchor was wrong about the file, and the harness said so instead of passing.**
+
+P4 did not fire on its first run, and the cause was a **wording defect in `README.md`** rather than a weak
+probe: the paragraph read *"That route is now declared rather documented: Playwright is an **optional peer
+dependency**"* - the word `than` absent. Nothing in the tree could have caught it, because the sentence is
+prose a reader reads and no guard compares it to anything. What caught it was the harness's own
+`patch refused: ... anchor absent from README.md` line, which is the rule this repository has now paid for
+at probes three times, and which is the reason a harness that cannot fire must say why. The sentence is
+corrected, and the harness's anchor with it - and the *second* attempt at that anchor was wrong too,
+because it assumed a line break the file does not have. The real wrap is `declared rather than` ending one
+line and `documented:` starting the next; the anchor diagnostic printing `head at -1` is what said so.
+*An anchor is a reading of a file, so it has to be read out of the file.*
+
+The defect's origin is visible in this document: §4 W4 phrases the route as *"declared (a package manager
+can now say so at install time) rather than documented (a reader has to find the paragraph)"*, and the
+README sentence was written from that phrasing. A paraphrase that drops the pivot word still reads
+fluently, which is why it survived a pass that touched the paragraph's neighbours.
+
+**Two claims re-judged rather than left standing.**
+
+- `README.md`'s note on `npm ci` said Playwright is *"installed outside the lockfile on purpose"*. True
+  before W4 and true after it, but no longer **sufficient**: the lockfile now names playwright twice, in
+  the root entry's `peerDependencies` and `peerDependenciesMeta`, so a reader who greps for the name finds
+  it and may read the old sentence as a contradiction. It now says the measured thing - no Playwright
+  *package* is in the lockfile's installed set, because the peer declaration names a range and installs
+  nothing - which is both the reason `npm ci` would discard a fetched browser and the fact a reader can
+  check in one command.
+- `tests/playwright-guard.test.ts` was read, because its name suggested it might be the home of an
+  assertion W4 had falsified - that Playwright is absent from `dependencies`. **It is not.** The file is
+  about `refusalSubject`, the network guard's per-request decision, and holds seven tests over the
+  boundary's edges, none of which mentions a dependency block. W4 falsified nothing in it. Recorded
+  because a name that reads like a subject is not the subject, and the check cost one read.
+
+**What this section is not claiming.** The degradation is unchanged: a world with no browser is
+`INCONCLUSIVE`, never `PASS`, and names the command that fixes it. W4 made the route *declared* - a
+package manager states the requirement at install time - and declared is not installed, which is the
+whole reason `peerDependenciesMeta.playwright.optional` has to be `true` for the honest `INCONCLUSIVE`
+to stay reachable.
+
+**The count corrections were probed rather than trusted, and the probe is what says they are
+corrections rather than guards.** W4's guard moved the root run, so every figure quoted in prose had to
+be re-measured; four live sites and the historical entry's fourth-movement paragraph were corrected in
+the same pass. Then one of them was reverted **on purpose** - `README.md`'s quickstart fence put back to
+`2305 tests` while the line beneath it still read `2241`, which is exactly the mismatch a reader would
+call an inconsistency - and the suite was run against it. Measured: `# pass 2313`, `# fail 0`, exit 0,
+with the wrong figure sitting in the file. **Nothing holds a number in prose, and nothing can**: a test
+that pins a count changes the count it pins. That is why this repository's rule is that a count is
+re-measured at the moment the document is touched rather than promised by a check - and the probe is the
+measurement behind that sentence rather than the sentence itself. The file was restored in the same
+pass.
+
+---
+
+## 11. Executing W7: the premise moved, and the mechanism did not
+
+W7 landed as §4 describes it - a disclosure and one rule, **no product code** - and it is the item
+whose own premise was wrong. The section could not have anticipated that, and the way it went wrong is
+worth more than the line the item delivers.
+
+**The premise, as written.** §4 W7, §1.1's substitution row S3 and §3's gap-table row 7 all stated that
+the substrate **refuses every write**, quoting the refusal this session had actually seen:
+
+```
+HTTP 403  precondition blocked: PII risk=0.90 patterns=["PII:..."]
+```
+
+That was a real reading of a real response - not an assumption - which is why it was written down
+rather than hedged.
+
+**What happened.** Two consecutive writes were accepted during W4, each answered with a record id
+rather than a status: `1a66e84b-66b7-42e4-bbb1-3fd342c327e3` and
+`63f6b838-2432-47a1-b167-4473e5399371`. So the substrate does not refuse every write; it *may* refuse
+one, and a refusal is a content precondition rather than an outage.
+
+**Why the correction is narrower than it looks, and this is the half worth keeping.** Every mechanism
+the paragraph states was read out of the code and is still exactly right: a refusal is not an
+unreachability, `HttpMemory#post()` carries the status *and* the substrate's own stated `error`, and
+`tests/memory-port.test.ts` holds both halves of the discrimination - a refused write reports
+`precondition blocked` and does **not** contain "unreachable", while a genuine `ECONNREFUSED` still
+does. The answer taken in S3 - report the refusal, keep writing, change no product code - **stands
+unchanged**, because it never depended on the refusal being universal; it depends on the port reporting
+the substrate's own cause, which it does.
+
+**A frequency is the one thing the port cannot hold.** `HttpMemory#post()` sees one response at a time;
+it cannot count attempts, so *"refuses every write"* was never checkable from `core/memory/**`. It was a
+claim about a running process, and the process moved. That is the same rule this repository states for
+error messages, applied to a document: **an error message may only name a cause the reporter observed**,
+and a sentence describing how often a dependency fails is making the same kind of claim. The corrected
+rule is the weaker and the honest one - the substrate *may* refuse a write - and it is now the sentence
+`AGENTS.md` carries.
+
+**The three sites were corrected where they were written, and the original wording is kept above the
+correction rather than replaced.** §3's row 7, §1.1's row S3 and §4 W7's own paragraph, the last
+carrying a marked correction directly beneath the paragraph it corrects. A premise recorded in three
+places is three claims, and this repository has already paid once for a premise invalidated by a change
+that never opened the file it lived in - so the way to hold one is to search for it, not to trust that
+the file being edited is the only one that says it.
+
+**And the rule landed where the rule is read.** `AGENTS.md`'s memory section now carries it: the
+substrate may refuse a write, a refusal is not an unreachability, the honest response is to report the
+reason it gave and keep writing on the next decision, and the mechanism that keeps the two apart is held
+by the port's own tests. That is the one line W7 promised, and with the premise corrected it is the
+item's whole deliverable.
+
+---
+
+## 12. Executing W5: the ladder is observed, and building the measurement found a defect
+
+W5 delivered both artefacts §4 named, and the second one cost a product fix - which is the outcome the
+item was designed to produce rather than a surprise. §4 W5 stated the distinction exactly: the question
+was never "is the ladder tested" (it is) but "has the ladder ever been **observed**, in a run, doing the
+work the request asks of it". Once that artefact existed, the answer was no - and it agreed with the
+unit tests, which is the part worth recording.
+
+### 12.1 What landed
+
+| Artefact | Where | Held by |
+|---|---|---|
+| The register guard | `tests/schema-vocabulary.test.ts`, `describe("the ladder answers every word it owns")` (three `it` blocks) | the register itself - each of the three loops iterates `AMBIGUITY_ORIGINS`, `RUNGS`, `DEFER_REASONS` rather than a hand-kept list |
+| The outer contract | `acceptance/ladder/{goal,environment,acceptance}.yaml` + `fixtures/` | four criteria, `local-process`, 24 pinned needles |
+| The runner | `scripts/ladder.mjs`, declared as `"acceptance:ladder"` | two invocations in one process; exit 1 if either disagrees |
+| The CI route | `.github/workflows/ci.yml`, ordered **above** the demo loop | `tests/demo-rosters.test.ts`'s fourth roster |
+| The product fix | `core/execution/loop.ts`'s `restrictTo` | `tests/runtime-report-slices.test.ts` (4 tests, no `describe`) |
+| Two harnesses | `sandbox/ladder/falsify-ladder.mjs`, `sandbox/ladder/falsify-rosters.mjs` | git-ignored, hence harnesses and not tests |
+
+**The two artefacts answer the four claims §4 W5 listed, and the mapping is worth writing down because
+it is not one-to-one.** "A resolution is present" and "its rung is recorded" are both read out of the
+outer contract (`AC-002`'s `contains` assertions on `"records"`, `"derived"`, `"self_prompted"`,
+`"defaulted"`, `"deferred"`); "a deferred resolution carries its reason" is `AC-003`; "all seven
+origins" is `AC-004`; and **"`rungsAttempted` is bounded" is *not* in the outer contract at all** - it
+is `tests/schema-vocabulary.test.ts`'s `record.rungsAttempted.length <= RUNGS.length`. Three claims in
+the contract, one in the guard, and a reader who assumed all four were in the contract would have been
+wrong about which artefact to open.
+
+### 12.2 The defect the measurement found, and why no unit test could have
+
+The first measurement of the ladder's record reported **19 rungs counted against 17 records held**, with
+a `defaulted: 5` beside three records that reached that rung. The invariant a reader would state is
+"`byVia` sums to `records.length`"; the unit suite did not state it, and could not have - the ladder's
+own tests build a report in one piece, so they never cross the seam where the two are narrowed
+separately.
+
+**Root cause.** `restrictTo(report, origin)` narrows `report.records` to one origin and returned
+`{ ...report, records }`. The spread carries `byVia` from the **parent** - the count of rungs over
+*every* record the run produced - beside a `records` list holding only the subset. A shallow copy
+narrows one field and claims the other's history, and the claim is the one the reading is built from.
+
+**Fix.** Recompute the count from the narrowed list, and export the function so a test can hold it:
+
+```ts
+const records = report.records.filter((record) => record.ambiguity.origin === origin);
+const byVia: Record<Rung, number> = {
+  derived: 0, inferred: 0, defaulted: 0, self_prompted: 0, answered: 0, deferred: 0,
+};
+for (const record of records) byVia[record.resolution.via] += 1;
+return { ...report, records, byVia };
+```
+
+**Verified as a measurement rather than as a diff.** The gate was green afterwards (2316/2316 at the
+time) and the record was re-read: **17 = 17**, `defaulted: 3`. **Falsified 3/3** - restoring the
+parent-copy fails the subtest that names the sum, dropping the loop fails the one that names the
+per-rung count, and widening the filter fails the one that names the subset.
+
+The generalisation, which is this repository's own older rule arriving at a new seam: **an invariant
+that holds "by construction of the writer" is an invariant about the writer's input, not about the
+system.** Every unit test constructed the report through one path, so the path where two fields are
+narrowed by different code was held by nothing.
+
+### 12.3 The cost, and where the bundle's size goes
+
+Measured on this machine: **`wall_ms = 21194`** for both passes (~21 s), each `PASS (COMPLETED, 1
+iteration(s))`, 4/4 criteria.
+
+A passing run's bundle is **831,480 bytes**, and any reader who opens it will ask why. Attributed by
+field, measured rather than reasoned about:
+
+```
+   815754  criteria        <-- 98% of the bundle
+     4749  clarifications     343  iterations       1482  environment
+      873  evidence           274  reproducibility   191  guards
+       91  reasons              58  limits            0  failure
+```
+
+The cause is not a defect: **the `local-process` family re-records the entire value it compared, once
+per expectation.** `AC-004` has seven `process.contents` assertions, so the bundle holds seven `actual`
+strings of ~21 KB each - the whole `latest-result.json` of a nested run, quoted back as the evidence for
+each comparison. That is the correct shape for a `contains` assertion (the evidence for "this document
+contains this substring" is the document) and it is the reason the criteria field is 98% of the file.
+
+**A record that is large because it is complete is worth keeping, and a document that does not say so
+invites an attempt to "fix" it.** So the figure is recorded here.
+
+The figure is not a constant, and the reason is the same one. **The six passing runs on disk measure
+831480, 831480, 831480, 831480, 831526 and 831508 bytes** - a spread of 46, and the two ends of it are
+one difference in how long an inner run took. Attributed rather than guessed on the pair 831480 and
+831508: the whole 28-byte difference is in `criteria` (815754 against 815782), all of it inside
+`AC-004`, and within that criterion it is **2 bytes in each of the seven `process.contents`
+assertions**. Two bytes, because the document each one quotes carries the nested run's own identity
+and clock - `"elapsedMs": 828` against `1023` and the sentence quoting it as `after 825ms` against
+`after 1020ms`, one byte each. *So the outer bundle's size is a function of how long the inner runs
+took*, which is the same rule this repository already paid for when a contract pinned the byte count of
+a stream composed from the operator's own directory name: **the question is never whether a byte count
+is too strict, it is whether the length depends on something outside the world.** Nothing here pins a
+length, so nothing broke - but a future contract over this route should not start.
+
+### 12.4 Four lessons from building the guard, each paid for
+
+1. **A harness that names criteria must read the record's own keys first.** The first falsification run
+   of the outer contract reported *"the needle's criterion is missing from the result"* for a run whose
+   bundle held all four. The harness read `criterion.id`; the bundle spells the field
+   **`criterion_id`**. One word, and the harness's verdict was about its own spelling rather than about
+   the contract. *An assertion against a field that does not exist passes vacuously on one side and
+   fails falsely on the other* - and the only way to tell which is to read the writer.
+2. **A roster that holds one constant rather than deriving a set goes blind one member at a time.** The
+   fourth roster in `tests/demo-rosters.test.ts` began as `const ACCEPTANCE = "acceptance"` - one
+   subject, hard-coded - so with two self-acceptance routes declared, one of them was outside every
+   question the block asked and no subtest could say so. It is now `acceptanceRoutes(manifest)`, derived
+   from `package.json`, and **the generalisation was proved to do work by going red**: run before the
+   four places were wired, it failed with four *named* subtests. This is the same shape as the `db.query`
+   roster and the `web.visible` roster, arriving at the *guard* rather than at the document.
+3. **A number in prose is falsified by the very edit that adds a line beside it.** Wiring the route in
+   added a line to `README.md`'s quickstart fence, and the sentence beneath it still read *"Run those
+   fifteen in that order"* - against sixteen fenced commands. Corrected by counting the fence, not by
+   adding one. Then the same rule ran again one layer out: the new route moved the root test count, and
+   **2313 became 2321 / 2241 became 2249** in five places across `AGENTS.md` and `README.md`. Re-measured
+   (`node --test` then the Cockpit's own `node --test`), never computed.
+4. **A probe harness must scrape failing subtests with `^\s*`, not at column zero.** A subtest's TAP line
+   is *indented* under its suite's, so a column-zero `/^not ok \d+ - /` scrape matches nothing, prints the
+   *suite* name instead, and declares a fired probe unfired. The roster harness carries the fixed pattern
+   and printed all six fires by name - **a badly scraped probe silently reports the reverse of what
+   happened**, which is worse than one that did not run.
+
+### 12.5 The falsification ledger
+
+Every guard this item added was broken on purpose, and each probe named the subtest it was supposed to.
+
+| Guard | Probes | Result |
+|---|---|---|
+| the outer contract's needles | 2 (a confidence figure, an origin path) | **2/2 fired**, each naming its criterion |
+| `restrictTo` | 3 (parent copy, no loop, widened filter) | **3/3 fired**, each naming a different property |
+| the fourth roster | 6 (declaration removed, driver missing, README, AGENTS, CI step removed, CI step moved) | **6/6 fired**, each naming its own subtest, each `restored byte for byte: true` |
+
+The sixth roster probe is the one that needed two edits rather than one. Removing the CI step makes
+both the membership question and the ordering question answer `no` - a command that is not run cannot
+be run before the loop - so the ordering claim can only be isolated by **deleting the step and
+re-inserting it below the loop**, after which exactly the ordering subtest fails and the membership
+subtest passes. *A probe that answers two of its guard's questions at once has not isolated the
+property it claims to test; the isolation is a second probe, not a narrower expectation.*
+
+Each harness computes its target file's line ending from that file and prints what it detected
+(`line endings: package.json="\r\n" README.md="\r\n" ...`), because this repository has now paid for the
+CRLF rule at a demo, at a test **and** at a probe, and the printing is what makes a future mismatch
+visible in the transcript rather than in a wrong verdict.
+
+### 12.6 What W5 leaves open
+
+Three items were recorded here when the work landed. The first has since been asked and answered, and
+is kept in the form the question took rather than rewritten, because the way it was wrong is the point.
+The other two are still open.
+
+- **`assertions[i].verifier` reads empty, because the field is not called `verifier`.** Asked and
+  answered rather than left open, and the answer is one grep wide: `core/evidence/writer.ts`'s
+  `serializeAssertion` writes `validator: assertion.validator` as the first key of every assertion
+  record, and the in-memory shape is `CriterionResult["assertions"][number].validator`. There is no
+  `verifier` in `core/evidence/**` and no `verifier` in any schema, so the name this note searched under
+  exists nowhere in the bundle - which is why the reading was empty and why an assertion searching for
+  a *value* there could only ever have passed by finding nothing. **The wrong name was reachable**: the
+  witness is a real thing in this tree, and it lives in `examples/local-process`, whose domain
+  vocabulary is a build program and the second program that verifies its manifest - so "*the verifier*"
+  is a legitimate word about that demo and not a word about the bundle. That is the same collision the
+  `call` step-kind has with `cloud.call` and `data.call`: one spelling, two vocabularies, and the
+  borrowed meaning reads as the member's name. The note is kept rather than deleted, because the way it
+  was wrong - a field name recalled from a neighbouring subject - is the failure mode this section
+  exists to record.
+- **`sandbox/ladder/*` is scratch.** Four generated trees, two harnesses, three transcripts - all
+  git-ignored, none needed by a run.
+- **The bundle's 98% criteria field is a property of the family, not of this contract.** Any future
+  contract over `local-process` will meet it, and §12.3 is the answer to the question it raises.

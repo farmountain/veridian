@@ -32,6 +32,8 @@
  * reach the point where criteria are judged in it.
  */
 
+import { dirname } from "node:path";
+
 import { decodeStep } from "../../core/acceptance/plan.ts";
 import type { Clock, Logger } from "../../core/clarification/types.ts";
 import type {
@@ -47,6 +49,7 @@ import type {
 } from "../../core/environment/types.ts";
 import type { DbObservationData, DbQueryReading, DbValue } from "../../core/environment/db-observation.ts";
 import { DB_OBSERVATION_KIND } from "../../core/environment/db-observation.ts";
+import { type ConfinementResult } from "../../core/environment/confinement.ts";
 import { BUNDLE_FILES, bundleLayout } from "../../core/evidence/index.ts";
 import { EnvironmentError, failure } from "../../core/failure.ts";
 import type { IoPort } from "../../core/io.ts";
@@ -111,6 +114,17 @@ export class LocalDbEnvironment implements EnvironmentAdapter {
   #file: string | null = null;
   /** Whether this world's build command has run in *this* environment's lifetime. */
   #built = false;
+
+  /**
+   * What the **runner** answered when the build child was started, or `null` before it has been.
+   *
+   * Read off the result rather than recomputed here, and that distinction is the whole of W1: this
+   * adapter states *what the world allows*, and only the runner knows what it actually applied. A
+   * world that answered this question from its own plan field would be reporting a decision nobody
+   * had to agree with. The finite-build worlds carry it on the **result** rather than on a handle,
+   * because `runToCompletion` has already consumed the handle by the time this adapter looks.
+   */
+  #confinement: ConfinementResult | null = null;
 
   /**
    * Every statement this world refused because it would have left the database.
@@ -410,20 +424,27 @@ export class LocalDbEnvironment implements EnvironmentAdapter {
   /**
    * What this world did about the plan's boundaries.
    *
-   * `unsupported` for both, and not silently. The build command runs as an ordinary child process
-   * with the operator's own privileges, so nothing here holds a network or a filesystem boundary: a
-   * world whose database file is an absolute path will read and write wherever that path points.
-   * Reporting `enforced` for a boundary this adapter cannot express is the defect the whole boundary
-   * path exists to remove.
+   * `filesystemWrite` is read off the confinement the **runner** answered when the build child was
+   * started, because this adapter states what the world allows and the runner is the only thing that
+   * knows what it applied. `unsupported` therefore no longer means "no mechanism exists" - 
+   * `core/environment/confinement.ts` does exist - it means "no mechanism ran for the child this world
+   * started". That is the honest answer on a platform where the mechanism cannot be built, and it is
+   * the same answer a future platform moves to `enforced` without this file being touched.
    *
-   * The crossings list is empty and is still reported, because its emptiness means exactly one
-   * thing here - the adapter never held a guard, so it never saw a refusal. That is *why* the two
-   * policies above read `unsupported`, and the pair is what a reader has to be able to compare.
+   * `network` deliberately stays `unsupported` rather than becoming a measurement. The allowance this
+   * world hands over gates the filesystem and nothing else: measured with a positive control, the
+   * permission flag is accepted while `--allow-net` is rejected as an unknown option, so no socket
+   * policy could be applied by it. A world reporting a network measurement on the strength of a flag
+   * with no network meaning would be the overclaim this whole path exists to remove.
+   *
+   * The crossings list is empty and is still reported, because its emptiness means exactly one thing
+   * here - the database never left its own directory - and the reader has to be able to pair it with
+   * the policies above to tell a containment guard from an absence.
    */
   boundaries(): BoundaryReport {
     return {
       network: this.#plan.boundary.network === "allow" ? "not-requested" : "unsupported",
-      filesystemWrite: "unsupported",
+      filesystemWrite: this.#confinement?.applied === true ? "enforced" : "unsupported",
       crossings: [...this.#crossings],
     };
   }
@@ -497,6 +518,13 @@ export class LocalDbEnvironment implements EnvironmentAdapter {
    * nothing at all. Here, a build that produced no database fails the run as an environment failure -
    * which is the honest classification, because it is the *sandbox* that could not be brought up and
    * the application never got a chance to be wrong.
+   *
+   * **Only this child is confined, and that is a decision rather than an omission.** The same
+   * distinction `local-process` records: this command is the application's own build, written by the
+   * agent under test and therefore not something Veridian controls, while a `custom` reset command
+   * comes out of the operator's environment document. One word - `filesystemWrite` - cannot describe
+   * both authors, so the allowance goes on the child whose author Veridian does not control, and the
+   * operator's own command starts as declared exactly as it did before this seam existed.
    */
   async #build(): Promise<void> {
     const file = this.#requireFile();
@@ -510,11 +538,32 @@ export class LocalDbEnvironment implements EnvironmentAdapter {
         args,
         cwd: this.#plan.appPath,
         env: this.#plan.env,
+        // This world's allowance is a **file**, which is what makes it a different shape from the
+        // three worlds that hold an application directory. The build command reads the code it is
+        // made of and reads back the database it is opening, so both the application directory and
+        // the database's own directory are read allowances; it writes the database, so that directory
+        // is a write allowance too. Both are needed for the one file, because SQLite opens it
+        // read-write and then reads the header out of the handle it has just opened - and the
+        // directory rather than the file is what is allowed, because a journal lands beside it.
+        confinement: {
+          readRoots: [this.#plan.appPath, dirname(file)],
+          writeRoots: [dirname(file)],
+        },
         onStdout: (chunk) => this.#logger.debug("build.stdout", { chunk: chunk.trimEnd() }),
         onStderr: (chunk) => this.#logger.warn("build.stderr", { chunk: chunk.trimEnd() }),
       },
       this.#buildTimeoutMs,
     );
+
+    // Read off the result the runner produced, never recomputed from the plan beside it. The log line
+    // names both halves for the reason `local-process`'s does: a reader asking "was this child confined"
+    // and a reader asking "why not" are two questions, and one of them is a `reason` only the runner
+    // ever held.
+    this.#confinement = result.confinement ?? null;
+    this.#logger.info("environment.build.confinement", {
+      applied: this.#confinement?.applied ?? false,
+      reason: this.#confinement === null ? "no allowance was requested" : this.#confinement.reason,
+    });
 
     if (result.timedOut) {
       throw new EnvironmentError(

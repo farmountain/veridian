@@ -24,6 +24,7 @@
 
 import { decodeStep } from "../../core/acceptance/plan.ts";
 import type { Clock, Logger } from "../../core/clarification/types.ts";
+import { type ConfinementResult } from "../../core/environment/confinement.ts";
 import { CONTAINER_OBSERVATION_KIND } from "../../core/environment/container-observation.ts";
 import type { ContainerObservationData } from "../../core/environment/container-observation.ts";
 import type {
@@ -131,6 +132,14 @@ export class SimContainerEnvironment implements EnvironmentAdapter {
   #id: string | null = null;
   /** Whether this world's application has provisioned it in *this* environment's lifetime. */
   #provisioned = false;
+
+  /**
+   * What the **runner** answered when the application's provisioning program was started, or `null`.
+   *
+   * Read off the result rather than recomputed here, and that distinction is the whole of the seam:
+   * this adapter states *what the world allows*, and only the runner knows what it actually applied.
+   */
+  #confinement: ConfinementResult | null = null;
   /** What the application's provisioning program printed, in order. Read by `probe()`, never by a verdict. */
   #lastProvisioning: readonly string[] = [];
 
@@ -450,22 +459,30 @@ export class SimContainerEnvironment implements EnvironmentAdapter {
   /**
    * What this world did about the plan's boundaries.
    *
-   * `unsupported` for both, and not silently - the same report `sim-posix` and `sim-k8s` give, for the
-   * same reason. This world substitutes namespaces, cgroups and an image store, but it does not enforce
-   * the *operator's* network or filesystem policy over the application, because the application is an
-   * ordinary child process with the operator's own privileges: it can open whatever socket and write
-   * wherever the operator can. A report of `enforced` on the strength of a guard over command vectors
-   * would be exactly the overclaim the boundary path exists to remove.
+   * `network` is `unsupported` and not silently: `core/environment/confinement.ts` has no network flag
+   * to apply, so there is nothing to derive the value from and no measurement that could make it
+   * `enforced`.
+   *
+   * `filesystemWrite` **is a reading and no longer a sentence**. It says `enforced` when the runner
+   * measurably confined the application's child and `unsupported` when it did not, because a literal is
+   * wrong in both directions: it reports no boundary for a world whose runtime really did refuse a
+   * write outside the sandbox, and it would report one for a world that asked for an allowance and was
+   * given none.
+   *
+   * **Only the application's provisioning program is confined**, and the asymmetry is the point. A `run`
+   * step carries an argv the contract's operator wrote; the application's program is what the agent
+   * wrote. An operator already holds the privileges its own command needs, and an allowance over its
+   * children would be a boundary that binds nobody. That is two actors, and one word - `filesystemWrite`
+   * - cannot describe both.
    *
    * The crossings list is reported even when empty, because here its emptiness means one specific thing
    * - the application never named a host path outside this world - and a reader has to be able to pair it
-   * with the two `unsupported` policies above to see that it is one containment guard rather than a
-   * boundary.
+   * with the two policies above to see that it is one containment guard rather than a boundary.
    */
   boundaries(): BoundaryReport {
     return {
       network: this.#plan.boundary.network === "allow" ? "not-requested" : "unsupported",
-      filesystemWrite: "unsupported",
+      filesystemWrite: this.#confinement?.applied === true ? "enforced" : "unsupported",
       crossings: [...this.#crossings],
     };
   }
@@ -562,6 +579,32 @@ export class SimContainerEnvironment implements EnvironmentAdapter {
     // the world - so the watermark is what keeps a crossing from being counted twice.
     const escapesBefore = port.escapes().length;
 
+    // The allowance is a value; applying it is `core/process.ts`'s job. `readRoots` names both
+    // directories because they are two - the program file is opened from the application directory and
+    // every record this world holds is written under the sandbox - and a read allowance naming only the
+    // sandbox would refuse to load the program it was asked to confine.
+    //
+    // The write allowance names both for the same reason, and the reason is the one rule this world
+    // states twice: its own path grammar (`container-port.ts`) admits a path inside either tree, so an
+    // allowance naming only the sandbox refuses a path the grammar answers for. Measured rather than
+    // reasoned about - with the sandbox alone, the application's own `rm -rf ./context` and the four
+    // files it stages there were denied with `ERR_ACCESS_DENIED / FileSystemWrite`, the world never came
+    // up, and the demo reported `INCONCLUSIVE (ABORTED, 0 iteration(s))`. This is the client half of the
+    // substitution: a real `docker build ./context` reads the context from the client's own directory,
+    // so a world that confines its client to the daemon's storage refuses the command it was asked to
+    // perform. The tree the world refuses to leave is the **sandbox**; the application's own tree is the
+    // application's.
+    //
+    // Both roots are handed over in their *resolved* spellings, and that is the second half of the same
+    // rule rather than a second rule. `this.#plan.appPath` is the environment document's own spelling -
+    // `examples/sim-container/app` when the operator names their goal that way - while an allowance is a
+    // value handed to a *child process*, and a child opens absolute paths. The first version passed the
+    // plan's field through unresolved, so the world's answer depended on how the operator spelled the
+    // command line: the same tree, listed the same way, held under an absolute `--goal` and was refused
+    // under a relative one. The rule this repository already paid for twice is that a path handed to a
+    // child must be absolute and a path the adapter itself opens against the process cwd may stay
+    // relative; `examples/local-process` is where it was learned and this is where it recurred.
+    const hostRoot = this.#hostRoot();
     const result = await runToCompletion(
       this.#processes,
       {
@@ -569,11 +612,21 @@ export class SimContainerEnvironment implements EnvironmentAdapter {
         args,
         cwd: this.#plan.appPath,
         env: this.#containerEnv(),
+        confinement: {
+          readRoots: [this.#contextRoot(), hostRoot],
+          writeRoots: [this.#contextRoot(), hostRoot],
+        },
         onStdout: (chunk) => this.#logger.debug("provision.stdout", { chunk: chunk.trimEnd() }),
         onStderr: (chunk) => this.#logger.warn("provision.stderr", { chunk: chunk.trimEnd() }),
       },
       this.#provisionTimeoutMs,
     );
+
+    this.#confinement = result.confinement ?? null;
+    this.#logger.info("environment.provision.confinement", {
+      applied: this.#confinement?.applied ?? false,
+      reason: this.#confinement === null ? "no allowance was requested" : this.#confinement.reason,
+    });
 
     const stdout = result.stdout;
     const stderr = result.stderr;

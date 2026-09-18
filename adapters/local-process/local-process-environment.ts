@@ -68,7 +68,7 @@ import { relative } from "node:path";
 import { decodeStep } from "../../core/acceptance/plan.ts";
 import type { StepKind } from "../../core/acceptance/steps.ts";
 import type { Clock, Logger } from "../../core/clarification/types.ts";
-import { confineChild, type ConfinementResult } from "../../core/environment/confinement.ts";
+import { type ConfinementResult } from "../../core/environment/confinement.ts";
 import type {
   ProcessCommandRecord,
   ProcessCommandState,
@@ -661,15 +661,16 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
   /**
    * What this world did about the plan's boundaries - read back off the child it actually started.
    *
-   * Both halves are derived from `#confinement`, which is what `#spawn` returned, rather than from a
-   * literal written here. The distinction matters in both directions. A literal `"unsupported"` was
-   * correct until the permission model could be applied and is now an under-claim: the runtime really
-   * refuses a write outside the allowance, and a report saying it does not is as wrong as one saying
-   * it does when it does not. A literal `"enforced"` would be the opposite over-claim, and it is the
-   * one this design exists to avoid - this world confines the child only when the interpreter enforces
-   * the flag, only when the command is a Node interpreter, and only after `#spawn` has actually done
-   * it. Before the first spawn there is no child and therefore nothing held, which is `"unsupported"`
-   * and not a claim about a run.
+   * Both halves are derived from `#confinement`, which is what the **runner** answered when `#spawn`
+   * handed it an allowance - not from a literal written here, and no longer from a decision this file
+   * made itself. The distinction matters in both directions. A literal `"unsupported"` was correct
+   * until the permission model could be applied and is now an under-claim: the runtime really refuses
+   * a write outside the allowance, and a report saying it does not is as wrong as one saying it does
+   * when it does not. A literal `"enforced"` would be the opposite over-claim, and it is the one this
+   * design exists to avoid - this world confines the child only when the interpreter enforces the
+   * flag, only when the command is a Node interpreter, and only after the runner has actually done it.
+   * Before the first spawn there is no child and therefore nothing held, which is `"unsupported"` and
+   * not a claim about a run.
    *
    * `network` is `"unenforceable"` rather than `"unsupported"`, and the difference is a measurement
    * rather than a preference: `node --allow-net` does not exist (`bad option`, exit 9), while
@@ -683,6 +684,12 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
    * the refusal the runtime handed back. A target spelling that leaves the root is refused by
    * `processPath` and reported by the validator that asked, which is a criterion defect and not the
    * application's escape.
+   *
+   * **Only the application child is confined, and that is a decision rather than an omission.** A
+   * criterion's own `run` step carries an argv the contract's *operator* wrote; the application's code
+   * is what the agent wrote. Those are two actors, and one word - `filesystemWrite` - cannot describe
+   * both, so the allowance goes on the child whose author Veridian does not control. A `run` step
+   * therefore starts as declared, exactly as it did before this seam existed.
    */
   boundaries(): BoundaryReport {
     return {
@@ -916,17 +923,28 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
     block: ProcessPlan,
   ): ProcessHandle {
     if (application === null) throw new EnvironmentError(MISSING_APPLICATION);
-    // The child is confined here, before it exists, and the vector handed to the runner is the one
-    // this call returns rather than the one the document declared. `readRoots` names both directories
-    // because they are two: the program file is opened from the application directory, and everything
-    // the criteria read is opened from the sandbox. A read allowance naming only the sandbox would
-    // refuse to load the program it was asked to confine.
-    const confinement = confineChild({
+    // The allowance is a value; applying it is `core/process.ts`'s job. `readRoots` names both
+    // directories because they are two - the program file is opened from the application directory and
+    // everything the criteria read is opened from the sandbox - and a read allowance naming only the
+    // sandbox would refuse to load the program it was asked to confine.
+    const hostRoot = this.#hostRoot(block);
+    const handle = this.#processes.run({
       command: application.command,
       args: application.args,
-      readRoots: [this.#plan.appPath, this.#hostRoot(block)],
-      writeRoots: [this.#hostRoot(block)],
+      cwd: this.#plan.appPath,
+      env: this.#env(block),
+      confinement: {
+        readRoots: [this.#plan.appPath, hostRoot],
+        writeRoots: [hostRoot],
+      },
+      // Output is read back through `handle.output()`, which is the single source for the text; these
+      // callbacks exist so a long run is visible while it is happening rather than only in the bundle.
+      onStdout: (chunk) => this.#logger.debug("app.stdout", { chunk: chunk.trimEnd() }),
+      onStderr: (chunk) => this.#logger.warn("app.stderr", { chunk: chunk.trimEnd() }),
     });
+    // Read back rather than recomputed: the runner decided before the process existed, so this is
+    // available synchronously and is a reading of something that happened.
+    const confinement = handle.confinement ?? null;
     this.#confinement = confinement;
     this.#logger.info("environment.start", {
       command: application.command,
@@ -934,23 +952,13 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
       cwd: this.#plan.appPath,
       root: block.root,
       // The path the program is actually handed. Logged beside the document's spelling rather than
-      // instead of it, for the reason `process.rebuild` records two lines up: they are two readings
-      // of one fact and only one of them is a path this machine can open.
-      hostRoot: this.#hostRoot(block),
+      // instead of it, for the reason `process.rebuild` records below: they are two readings of one
+      // fact and only one of them is a path this machine can open.
+      hostRoot,
       // What was done to the child, on the same line as the child being started, because two events
       // could otherwise disagree about whether this world confined the program it started.
-      confined: confinement.applied,
-      confinement: confinement.reason,
-    });
-    const handle = this.#processes.run({
-      command: confinement.command,
-      args: confinement.args,
-      cwd: this.#plan.appPath,
-      env: this.#env(block),
-      // Output is read back through `handle.output()`, which is the single source for the text; these
-      // callbacks exist so a long run is visible while it is happening rather than only in the bundle.
-      onStdout: (chunk) => this.#logger.debug("app.stdout", { chunk: chunk.trimEnd() }),
-      onStderr: (chunk) => this.#logger.warn("app.stderr", { chunk: chunk.trimEnd() }),
+      confined: confinement?.applied === true,
+      confinement: confinement === null ? "no allowance was requested" : confinement.reason,
     });
     this.#child = handle;
     this.#exit = null;

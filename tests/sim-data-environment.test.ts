@@ -42,6 +42,7 @@ import type { EnvironmentPlan, Observation, ObservationRequest } from "../core/e
 import { EnvironmentError } from "../core/failure.ts";
 import { memoryIo } from "../core/io.ts";
 import type { ProcessRequest, ProcessResult, ProcessRunner } from "../core/process.ts";
+import { confineChild, confinementCapability, type ConfinementResult } from "../core/environment/confinement.ts";
 import type { Logger } from "../core/clarification/types.ts";
 import { fixedClock } from "./helpers/clock.ts";
 
@@ -92,6 +93,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => {
     vscode: null,
     process: null,
     data: { ...DATA },
+    mobile: null,
     health: {
       path: null,
       expectStatus: null,
@@ -319,18 +321,45 @@ function fakePort(): FakePort {
  * `runToCompletion` decides `timedOut` from **its own timer** and overwrites whatever the result
  * claimed. A double that resolved instantly with `timedOut: true` would leave the adapter's deadline
  * branch unreached while appearing to exercise it - a green test over a path nothing walked.
+ *
+ * It also records the **answer** the runner would have given each request, kept beside `calls` because
+ * the request and the answer are two different facts: a request says what the world asked for, an
+ * answer says what it got. The boundary reading this suite asserts is derived from the answer, so a
+ * double holding only the first makes it untestable and a hand-written second makes it a claim nobody
+ * measured. The second is produced by calling the real `confineChild`, exactly as the product's runner
+ * does.
  */
+interface FakeProcesses extends ProcessRunner {
+  readonly calls: readonly ProcessRequest[];
+  readonly confined: readonly (ConfinementResult | null)[];
+}
+
 function fakeProcesses(
   world: FakePort,
   answers: readonly Partial<ProcessResult>[] = [{}],
   options: { readonly delayMs?: number } = {},
-): ProcessRunner & { readonly calls: readonly ProcessRequest[] } {
+): FakeProcesses {
   const calls: ProcessRequest[] = [];
+  const confined: (ConfinementResult | null)[] = [];
   let index = 0;
   return {
     calls,
+    confined,
     run(processRequest: ProcessRequest) {
       calls.push(processRequest);
+      const conveyance: ConfinementResult | null =
+        processRequest.confinement === undefined
+          ? null
+          : confineChild({
+              command: processRequest.command,
+              args: processRequest.args,
+              readRoots: processRequest.confinement.readRoots,
+              writeRoots: processRequest.confinement.writeRoots,
+              ...(processRequest.confinement.allowChildProcess === undefined
+                ? {}
+                : { allowChildProcess: processRequest.confinement.allowChildProcess }),
+            });
+      confined.push(conveyance);
       world.events.push("provision");
       world.onProvision?.();
       const answer = answers[Math.min(index, answers.length - 1)] ?? {};
@@ -341,17 +370,20 @@ function fakeProcesses(
         stdout: "",
         stderr: "",
         timedOut: false,
+        // Stamped, exactly as `core/process.ts` stamps it. A double that dropped it would make the
+        // reading untestable rather than making it pass.
+        confinement: conveyance,
         ...answer,
       };
       return {
         pid: 1,
+        confinement: conveyance,
         exited:
           options.delayMs === undefined
             ? Promise.resolve(settled)
             : new Promise((resolve) => setTimeout(() => resolve(settled), options.delayMs)),
         output: () => settled.stdout,
         error: () => settled.stderr,
-        write: () => undefined,
         waitForPattern: async () => true,
         stop: async () => undefined,
       };
@@ -364,7 +396,7 @@ interface Harness {
   /** The double. Always present, whatever port the adapter was handed, so assertions can read it. */
   readonly port: FakePort;
   readonly io: ReturnType<typeof memoryIo>;
-  readonly processes: ProcessRunner & { readonly calls: readonly ProcessRequest[] };
+  readonly processes: FakeProcesses;
   readonly logger: ReturnType<typeof capableLogger>;
 }
 
@@ -659,6 +691,46 @@ describe("the application provisions the broker over its own socket", () => {
     assert.equal(built.processes.calls[0]?.command, "node");
     assert.deepEqual(built.processes.calls[0]?.args, ["provision.mjs"]);
     assert.equal(built.processes.calls[0]?.cwd, "/virtual/app");
+  });
+
+  it("asks the runner for an allowance over the application directory", async () => {
+    const built = await ready();
+    // The substitution and the transport sit on opposite sides of a socket, so the substitute's state
+    // - topics, partitions, offsets, groups - is held in memory rather than in a sandbox tree, and
+    // `appPath` is the one directory this world can honestly point at. A `writeRoots` naming a sandbox
+    // would name a place that does not exist.
+    assert.deepEqual(built.processes.calls[0]?.confinement, {
+      readRoots: ["/virtual/app"],
+      writeRoots: ["/virtual/app"],
+    });
+  });
+
+  it("reports the write boundary enforced once a Node child really was confined", async () => {
+    const capability = confinementCapability();
+    assert.equal(
+      capability.available,
+      true,
+      `this suite asserts enforcement, so it can only run where enforcement exists: ${capability.reason}`,
+    );
+    const built = await ready();
+    assert.equal(built.processes.confined[0]?.applied, true, "the child really was confined");
+    assert.equal(built.processes.confined[0]?.command, process.execPath);
+    assert.equal(built.processes.confined[0]?.args[0], "--permission");
+    assert.equal(built.subject.boundaries().filesystemWrite, "enforced");
+  });
+
+  it("does not report enforcement for a provisioning program the confinement model cannot reach", async () => {
+    // An ordinary process with the operator's own privileges is not a confined one, and the reading
+    // has to say so. This is the half that keeps the other half from being an over-claim: the value is
+    // derived from the runner's answer and not from the *presence* of an allowance.
+    const built = await ready(plan({ start: { command: "sh", args: ["provision.sh"], readyPattern: null } }));
+    assert.equal(built.processes.confined[0]?.applied, false);
+    assert.equal(built.processes.confined[0]?.command, "sh");
+    assert.notEqual(
+      built.subject.boundaries().filesystemWrite,
+      "enforced",
+      "a program the runtime does not confine is not a boundary this world holds",
+    );
   });
 
   it("files the application's own requests as the application's, beside a criterion's", async () => {
@@ -1084,6 +1156,31 @@ describe("the lifecycle is the same one every other world exposes", () => {
     assert.equal(custom[DATA_ENV.port], String(BOUND_PORT));
   });
 
+  it("keeps the operator's own custom reset command unconfined, because one word cannot describe two authors", async () => {
+    const built = await ready(plan({ reset: { strategy: "custom", command: "npm" } }));
+    await built.subject.reset(built.id);
+    assert.equal(built.processes.calls.length, 2, "the provisioning program, then the operator's reset command");
+    assert.notEqual(built.processes.calls[0]?.confinement, undefined);
+    assert.equal(
+      built.processes.calls[1]?.confinement,
+      undefined,
+      "a reset command carries an argv the operator wrote, and the allowance belongs on the child whose author Veridian does not control",
+    );
+    assert.equal(
+      built.subject.boundaries().filesystemWrite,
+      "enforced",
+      "the reading names the application's child, and a later unconfined child does not retract it",
+    );
+    // The double is only a witness for that reading where the mechanism exists; where it does not,
+    // both children come back unapplied and the assertion above is already the honest answer.
+    assert.equal(
+      built.processes.confined.length,
+      2,
+      "both children were answered, so `confined[1] === null` is a reading and not an omission",
+    );
+    assert.equal(built.processes.confined[1], null, "no allowance was asked for, so none was answered");
+  });
+
   it("refuses a custom reset command that fails, rather than falling back to a rebuild", async () => {
     const built = await ready(plan({ reset: { strategy: "custom", command: "npm" } }), {
       answers: [{}, { code: 2, stderr: "no reset script\n" }],
@@ -1127,18 +1224,22 @@ describe("the lifecycle is the same one every other world exposes", () => {
     );
   });
 
-  it("reports both boundary policies against the plan, and files no crossing it never saw", async () => {
+  it("reports an unsupported network beside a containment guard measured on its own child", async () => {
     const built = await ready();
     const report = built.subject.boundaries();
+    // `network` is a fact about the mechanism rather than about this world: a broker *is* a socket,
+    // and this is the case where the answer a reader might expect better of is the one above - but
+    // `confinement.ts` has no network flag to apply, so there is nothing to derive the value from and
+    // no measurement that could make it `enforced`.
     assert.equal(report.network, "unsupported", "a policy of none is still a policy this world cannot hold");
-    assert.equal(report.filesystemWrite, "unsupported");
     assert.deepEqual(report.crossings, [], "no step in this world names a place, so there is nothing to cross");
   });
 
   it("distinguishes a boundary the operator never asked for from one it cannot enforce", async () => {
     const built = await ready(plan({ boundary: { network: "allow", allow: [], filesystemWrite: "deny" } }));
-    assert.equal(built.subject.boundaries().network, "not-requested");
-    assert.equal(built.subject.boundaries().filesystemWrite, "unsupported");
+    const report = built.subject.boundaries();
+    assert.equal(report.network, "not-requested");
+    assert.notEqual(report.filesystemWrite, "unsupported", "the write boundary is measured, not declared");
   });
 
   it("offers a command register a criterion can be written against, and usage for every word", () => {

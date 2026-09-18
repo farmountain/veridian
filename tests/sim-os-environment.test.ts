@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import { OS_ENV, SimOsEnvironment } from "../adapters/sim-os/sim-os-environment.ts";
 import { OS_IDENTITY_PATHS } from "../adapters/sim-os/os-port.ts";
 import type { OsPort } from "../adapters/sim-os/os-port.ts";
+import { confineChild, confinementCapability, type ConfinementResult } from "../core/environment/confinement.ts";
 import { OS_OBSERVATION_KIND, isOsObservationData } from "../core/environment/os-observation.ts";
 import type {
   OsExecRecord,
@@ -23,8 +24,9 @@ import { fixedClock, silentLogger } from "./helpers/clock.ts";
  * The port has its own suite, held against a real tree and real sockets, because the facts worth
  * holding there are facts about a filesystem. *This* suite is about the adapter: whether it refuses to
  * build a system it cannot describe, whether a readiness pattern can be reported from a run that never
- * completed, whether the application's escape is recorded differently from a criterion's, and whether
- * the sandbox root it hands to a *second process* is the same directory the port was handed.
+ * completed, whether the application's escape is recorded differently from a criterion's, whether
+ * the sandbox root it hands to a *second process* is the same directory the port was handed, and what
+ * the runner answered when it was handed an allowance for that child.
  *
  * That last one is the reason this file exists at all. It is the defect this world shipped: the
  * document says `root: app/.sandbox`, the port resolved that against the io root, and the application -
@@ -33,12 +35,18 @@ import { fixedClock, silentLogger } from "./helpers/clock.ts";
  * agreed on where the wrong place was. A path handed to a second process is only ever absolute or
  * ambiguous, and nothing in a contract can see which it got.
  *
- * Four assertions here are load-bearing, and each is written to fail for the right reason:
+ * Five assertions here are load-bearing, and each is written to fail for the right reason:
  *
  * - **the derived root, in three places.** `create()`, `start()` and the provision log have to name the
  *   same resolved path, and it has to be `io.resolve(os.root)` - not the raw document value and not the
  *   doubled `appPath` form. Three readings of one fact, because two of them disagreeing is how the
  *   first fix left a bundle quoting a path this machine cannot open.
+ * - **the write boundary is a reading and not a sentence.** `boundaries().filesystemWrite` has to be
+ *   `enforced` when the runner measurably confined the application's child and not-`enforced` when it
+ *   did not, which is two assertions because either half alone is an over-claim: the first says the
+ *   value tracks the mechanism, the second says the value is not merely the *presence* of an
+ *   allowance. The double applies the real `confineChild` for this reason - a double that recorded a
+ *   hand-written answer would make both halves agree with a mechanism neither had run.
  * - **a non-`run` step in an acting call.** `VALIDATOR_ERROR`, not an exception and not a silent skip,
  *   because a criterion judged in a system it never acted on is a verdict the reading cannot justify.
  * - **the asymmetry between the two callers.** An application's escape across the sandbox boundary
@@ -69,6 +77,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => ({
   vscode: null,
   process: null,
   data: null,
+  mobile: null,
   health: { path: null, expectStatus: null, timeoutMs: 5_000, intervalMs: 10, readyPattern: null },
   reset: { strategy: "restart", command: null },
   browser: { enabled: false, viewport: { width: 1280, height: 720 }, locale: null, timezoneId: null },
@@ -246,17 +255,53 @@ function fakePort(
   };
 }
 
+/**
+ * A runner double that records the request **and** the answer the runner would have given it.
+ *
+ * Kept beside `calls` rather than read off the handle, because the request and the answer are two
+ * different facts: a request says what the world asked for, an answer says what it got. The boundary
+ * reading this suite asserts - `filesystemWrite` - is derived from the *answer*, so a double holding
+ * only the first makes that reading untestable; a double holding a hand-written second would make it
+ * a claim nobody measured. So the second is produced by calling the real `confineChild`, exactly as
+ * the product's runner does, and the recorded value is therefore the one the product would have
+ * produced for this request.
+ */
+interface FakeProcesses extends ProcessRunner {
+  readonly calls: readonly ProcessRequest[];
+  readonly confined: readonly (ConfinementResult | null)[];
+}
+
 function fakeProcesses(
   answers: readonly Partial<ProcessResult>[] = [{}],
   /** A delay before `exited` resolves, so a real deadline can elapse in front of it. */
   delayMs = 0,
-): ProcessRunner & { readonly calls: readonly ProcessRequest[] } {
+): FakeProcesses {
   const calls: ProcessRequest[] = [];
+  const confined: (ConfinementResult | null)[] = [];
   let index = 0;
   return {
     calls,
+    confined,
     run(processRequest: ProcessRequest) {
       calls.push(processRequest);
+      // The allowance is applied here because applying it is the *runner's* job - that is the whole
+      // of the seam this double stands in for. `confineChild` is the real mechanism, so the answer
+      // recorded is the one the product would have produced for this request: a double that returned
+      // a hand-written `applied: true` would agree with the adapter about a mechanism neither had
+      // run, and the boundary reading would be a sentence two files had rehearsed.
+      const conveyance: ConfinementResult | null =
+        processRequest.confinement === undefined
+          ? null
+          : confineChild({
+              command: processRequest.command,
+              args: processRequest.args,
+              readRoots: processRequest.confinement.readRoots,
+              writeRoots: processRequest.confinement.writeRoots,
+              ...(processRequest.confinement.allowChildProcess === undefined
+                ? {}
+                : { allowChildProcess: processRequest.confinement.allowChildProcess }),
+            });
+      confined.push(conveyance);
       const answer = answers[Math.min(index, answers.length - 1)] ?? {};
       index += 1;
       const settled: ProcessResult = {
@@ -265,6 +310,10 @@ function fakeProcesses(
         stdout: "",
         stderr: "",
         timedOut: false,
+        // Stamped, exactly as `core/process.ts` stamps it - the reading the adapter takes is the one
+        // the runner produced, and a double that dropped it would make the guard untestable rather
+        // than making it pass.
+        confinement: conveyance,
         ...answer,
       };
       const exited =
@@ -278,9 +327,9 @@ function fakeProcesses(
       return {
         pid: 1,
         exited,
+        confinement: conveyance,
         output: () => settled.stdout,
         error: () => settled.stderr,
-        write: () => undefined,
         waitForPattern: async () => true,
         stop: async () => undefined,
       };
@@ -292,7 +341,7 @@ interface Harness {
   readonly subject: SimOsEnvironment;
   readonly port: FakePort;
   readonly io: ReturnType<typeof memoryIo>;
-  readonly processes: ProcessRunner & { readonly calls: readonly ProcessRequest[] };
+  readonly processes: FakeProcesses;
   readonly logger: ReturnType<typeof capableLogger>;
 }
 
@@ -761,12 +810,74 @@ describe("a criterion acts through `run` steps, and only through them", () => {
     );
   });
 
-  it("reports both boundary policies unsupported, and its containment guard separately", async () => {
+  it("reports an unsupported network beside a containment guard measured on its own child", async () => {
     const { subject } = await ready();
     const report = subject.boundaries();
+    // `network` is still `unsupported` here, and the word is a fact about the mechanism rather than
+    // about this world: `core/environment/confinement.ts` has no network flag to apply, so there is
+    // nothing to derive the value from and no measurement that could make it `enforced`.
     assert.equal(report.network, "unsupported");
-    assert.equal(report.filesystemWrite, "unsupported");
     assert.deepEqual([...report.crossings], []);
+  });
+
+  it("asks the runner for an allowance over the sandbox, and names the application directory as readable", async () => {
+    const { processes } = await ready();
+    // Two read roots because they are two directories: the program file is opened from the
+    // application directory and everything the world holds is opened from the sandbox. A read
+    // allowance naming only the sandbox would refuse to load the program it was asked to confine.
+    assert.deepEqual(processes.calls[0]?.confinement, {
+      readRoots: ["/virtual/app", "/virtual/app/.sandbox"],
+      writeRoots: ["/virtual/app/.sandbox"],
+    });
+  });
+
+  it("reports the write boundary enforced once a Node child really was confined", async () => {
+    const capability = confinementCapability();
+    assert.equal(
+      capability.available,
+      true,
+      `this suite asserts enforcement, so it can only run where enforcement exists: ${capability.reason}`,
+    );
+    const { subject, processes } = await ready();
+    assert.equal(processes.confined[0]?.applied, true, "the child really was confined");
+    assert.equal(processes.confined[0]?.command, process.execPath);
+    assert.equal(processes.confined[0]?.args[0], "--permission");
+    assert.equal(subject.boundaries().filesystemWrite, "enforced");
+  });
+
+  it("does not report enforcement for a provisioning program the confinement model cannot reach", async () => {
+    // An ordinary process with the operator's own privileges is not a confined one, and the reading
+    // has to say so. This is the half that keeps the other half from being an over-claim: the value
+    // is derived from the runner's answer and not from the *presence* of an allowance.
+    const { subject, processes } = await ready(
+      plan({ start: { command: "sh", args: ["provision.sh"], readyPattern: null } }),
+    );
+    assert.equal(processes.confined[0]?.applied, false);
+    assert.equal(processes.confined[0]?.command, "sh");
+    assert.notEqual(
+      subject.boundaries().filesystemWrite,
+      "enforced",
+      "a program the runtime does not confine is not a boundary this world holds",
+    );
+  });
+
+  it("keeps the operator's own custom reset command unconfined, because one word cannot describe two authors", async () => {
+    const { subject, id, processes } = await ready(
+      plan({ reset: { strategy: "custom", command: "node" } }),
+    );
+    await subject.reset(id);
+    assert.equal(processes.calls.length, 2, "the provisioning program, then the operator's reset command");
+    assert.notEqual(processes.calls[0]?.confinement, undefined);
+    assert.equal(
+      processes.calls[1]?.confinement,
+      undefined,
+      "a reset command carries an argv the *operator* wrote, and the allowance belongs on the child whose author Veridian does not control",
+    );
+    assert.equal(
+      subject.boundaries().filesystemWrite,
+      "enforced",
+      "the reading names the application's child, and a later unconfined child does not retract it",
+    );
   });
 
   it("distinguishes a boundary the operator never asked for from one it cannot enforce", async () => {

@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { describe, it } from "node:test";
 
-import { confineChild, confinementCapability } from "../core/environment/confinement.ts";
+import { confineChild, confinementCapability, dependencyReadRoots } from "../core/environment/confinement.ts";
 import type { ConfinementResult } from "../core/environment/confinement.ts";
 
 /**
@@ -247,5 +247,108 @@ describe("confinement: the permitted half still works, which is what makes the r
       `the escape must be refused by the runtime rather than by luck: ${printed} ${stderr}`,
     );
     assert.equal(escapeSurvived, false, "the refusal is real: the file outside the allowance was never created");
+  });
+});
+
+// ---- a program is not its dependencies --------------------------------------------------------------
+
+describe("confinement: a program is not its dependencies, so the allowance has to name both", () => {
+  /**
+   * A real tree, because the derivation asks exactly one question - does this directory exist - and a
+   * double answering *that* question would be asserting the answer the test was written to check.
+   *
+   * The shape is the one the live defect had: an application directory, a dependency of its own
+   * inside it, a second dependency one level above it, a third above that, and one *below* the start
+   * directory that belongs to whatever is imported from there rather than to the application.
+   */
+  function tree(): { readonly root: string; readonly app: string } {
+    const root = mkdtempSync(join(tmpdir(), "veridian-dependency-roots-"));
+    const app = join(root, "repo", "apps", "cart");
+    mkdirSync(join(root, "node_modules", "outer"), { recursive: true });
+    mkdirSync(join(root, "repo", "node_modules", "inner"), { recursive: true });
+    mkdirSync(join(app, "node_modules", "own"), { recursive: true });
+    mkdirSync(join(app, "vendor", "node_modules", "deep"), { recursive: true });
+    return { root, app };
+  }
+
+  it("names the dependency beside the application, which is the root the interpreter refused to read", () => {
+    const { root, app } = tree();
+    try {
+      const roots = dependencyReadRoots(app);
+      assert.ok(
+        roots.includes(join(root, "repo", "node_modules")),
+        `a package the application imports lives beside its tree rather than inside it, and a confined child that cannot read the package it imports is refused before its first statement runs: ${roots.join(", ")}`,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("searches the start directory itself, the way module resolution does", () => {
+    const { root, app } = tree();
+    try {
+      assert.ok(
+        dependencyReadRoots(app).includes(join(app, "node_modules")),
+        "the importing file's own tree is searched first, so a program whose dependencies sit inside it is not refused its own package",
+      );
+      assert.ok(
+        dependencyReadRoots(join(root, "repo")).includes(join(root, "repo", "node_modules")),
+        "and the same holds when the start directory is the project root rather than a nested one",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("walks up rather than down, so a package below the start directory is not the application's dependency", () => {
+    const { root, app } = tree();
+    try {
+      const roots = dependencyReadRoots(app);
+      assert.ok(
+        !roots.includes(join(app, "vendor", "node_modules")),
+        `a nested node_modules belongs to whatever is imported from there, and naming it would hand the child a directory the application never reads: ${roots.join(", ")}`,
+      );
+      assert.ok(
+        roots.includes(join(root, "node_modules")),
+        `the walk reaches the filesystem root rather than stopping at the nearest parent: ${roots.join(", ")}`,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("names the nearest dependency before the furthest, which is the order resolution tries them in", () => {
+    const { root } = tree();
+    try {
+      const roots = dependencyReadRoots(join(root, "repo"));
+      const nearest = roots.indexOf(join(root, "repo", "node_modules"));
+      const furthest = roots.indexOf(join(root, "node_modules"));
+      assert.ok(nearest !== -1 && furthest !== -1, `both dependencies must be named: ${roots.join(", ")}`);
+      assert.ok(
+        nearest < furthest,
+        `the walk reports them in the order the interpreter searches them: ${roots.join(", ")}`,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("answers with existing absolute directories only, so an allowance cannot name a place that is not there", () => {
+    const { root, app } = tree();
+    try {
+      for (const answer of [dependencyReadRoots(app), dependencyReadRoots(root), dependencyReadRoots(tmpdir())]) {
+        for (const entry of answer) {
+          assert.ok(isAbsolute(entry), `every root is a path this machine can open, because a relative one resolves against the child: ${entry}`);
+          assert.ok(statSync(entry).isDirectory(), `a named root is a directory rather than a file that happens to carry the name: ${entry}`);
+        }
+        assert.equal(
+          new Set(answer).size,
+          answer.length,
+          `a duplicated root is an allowance that reads as wider than the one that was measured: ${answer.join(", ")}`,
+        );
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

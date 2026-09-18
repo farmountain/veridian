@@ -2,7 +2,7 @@ import { encodeStep } from "../acceptance/plan.ts";
 import type { CriterionPlan } from "../acceptance/plan.ts";
 import type { DetectorContext } from "../clarification/detect.ts";
 import { detectIterationAmbiguities, runtimeDetectors } from "../clarification/detect.ts";
-import type { Ambiguity, ClarificationReport } from "../clarification/types.ts";
+import type { Ambiguity, ClarificationReport, Rung } from "../clarification/types.ts";
 import type { ClarificationEngine } from "../clarification/engine.ts";
 import type { BoundaryCrossing, EvidenceArtifact, Observation, ObservationRequest } from "../environment/types.ts";
 import type { EnvironmentRecord } from "../evidence/index.ts";
@@ -610,8 +610,34 @@ function joinNotes(...notes: readonly (string | null | undefined)[]): string | n
   return kept.length === 0 ? null : kept.join(" ");
 }
 
-function restrictTo(report: ClarificationReport, origin: string): ClarificationReport {
-  return { ...report, records: report.records.filter((record) => record.ambiguity.origin === origin) };
+/**
+ * One origin's slice of a runtime report.
+ *
+ * `byVia` is **recomputed** from the records the slice keeps rather than copied from the parent, and
+ * that recomputation is the whole reason this function is not a one-line spread. The parent's count
+ * is a count of rung *arrivals* over every origin it resolved - `#askInRounds` increments `answered`
+ * and `deferred` for gaps whose own rung produced no record - so a copy that kept that count while
+ * dropping the records would make each slice claim the other's resolutions. Measured before this
+ * was written, on the ladder fixture: one pass with two `defaulted` resolutions split into two
+ * reports of one record each, both carrying `defaulted: 2`, and the bundle's own `byVia` read 19
+ * against the 17 records sitting beside it in the same object. A slice's `byVia` therefore counts
+ * the rungs that produced the records it holds, which is the claim its two fields can both support.
+ *
+ * Exported so a test can hold that agreement rather than re-type the split - the same reason
+ * `local-process` exports its stream bound.
+ */
+export function restrictTo(report: ClarificationReport, origin: string): ClarificationReport {
+  const records = report.records.filter((record) => record.ambiguity.origin === origin);
+  const byVia: Record<Rung, number> = {
+    derived: 0,
+    inferred: 0,
+    defaulted: 0,
+    self_prompted: 0,
+    answered: 0,
+    deferred: 0,
+  };
+  for (const record of records) byVia[record.resolution.via] += 1;
+  return { ...report, records, byVia };
 }
 
 /**

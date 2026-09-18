@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 
 import { LocalProcessEnvironment, PROCESS_ENV, PROCESS_ENV_NAMES } from "../adapters/local-process/local-process-environment.ts";
 import type { Clock, Logger } from "../core/clarification/index.ts";
-import { confinementCapability } from "../core/environment/confinement.ts";
+import { confineChild, confinementCapability, type ConfinementResult } from "../core/environment/confinement.ts";
 import type { EnvironmentPlan } from "../core/environment/types.ts";
 import { memoryIo } from "../core/io.ts";
 import type { MemoryIo } from "../core/io.ts";
@@ -58,14 +58,30 @@ class FakeHandle implements ProcessHandle {
   readonly exited: Promise<ProcessResult>;
   readonly request: ProcessRequest;
   readonly program: FakeProgram;
+  /**
+   * What the fake runner did with the allowance on the request, exactly as the real one reports it.
+   *
+   * The real runner decides before the process exists and stamps both the handle and every result, so
+   * a world can answer a boundary question at any point in its life. A fake that skipped this would
+   * leave `handle.confinement` undefined and `boundaries()` would report `unsupported` for a world
+   * that had just handed over a perfectly good allowance - the double has to reproduce the property
+   * the reading is about, or the reading is untestable.
+   */
+  readonly confinement: ConfinementResult | null;
   stopped = false;
   exitDelivered = false;
   #settle!: (result: ProcessResult) => void;
 
-  constructor(pid: number, request: ProcessRequest, program: FakeProgram) {
+  constructor(
+    pid: number,
+    request: ProcessRequest,
+    program: FakeProgram,
+    confinement: ConfinementResult | null,
+  ) {
     this.pid = pid;
     this.request = request;
     this.program = program;
+    this.confinement = confinement;
     this.exited = new Promise<ProcessResult>((resolve) => {
       this.#settle = resolve;
     });
@@ -156,11 +172,28 @@ function fakeProcesses(programs: Programs = {}, deliverExitsOnRun = true): FakeP
           if (previous.stopped) previous.deliverExit();
         }
       }
-      const index = counts.get(request.command) ?? 0;
-      counts.set(request.command, index + 1);
-      const entry = programFor(programs, request.command);
+      // The allowance is applied here because applying it is the *runner's* job - that is the whole
+      // of the seam this double stands in for. `confineChild` is the real mechanism, so the answer
+      // recorded on the handle is the one the product would have produced for this request.
+      const confinement =
+        request.confinement === undefined
+          ? null
+          : confineChild({
+              command: request.command,
+              args: request.args,
+              readRoots: request.confinement.readRoots,
+              writeRoots: request.confinement.writeRoots,
+              ...(request.confinement.allowChildProcess === undefined
+                ? {}
+                : { allowChildProcess: request.confinement.allowChildProcess }),
+            });
+      // The vector that is really started, which is the confined one when there was an allowance.
+      const command = confinement === null ? request.command : confinement.command;
+      const index = counts.get(command) ?? 0;
+      counts.set(command, index + 1);
+      const entry = programFor(programs, command);
       const program = Array.isArray(entry) ? (entry[Math.min(index, entry.length - 1)] ?? {}) : entry;
-      const handle = new FakeHandle((nextPid += 1), request, program);
+      const handle = new FakeHandle((nextPid += 1), request, program, confinement);
       launched.push(handle);
       requests.push(request);
       return handle;
@@ -171,13 +204,13 @@ function fakeProcesses(programs: Programs = {}, deliverExitsOnRun = true): FakeP
 }
 
 /**
- * The program a launched command runs, looked up the way the world itself spells that command.
+ * The program a launched command runs, looked up the way the runner spells the vector it starts.
  *
- * This is not a convenience: `#spawn` does not hand the runner the command the document declared. It
- * hands it whatever `confineChild` returned, and for a Node application that is the **absolute path
- * to the interpreter** rather than the word `node`. A fixture keyed on the declared spelling alone
- * finds no program for a confined child, reads an empty stdout, and fails every `start()` here on the
- * readiness wait - a double that cannot follow its own product is a suite about a world nobody runs.
+ * This is not a convenience: the adapter hands the runner the command the document declared, and the
+ * runner replaces it with the **absolute path to the interpreter** when it applies the allowance. A
+ * fixture keyed on the declared spelling alone finds no program for a confined child, reads an empty
+ * stdout, and fails every `start()` here on the readiness wait - a double that cannot follow its own
+ * product is a suite about a world nobody runs.
  *
  * So a command that is not a key verbatim is looked up by its basename without a trailing `.exe`,
  * lowercased - the same rule `core/environment/confinement.ts` uses to decide whether a command is a
@@ -220,6 +253,7 @@ function plan(overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan {
       root: "sandbox",
     },
     data: null,
+    mobile: null,
     health: { path: null, expectStatus: null, timeoutMs: 5_000, intervalMs: 50, readyPattern: null },
     reset: { strategy: "restart", command: null },
     browser: { enabled: false, viewport: { width: 1280, height: 720 }, locale: null, timezoneId: null },
@@ -415,8 +449,18 @@ describe("local-process: a previous child's exit is not the current child's stat
 
     const second = processes.launched[1];
     assert.ok(second !== undefined, "reset started a replacement");
-    assert.equal(second.request.command, process.execPath, "the replacement runs under the interpreter the flags belong to");
-    assert.equal(second.request.args[0], "--permission", "and carries the flag that enforces the allowance");
+    // The adapter's half: every request carries an allowance, including the one a reset makes.
+    assert.ok(
+      second.request.confinement !== undefined,
+      "the replacement is handed an allowance, so confining it is the runner's decision rather than the adapter remembering",
+    );
+    // The runner's half, read off the handle: the vector that is really started is the confined one.
+    assert.equal(
+      second.confinement?.command,
+      process.execPath,
+      "the replacement runs under the interpreter the flags belong to",
+    );
+    assert.equal(second.confinement?.args[0], "--permission", "and carries the flag that enforces the allowance");
   });
 });
 
@@ -442,7 +486,7 @@ describe("local-process: the boundary report is derived from what the world did"
     const { subject, processes } = harness(plan());
     const { id } = await subject.create();
     await subject.start(id);
-    assert.equal(processes.launched[0]?.request.args[0], "--permission", "the child really was confined");
+    assert.equal(processes.launched[0]?.confinement?.args[0], "--permission", "the child really was confined");
 
     assert.equal(subject.boundaries().filesystemWrite, "enforced");
   });
@@ -450,13 +494,19 @@ describe("local-process: the boundary report is derived from what the world did"
   it("does not report enforcement for a command the confinement model cannot reach", async () => {
     const { subject, processes } = harness(
       plan({ process: { host: "veridian-local-process", application: { command: "cmd", args: ["/c", "build.bat"] }, root: "sandbox" } }),
-      // `cmd` is not Node, so the world leaves the vector alone and `cmd` is what the runner sees.
+      // `cmd` is not Node, so the runner refuses the allowance by name and `cmd` is what really starts.
       { cmd: { stdout: READY } },
     );
     const { id } = await subject.create();
     await subject.start(id);
 
-    assert.equal(processes.launched[0]?.request.command, "cmd", "the vector is unchanged, because nothing was applied to it");
+    assert.equal(processes.launched[0]?.request.command, "cmd", "the request names the program the document declared");
+    assert.equal(
+      processes.launched[0]?.confinement?.applied,
+      false,
+      "and the runner states that it refused the allowance rather than silently confining something it cannot reach",
+    );
+    assert.equal(processes.launched[0]?.confinement?.command, "cmd", "so the vector that starts is the one declared");
     assert.notEqual(subject.boundaries().filesystemWrite, "enforced", "an ordinary process with the operator's privileges is not a confined one");
   });
 

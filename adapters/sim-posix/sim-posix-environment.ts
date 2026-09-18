@@ -60,6 +60,7 @@
 
 import { decodeStep } from "../../core/acceptance/plan.ts";
 import type { Clock, Logger } from "../../core/clarification/types.ts";
+import { type ConfinementResult } from "../../core/environment/confinement.ts";
 import { POSIX_OBSERVATION_KIND } from "../../core/environment/posix-observation.ts";
 import type { PosixObservationData } from "../../core/environment/posix-observation.ts";
 import type {
@@ -148,6 +149,17 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
   #id: string | null = null;
   /** Whether this world's application has provisioned it in *this* environment's lifetime. */
   #provisioned = false;
+
+  /**
+   * What the **runner** answered when the application's provisioning program was started, or `null`.
+   *
+   * Read off the result rather than recomputed here, and that distinction is the whole of the seam:
+   * this adapter states *what the world allows*, and only the runner knows what it actually applied.
+   * A world that answered this question from its own plan field would be reporting a decision nobody
+   * had to agree with. It is `null` before the first provisioning run, which is why `boundaries()`
+   * reports `unsupported` until then - there is no child and therefore nothing held.
+   */
+  #confinement: ConfinementResult | null = null;
 
   /**
    * Every argument vector this world refused because it climbed out of the sandbox.
@@ -461,21 +473,39 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
   /**
    * What this world did about the plan's boundaries.
    *
-   * `unsupported` for both, and not silently - the same report `sim-k8s` gives, for the same reason.
-   * This world substitutes the kernel and the package manager, but it does not enforce the *operator's*
-   * network or filesystem policy over the application, because the application is an ordinary child
-   * process with the operator's own privileges: it can open whatever socket and write wherever the
-   * operator can, and a report of `enforced` on the strength of a guard over argument vectors would be
-   * exactly the overclaim the boundary path exists to remove.
+   * `network` is `unsupported` rather than `unenforceable`, and the difference is a measurement: this
+   * world does have the vocabulary for `unenforceable` and uses it nowhere, because a substitute that
+   * stands in for the kernel cannot use `node --permission` to hold a boundary either - the flag has
+   * no `--allow-net` at all, which is what `local-process` names by that word. Both spellings would be
+   * honest here; `unsupported` is kept because the words already said it before this seam existed and
+   * a world changing its vocabulary for no measured reason is a world a reader has to re-learn.
+   *
+   * `filesystemWrite` is now a **reading** and no longer a sentence. It was a literal `unsupported`
+   * with a doc comment explaining that the application is an ordinary child process with the
+   * operator's own privileges - true until the permission model could be applied, and an under-claim
+   * from the moment it could. The two directions are symmetric and both matter: a literal
+   * `unsupported` reports no boundary where the runtime really refuses a write outside the sandbox,
+   * and a literal `enforced` would be the opposite over-claim, which is the one the boundary path
+   * exists to remove. So the value is derived from what the **runner answered about this world's own
+   * child**, and `unsupported` is what it means before that child exists.
+   *
+   * **Only the application's provisioning program is confined, and that is a decision rather than an
+   * omission.** A `run` step carries an argv the contract's *operator* wrote; the provisioning program
+   * is what the agent wrote. Those are two actors, and one word - `filesystemWrite` - cannot describe
+   * both, so the allowance goes on the child whose author Veridian does not control and an operator's
+   * `run` step or `reset.command` starts as declared.
    *
    * The crossings list is reported even when empty, because here its emptiness means one specific
-   * thing - the sandbox root was never climbed out of - and a reader has to be able to pair it with the
-   * two `unsupported` policies above to see that it is one containment guard rather than a boundary.
+   * thing - the sandbox root was never climbed out of - and a reader has to be able to tell it apart
+   * from the confinement report beside it. Nothing in this world observes a confinement refusal: the
+   * refusal reaches the *application* as `ERR_ACCESS_DENIED`, and reading it as the application
+   * escaping would be a claim this world cannot support - it never sees the attempt, only the refusal
+   * the runtime handed back.
    */
   boundaries(): BoundaryReport {
     return {
       network: this.#plan.boundary.network === "allow" ? "not-requested" : "unsupported",
-      filesystemWrite: "unsupported",
+      filesystemWrite: this.#confinement?.applied === true ? "enforced" : "unsupported",
       crossings: [...this.#crossings],
     };
   }
@@ -562,6 +592,12 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
       root: this.#plan.posix?.root ?? "",
     });
 
+    // The allowance is a value; applying it is `core/process.ts`'s job. `readRoots` names both
+    // directories because they are two - the program file is opened from the application directory and
+    // everything the world holds is opened from the sandbox - and a read allowance naming only the
+    // sandbox would refuse to load the program it was asked to confine. The write allowance is the
+    // sandbox alone, which is the tree this world's own path grammar already refuses to leave.
+    const hostRoot = this.#hostRoot();
     const result = await runToCompletion(
       this.#processes,
       {
@@ -569,11 +605,25 @@ export class SimPosixEnvironment implements EnvironmentAdapter {
         args,
         cwd: this.#plan.appPath,
         env: this.#posixEnv(),
+        confinement: {
+          readRoots: [this.#plan.appPath, hostRoot],
+          writeRoots: [hostRoot],
+        },
         onStdout: (chunk) => this.#logger.debug("provision.stdout", { chunk: chunk.trimEnd() }),
         onStderr: (chunk) => this.#logger.warn("provision.stderr", { chunk: chunk.trimEnd() }),
       },
       this.#provisionTimeoutMs,
     );
+
+    // Read off the result the runner produced, never recomputed from the plan beside it. Both halves
+    // are logged for the reason `local-process` logs both: a reader asking "was this child confined"
+    // and a reader asking "why not" are two questions, and one of them is a `reason` only the runner
+    // ever held.
+    this.#confinement = result.confinement ?? null;
+    this.#logger.info("environment.provision.confinement", {
+      applied: this.#confinement?.applied ?? false,
+      reason: this.#confinement === null ? "no allowance was requested" : this.#confinement.reason,
+    });
 
     // The application's own command is filed in the same record the criteria's are. A reading that held
     // only what the *criteria* ran would be unable to answer the first question worth asking about a

@@ -26,7 +26,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => ({
   env: {},
   dependencyInstall: null,
   start: { command: "node", args: ["serve.mjs"], readyPattern: null },
-  url: "http://127.0.0.1:4173",  api: null,  databasePath: null,  cluster: null,  posix: null,  os: null,  cloud: null,  container: null,  vscode: null,  process: null,  data: null,  health: {
+  url: "http://127.0.0.1:4173",  api: null,  databasePath: null,  cluster: null,  posix: null,  os: null,  cloud: null,  container: null,  vscode: null,  process: null,  data: null,  mobile: null,  health: {
     path: "/health",
     expectStatus: 200,
     timeoutMs: 300,

@@ -244,6 +244,17 @@ A test that passes whether or not the rule holds is not a test.
   with one world as its proof, because the per-world read-allowance has to be measured per world
   and a bulk edit would be nine unverified allowances. It is the immediate next step and it is
   smaller than this one.
+
+  > **Correction, recorded rather than edited away: the number in that paragraph is stale, and the
+  > instruction is not.** It was written when ten worlds existed and one (`local-process`) confined,
+  > so *nine* was right. Today **eleven** worlds are registered and **three** confine
+  > (`local-api`, `local-process`, `local-web`), so the figure that paragraph is owed is **eight**.
+  > The paragraph is kept verbatim above because it is the record of what was decided and why - and
+  > because a corrected number silently substituted into a decision log is a log that no longer shows
+  > what was decided. `docs/GAP-CLOSURE-DESIGN.md` W1 carries the current measurement, and what the
+  > propagation turned out to need: the allowance is a **value** and belongs per request, while
+  > *applying* it is **one mechanism** and belongs at the process seam - so the work is one change in
+  > `core/process.ts` and a few lines per world, rather than eight copies of the rule.
 - **Confining network egress anywhere.** Measured impossible on this runtime (3.2).
 - **An MCP server (gap 5).** Deferred by decision 4 above.
 - **`sim-mobile`.** Deferred by decision 6; recorded in section 7.

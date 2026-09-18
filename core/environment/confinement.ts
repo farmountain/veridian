@@ -43,7 +43,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 /** What a measurement of this runtime produced. Every field is a reading, not an intention. */
 export interface ConfinementCapability {
@@ -217,6 +217,42 @@ function measure(): ConfinementCapability {
 function interpreterOf(command: string): string {
   const base = command.replace(/\\/g, "/").split("/").pop() ?? command;
   return base.replace(/\.exe$/i, "").toLowerCase();
+}
+
+/**
+ * The directories a confined child must be able to **read** in order to import what it declares.
+ *
+ * **A program's own source and its dependencies are two different directories, and the permission
+ * model does not know the difference.** It enforces its allowlists against the *interpreter's* own
+ * module resolution, so a dependency outside the allowance is refused before the program's first
+ * statement runs - and the child exits 1 having printed a stack trace that names a file the world
+ * never asked for. The world then reports the exit code as the application's failure, which is a
+ * verdict about a program that was never given the chance to be wrong.
+ *
+ * Derived by walking **up** from the directory the child runs in, because that is what Node does: a
+ * bare specifier is resolved against the nearest `node_modules` at or above the importing file, so the
+ * set of places a dependency can be found is exactly the set of those directories that exist. Only
+ * existing directories are named, so an allowance never cites a place that is not there - and a world
+ * whose application imports nothing builtin-only contributes nothing, because its upward walk finds
+ * `node_modules` only if one is genuinely on the path.
+ *
+ * **Read only, and that is the whole point of it being a separate function.** A dependency is read and
+ * never written, so these roots belong in `readRoots` and must never reach `writeRoots`: the write
+ * allowance stays the caller's own, which is the dimension `filesystemWrite` is measured in. A helper
+ * that answered both would widen the boundary it was written to keep, and `enforced` would stop
+ * meaning what the report says it means.
+ */
+export function dependencyReadRoots(startDir: string): readonly string[] {
+  const roots: string[] = [];
+  let current = resolve(startDir);
+  for (;;) {
+    const modules = join(current, "node_modules");
+    if (existsSync(modules)) roots.push(modules);
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return roots;
 }
 
 /**

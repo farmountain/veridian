@@ -44,6 +44,7 @@ import type { EnvironmentPlan, ObservationRequest } from "../core/environment/ty
 import { EnvironmentError } from "../core/failure.ts";
 import { memoryIo } from "../core/io.ts";
 import type { ProcessRequest, ProcessResult, ProcessRunner } from "../core/process.ts";
+import { confineChild, confinementCapability, type ConfinementResult } from "../core/environment/confinement.ts";
 import type { Logger } from "../core/clarification/types.ts";
 import { fixedClock } from "./helpers/clock.ts";
 
@@ -63,6 +64,9 @@ const CONTAINER = {
 
 /** The image store the world builds on `prepare()`, seeded so `probe()` can see it. */
 const STORE = `${CONTAINER.root}/store/images/keep`;
+
+/** The sandbox as this machine spells it: the io root joined to the world's own root. */
+const HOST_ROOT = `/virtual/${CONTAINER.root}`;
 
 /**
  * A plan whose readiness pattern is declared once, the way the loader declares it.
@@ -98,6 +102,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => {
     vscode: null,
     process: null,
     data: null,
+    mobile: null,
     health: {
       path: null,
       expectStatus: null,
@@ -248,17 +253,44 @@ function fakePort(): FakePort {
  * `runToCompletion` decides `timedOut` from **its own timer** and overwrites whatever the result
  * claimed. A double that resolved instantly with `timedOut: true` would leave the adapter's deadline
  * branch unreached while appearing to exercise it - a green test over a path nothing walked.
+ *
+ * It also records the **answer** the runner would have given each request, kept beside `calls` because
+ * the request and the answer are two different facts: a request says what the world asked for, an
+ * answer says what it got. The boundary reading this suite asserts is derived from the answer, so a
+ * double holding only the first makes it untestable and a hand-written second makes it a claim nobody
+ * measured. The second is produced by calling the real `confineChild`, exactly as the product's runner
+ * does.
  */
+interface FakeProcesses extends ProcessRunner {
+  readonly calls: readonly ProcessRequest[];
+  readonly confined: readonly (ConfinementResult | null)[];
+}
+
 function fakeProcesses(
   answers: readonly Partial<ProcessResult>[] = [{}],
   delayMs?: number,
-): ProcessRunner & { readonly calls: readonly ProcessRequest[] } {
+): FakeProcesses {
   const calls: ProcessRequest[] = [];
+  const confined: (ConfinementResult | null)[] = [];
   let index = 0;
   return {
     calls,
+    confined,
     run(processRequest: ProcessRequest) {
       calls.push(processRequest);
+      const conveyance: ConfinementResult | null =
+        processRequest.confinement === undefined
+          ? null
+          : confineChild({
+              command: processRequest.command,
+              args: processRequest.args,
+              readRoots: processRequest.confinement.readRoots,
+              writeRoots: processRequest.confinement.writeRoots,
+              ...(processRequest.confinement.allowChildProcess === undefined
+                ? {}
+                : { allowChildProcess: processRequest.confinement.allowChildProcess }),
+            });
+      confined.push(conveyance);
       const answer = answers[Math.min(index, answers.length - 1)] ?? {};
       index += 1;
       const settled: ProcessResult = {
@@ -267,17 +299,20 @@ function fakeProcesses(
         stdout: "",
         stderr: "",
         timedOut: false,
+        // Stamped, exactly as `core/process.ts` stamps it. A double that dropped it would make the
+        // reading untestable rather than making it pass.
+        confinement: conveyance,
         ...answer,
       };
       return {
         pid: 1,
+        confinement: conveyance,
         exited:
           delayMs === undefined
             ? Promise.resolve(settled)
             : new Promise((resolve) => setTimeout(() => resolve(settled), delayMs)),
         output: () => settled.stdout,
         error: () => settled.stderr,
-        write: () => undefined,
         waitForPattern: async () => true,
         stop: async () => undefined,
       };
@@ -290,7 +325,7 @@ interface Harness {
   /** The double. Always present, whatever port the adapter was handed, so assertions can read it. */
   readonly port: FakePort;
   readonly io: ReturnType<typeof memoryIo>;
-  readonly processes: ProcessRunner & { readonly calls: readonly ProcessRequest[] };
+  readonly processes: FakeProcesses;
   readonly logger: ReturnType<typeof capableLogger>;
 }
 
@@ -731,19 +766,80 @@ describe("an escape by the application is a crossing, and one by a criterion is 
     );
   });
 
-  it("reports both boundary policies unsupported, and its containment guard separately", async () => {
+  it("reports an unsupported network beside a containment guard measured on its own child", async () => {
     const built = await ready();
     const report = built.subject.boundaries();
+    // `network` is a fact about the mechanism rather than about this world: `confinement.ts` has no
+    // network flag to apply, so there is nothing to derive the value from and no measurement that
+    // could make it `enforced`.
     assert.equal(report.network, "unsupported");
-    assert.equal(report.filesystemWrite, "unsupported");
     assert.deepEqual(report.crossings, []);
+  });
+
+  it("asks the runner for an allowance over both trees its own path grammar admits", async () => {
+    const built = await ready();
+    // Both trees, on both halves of the request. The write half used to name the sandbox alone, and the
+    // container example's application stages its build context under its own directory - so a path the
+    // port's grammar answered for was refused by the allowance, the world never came up, and the demo
+    // reported `INCONCLUSIVE (ABORTED, 0 iteration(s))`. A double that echoes the request back asserts
+    // this value and never observes that refusal, which is why the suite stayed green while the demo was
+    // red; `npm run demo:container` is the check that reads the allowance's *effect*.
+    assert.deepEqual(built.processes.calls[0]?.confinement, {
+      readRoots: ["/virtual/app", HOST_ROOT],
+      writeRoots: ["/virtual/app", HOST_ROOT],
+    });
+  });
+
+  it("reports the write boundary enforced once a Node child really was confined", async () => {
+    const capability = confinementCapability();
+    assert.equal(
+      capability.available,
+      true,
+      `this suite asserts enforcement, so it can only run where enforcement exists: ${capability.reason}`,
+    );
+    const built = await ready();
+    assert.equal(built.processes.confined[0]?.applied, true, "the child really was confined");
+    assert.equal(built.processes.confined[0]?.command, process.execPath);
+    assert.equal(built.processes.confined[0]?.args[0], "--permission");
+    assert.equal(built.subject.boundaries().filesystemWrite, "enforced");
+  });
+
+  it("does not report enforcement for a provisioning program the confinement model cannot reach", async () => {
+    // An ordinary process with the operator's own privileges is not a confined one, and the reading
+    // has to say so. This is the half that keeps the other half from being an over-claim: the value is
+    // derived from the runner's answer and not from the *presence* of an allowance.
+    const built = await ready(plan({ start: { command: "sh", args: ["provision.sh"], readyPattern: null } }));
+    assert.equal(built.processes.confined[0]?.applied, false);
+    assert.equal(built.processes.confined[0]?.command, "sh");
+    assert.notEqual(
+      built.subject.boundaries().filesystemWrite,
+      "enforced",
+      "a program the runtime does not confine is not a boundary this world holds",
+    );
+  });
+
+  it("keeps the operator's own custom reset command unconfined, because one word cannot describe two authors", async () => {
+    const built = await ready(plan({ reset: { strategy: "custom", command: "npm" } }));
+    await built.subject.reset(built.id);
+    assert.equal(built.processes.calls.length, 2, "the provisioning program, then the operator's reset command");
+    assert.notEqual(built.processes.calls[0]?.confinement, undefined);
+    assert.equal(
+      built.processes.calls[1]?.confinement,
+      undefined,
+      "a reset command carries an argv the operator wrote, and the allowance belongs on the child whose author Veridian does not control",
+    );
+    assert.equal(
+      built.subject.boundaries().filesystemWrite,
+      "enforced",
+      "the reading names the application's child, and a later unconfined child does not retract it",
+    );
   });
 
   it("distinguishes a boundary the operator never asked for from one it cannot enforce", async () => {
     const built = await ready(plan({ boundary: { network: "allow", allow: [], filesystemWrite: "deny" } }));
     const report = built.subject.boundaries();
     assert.equal(report.network, "not-requested");
-    assert.equal(report.filesystemWrite, "unsupported", "a policy of none is still a policy this world cannot hold");
+    assert.notEqual(report.filesystemWrite, "unsupported", "the write boundary is measured, not declared");
   });
 });
 

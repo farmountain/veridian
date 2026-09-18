@@ -50,6 +50,7 @@
 
 import { decodeStep } from "../../core/acceptance/plan.ts";
 import type { Clock, Logger } from "../../core/clarification/types.ts";
+import { type ConfinementResult } from "../../core/environment/confinement.ts";
 import {
   DATA_OBSERVATION_KIND,
   DATA_SIMULATED_SURFACES,
@@ -174,6 +175,14 @@ export class SimDataEnvironment implements EnvironmentAdapter {
   #provisioned = false;
   /** What the application's provisioning program printed, in order. Read by `probe()`, never by a verdict. */
   #provisionOutput: string | null = null;
+
+  /**
+   * What the **runner** answered when the application's provisioning program was started, or `null`.
+   *
+   * Read off the result rather than recomputed here, and that distinction is the whole of the seam:
+   * this adapter states *what the world allows*, and only the runner knows what it actually applied.
+   */
+  #confinement: ConfinementResult | null = null;
 
   constructor(plan: EnvironmentPlan, options: SimDataEnvironmentOptions) {
     this.#plan = plan;
@@ -546,24 +555,31 @@ export class SimDataEnvironment implements EnvironmentAdapter {
   /**
    * What this world did about the plan's boundaries.
    *
-   * `unsupported` for both, and the crossings list is empty - which is a statement about this world
-   * rather than a report with a field left out. There is nothing here for a boundary guard to hold:
-   * no step kind in this world names a place. A `run` step carries a command vector whose operands are
-   * a topic name, a partition index, a key, a value, a group id and an offset, and every one of them
-   * resolves against the world's own held state - so `metadata /etc/passwd` asks about a *topic* with
-   * that name, which does not exist, and never touches a file. The one address in the world is the
-   * socket, and the document's host is held to loopback by the loader, by name, before a world exists.
+   * `network` is `unsupported` and not silently. A broker *is* a socket, so the answer a reader might
+   * expect better of is this one - but nothing here enforces which hosts the *application* reaches,
+   * and `core/environment/confinement.ts` has no network flag to apply, so there is nothing to derive
+   * the value from and no measurement that could make it `enforced`. Reporting `enforced` would name
+   * a guard that does not exist, and reporting `not-requested` would suggest a policy was honoured
+   * when there is nothing for it to be true of.
    *
-   * The network answer is the one a reader might expect better of, because a broker *is* a socket.
-   * But nothing here enforces which hosts the *application* reaches: the provisioner runs as an
-   * ordinary child process and can open any socket it likes. Reporting `enforced` would name a guard
-   * that does not exist, and reporting `not-requested` would suggest a policy was honoured when there
-   * is nothing for it to be true of.
+   * `filesystemWrite` **is a reading and no longer a sentence**. It says `enforced` when the runner
+   * measurably confined the application's provisioning child and `unsupported` when it did not,
+   * because a literal is wrong in both directions: it reports no boundary for a world whose runtime
+   * really did refuse a write outside the application directory, and it would report one for a world
+   * that asked for an allowance and was given none.
+   *
+   * The crossings list is empty, and here that emptiness is one specific statement rather than a
+   * field left out: no step kind in this world names a place. A `run` step carries a command vector
+   * whose operands are a topic name, a partition index, a key, a value, a group id and an offset, and
+   * every one of them resolves against the world's own held state - so `metadata /etc/passwd` asks
+   * about a *topic* with that name, which does not exist, and never touches a file. The one address in
+   * the world is the socket, and the document's host is held to loopback by the loader, by name,
+   * before a world exists.
    */
   boundaries(): BoundaryReport {
     return {
       network: this.#plan.boundary.network === "allow" ? "not-requested" : "unsupported",
-      filesystemWrite: "unsupported",
+      filesystemWrite: this.#confinement?.applied === true ? "enforced" : "unsupported",
       crossings: [],
     };
   }
@@ -700,11 +716,31 @@ export class SimDataEnvironment implements EnvironmentAdapter {
         args,
         cwd: this.#plan.appPath,
         env: this.#dataEnv(),
+        // The allowance is a value; applying it is `core/process.ts`'s job. **This world's allowance
+        // is its application directory**, the same tree `sim-k8s` names and for a related reason: the
+        // substitution and the transport sit on opposite sides of a socket, so the substitute's state
+        // - topics, partitions, offsets, groups - is held in memory rather than in a sandbox tree, and
+        // the application directory is the one directory this world can honestly point at. A
+        // `writeRoots` naming a sandbox would name a place that does not exist.
+        confinement: {
+          readRoots: [this.#plan.appPath],
+          writeRoots: [this.#plan.appPath],
+        },
         onStdout: (chunk) => this.#logger.debug("provision.stdout", { chunk: chunk.trimEnd() }),
         onStderr: (chunk) => this.#logger.warn("provision.stderr", { chunk: chunk.trimEnd() }),
       },
       this.#provisionTimeoutMs,
     );
+
+    // Read off the result the runner produced, never recomputed from the plan beside it. The log line
+    // names both halves for the reason `local-process`'s does: a reader asking "was this child
+    // confined" and a reader asking "why not" are two questions, and one of them is a `reason` only
+    // the runner ever held.
+    this.#confinement = result.confinement ?? null;
+    this.#logger.info("environment.deploy.confinement", {
+      applied: this.#confinement?.applied ?? false,
+      reason: this.#confinement === null ? "no allowance was requested" : this.#confinement.reason,
+    });
 
     // Kept whatever happened next, including on a timeout: the partial output of a program that never
     // finished is the evidence that explains why, and `probe()` reports the readiness signal from here

@@ -41,6 +41,7 @@ import { decodeStep } from "../../core/acceptance/plan.ts";
 import { STEP_KINDS } from "../../core/acceptance/steps.ts";
 import type { StepKind, ValidationStep } from "../../core/acceptance/steps.ts";
 import type { Clock, Logger } from "../../core/clarification/types.ts";
+import { type ConfinementResult } from "../../core/environment/confinement.ts";
 import { VSCODE_OBSERVATION_KIND } from "../../core/environment/vscode-observation.ts";
 import type { VSCodeObservationData } from "../../core/environment/vscode-observation.ts";
 import type {
@@ -176,6 +177,17 @@ export class SimVSCodeEnvironment implements EnvironmentAdapter {
   #id: string | null = null;
   /** Whether this world's application has provisioned it in *this* environment's lifetime. */
   #provisioned = false;
+
+  /**
+   * What the **runner** answered when the application's provisioning program was started, or `null`.
+   *
+   * Read off the result rather than recomputed here, and that distinction is the whole of the seam:
+   * this adapter states *what the world allows*, and only the runner knows what it actually applied.
+   * A world that answered this question from its own plan field would be reporting a decision nobody
+   * had to agree with. It is `null` before the first provisioning run, which is why `boundaries()`
+   * reports `unsupported` until then - there is no child and therefore nothing held.
+   */
+  #confinement: ConfinementResult | null = null;
   /** What the application's provisioning program printed, in order. Read by `probe()`, never by a verdict. */
   #lastProvisioning: readonly string[] = [];
 
@@ -535,12 +547,21 @@ export class SimVSCodeEnvironment implements EnvironmentAdapter {
   /**
    * What this world did about the plan's boundaries.
    *
-   * `unsupported` for both, and not silently - the same report `sim-posix`, `sim-k8s`, `sim-os` and
-   * `sim-container` give, for the same reason. This world substitutes an extension host, but it does not
-   * enforce the *operator's* network or filesystem policy over the application, because the application
-   * is an ordinary child process with the operator's own privileges: it can open whatever socket and
-   * write wherever the operator can. A report of `enforced` on the strength of a guard over command
-   * vectors would be exactly the overclaim the boundary path exists to remove.
+   * `network` is `unsupported` and not silently: `core/environment/confinement.ts` has no network flag
+   * to apply, so there is nothing to derive the value from and no measurement that could make it
+   * `enforced`.
+   *
+   * `filesystemWrite` **is a reading and no longer a sentence**. It says `enforced` when the runner
+   * measurably confined the application's child and `unsupported` when it did not, because a literal
+   * is wrong in both directions: it reports no boundary for a world whose runtime really did refuse a
+   * write outside the sandbox, and it would report one for a world that asked for an allowance and was
+   * given none.
+   *
+   * **Only the application's provisioning program is confined**, and the asymmetry is the point. A
+   * `run` step carries an argv the contract's operator wrote; the application's program is what the
+   * agent wrote. An operator already holds the privileges its own command needs, and an allowance over
+   * its children would be a boundary that binds nobody - the same argument the `custom` reset branch
+   * below records. That is two actors, and one word - `filesystemWrite` - cannot describe both.
    *
    * One guard here is real and it is not the operator's: a command that names a host path outside the
    * application's directory and outside the sandbox is refused by name, and the *application's* refusals
@@ -550,7 +571,7 @@ export class SimVSCodeEnvironment implements EnvironmentAdapter {
   boundaries(): BoundaryReport {
     return {
       network: this.#plan.boundary.network === "allow" ? "not-requested" : "unsupported",
-      filesystemWrite: "unsupported",
+      filesystemWrite: this.#confinement?.applied === true ? "enforced" : "unsupported",
       crossings: [...this.#crossings],
     };
   }
@@ -648,6 +669,12 @@ export class SimVSCodeEnvironment implements EnvironmentAdapter {
     // the world - so the watermark is what keeps a crossing from being counted twice.
     const escapesBefore = port.escapes().length;
 
+    // The allowance is a value; applying it is `core/process.ts`'s job. `readRoots` names both
+    // directories because they are two - the program file is opened from the application directory and
+    // everything the world holds is opened from the sandbox - and a read allowance naming only the
+    // sandbox would refuse to load the program it was asked to confine. The write allowance is the
+    // sandbox alone, which is the tree this world's own path grammar already refuses to leave.
+    const hostRoot = this.#hostRoot();
     const result = await runToCompletion(
       this.#processes,
       {
@@ -655,11 +682,21 @@ export class SimVSCodeEnvironment implements EnvironmentAdapter {
         args,
         cwd: this.#plan.appPath,
         env: this.#vscodeEnv(),
+        confinement: {
+          readRoots: [this.#plan.appPath, hostRoot],
+          writeRoots: [hostRoot],
+        },
         onStdout: (chunk) => this.#logger.debug("provision.stdout", { chunk: chunk.trimEnd() }),
         onStderr: (chunk) => this.#logger.warn("provision.stderr", { chunk: chunk.trimEnd() }),
       },
       this.#provisionTimeoutMs,
     );
+
+    this.#confinement = result.confinement ?? null;
+    this.#logger.info("environment.provision.confinement", {
+      applied: this.#confinement?.applied ?? false,
+      reason: this.#confinement === null ? "no allowance was requested" : this.#confinement.reason,
+    });
 
     const stdout = result.stdout;
     const stderr = result.stderr;

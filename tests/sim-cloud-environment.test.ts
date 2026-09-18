@@ -22,6 +22,7 @@ import type {
   CloudMeterReading,
   CloudQueueReading,
 } from "../core/environment/cloud-observation.ts";
+import { confineChild, confinementCapability, type ConfinementResult } from "../core/environment/confinement.ts";
 import type { EnvironmentPlan, ObservationRequest } from "../core/environment/types.ts";
 import { EnvironmentError } from "../core/failure.ts";
 import { memoryIo } from "../core/io.ts";
@@ -96,6 +97,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => ({
   vscode: null,
   process: null,
   data: null,
+  mobile: null,
   health: { path: null, expectStatus: null, timeoutMs: 5_000, intervalMs: 10, readyPattern: null },
   reset: { strategy: "restart", command: null },
   browser: { enabled: false, viewport: { width: 1280, height: 720 }, locale: null, timezoneId: null },
@@ -248,19 +250,52 @@ function fakePort(options: FakePortOptions = {}): FakePort {
   };
 }
 
+/**
+ * A double that answers from a table rather than starting a program.
+ *
+ * It records the **answer** the runner would have given each request, kept beside `calls` because the
+ * request and the answer are two different facts: a request says what the world asked for, an answer
+ * says what it got. The boundary reading this suite asserts is derived from the answer, so a double
+ * holding only the first makes it untestable and a hand-written second makes it a claim nobody
+ * measured. The second is produced by calling the real `confineChild`, exactly as the product's
+ * runner does.
+ */
+interface FakeProcesses extends ProcessRunner {
+  readonly calls: readonly ProcessRequest[];
+  readonly confined: readonly (ConfinementResult | null)[];
+}
+
 function fakeProcesses(
   answers: readonly Partial<ProcessResult>[] = [{}],
   /** A delay before `exited` resolves, so a real deadline can elapse in front of it. */
   delayMs = 0,
   /** What the provisioner does while it runs. Called before the run settles, because it does. */
   onRun?: () => void,
-): ProcessRunner & { readonly calls: readonly ProcessRequest[] } {
+): FakeProcesses {
   const calls: ProcessRequest[] = [];
+  const confined: (ConfinementResult | null)[] = [];
   let index = 0;
   return {
     calls,
+    confined,
     run(processRequest: ProcessRequest) {
       calls.push(processRequest);
+      // The real mechanism's own answer, asked here rather than restated: a double that decided for
+      // itself what a confined child looks like would make the adapter's boundary reading a claim
+      // about this fixture instead of a reading of the seam.
+      const conveyance: ConfinementResult | null =
+        processRequest.confinement === undefined
+          ? null
+          : confineChild({
+              command: processRequest.command,
+              args: processRequest.args,
+              readRoots: processRequest.confinement.readRoots,
+              writeRoots: processRequest.confinement.writeRoots,
+              ...(processRequest.confinement.allowChildProcess === undefined
+                ? {}
+                : { allowChildProcess: processRequest.confinement.allowChildProcess }),
+            });
+      confined.push(conveyance);
       const answer = answers[Math.min(index, answers.length - 1)] ?? {};
       index += 1;
       const settled: ProcessResult = {
@@ -269,6 +304,9 @@ function fakeProcesses(
         stdout: "",
         stderr: "",
         timedOut: false,
+        // Stamped, exactly as `core/process.ts` stamps it. A double that dropped it would make the
+        // reading untestable rather than making it pass.
+        confinement: conveyance,
         ...answer,
       };
       // A program that exits zero has made its requests by the time it exits, so the calls land before
@@ -285,6 +323,7 @@ function fakeProcesses(
             });
       return {
         pid: 1,
+        confinement: conveyance,
         exited,
         output: () => settled.stdout,
         error: () => settled.stderr,
@@ -301,7 +340,7 @@ interface Harness {
   /** The double. Always present, whatever port the adapter was handed, so assertions can read it. */
   readonly port: FakePort;
   readonly io: ReturnType<typeof memoryIo>;
-  readonly processes: ProcessRunner & { readonly calls: readonly ProcessRequest[] };
+  readonly processes: FakeProcesses;
   readonly logger: ReturnType<typeof capableLogger>;
   /**
    * Whether the *next* provisioning run asks the account anything.
@@ -595,6 +634,48 @@ describe("the application provisions the world, and the world refuses a run that
     assert.equal(built.processes.calls[0]?.env?.[CLOUD_ENV.api], built.port.bindings[0]);
   });
 
+  it("asks the runner for an allowance over the application directory", async () => {
+    const built = await ready();
+    // The account's resources live in an in-process substitute behind a loopback socket rather than
+    // in a sandbox tree - there is no `VERIDIAN_CLOUD_ROOT`, as `CLOUD_ENV` says - so `appPath` is the
+    // one directory this world can honestly point at. A `writeRoots` naming a sandbox would name a
+    // place that does not exist.
+    assert.deepEqual(built.processes.calls[0]?.confinement, {
+      readRoots: ["/virtual/app"],
+      writeRoots: ["/virtual/app"],
+    });
+  });
+
+  it("reports the write boundary enforced once a Node child really was confined", async () => {
+    const capability = confinementCapability();
+    assert.equal(
+      capability.available,
+      true,
+      `this suite asserts enforcement, so it can only run where enforcement exists: ${capability.reason}`,
+    );
+    const built = await ready();
+    assert.equal(built.processes.confined[0]?.applied, true, "the child really was confined");
+    assert.equal(built.processes.confined[0]?.command, process.execPath);
+    assert.equal(built.processes.confined[0]?.args[0], "--permission");
+    assert.equal(built.subject.boundaries().filesystemWrite, "enforced");
+  });
+
+  it("does not report enforcement for a provisioning program the confinement model cannot reach", async () => {
+    // An ordinary program with the operator's own privileges is not a confined one, and the reading
+    // has to say so. This is the half that keeps the other half from being an over-claim: the value is
+    // derived from the runner's answer and never from the *presence* of an allowance.
+    const built = await ready(
+      plan({ start: { command: "sh", args: ["provision.sh"], readyPattern: null } }),
+    );
+    assert.equal(built.processes.confined[0]?.applied, false);
+    assert.equal(built.processes.confined[0]?.command, "sh");
+    assert.notEqual(
+      built.subject.boundaries().filesystemWrite,
+      "enforced",
+      "a program the runtime does not confine is not a boundary this world holds",
+    );
+  });
+
   it("files the application's own request in the same record the criteria's go into", async () => {
     const built = await ready();
     assert.deepEqual(
@@ -838,20 +919,23 @@ describe("a request this world does not serve is a crossing, and a repair does n
     );
   });
 
-  it("reports both boundary policies unsupported, and its containment guard separately", async () => {
+  it("reports the network policy unsupported, and its containment guard as a separate fact", async () => {
     const built = await ready();
     const report = built.subject.boundaries();
+    // No flag exists that could make the first arm anything else, and that is a property of the
+    // runtime rather than of this world. The write arm is the opposite: it is whatever the runner
+    // answered for the child it really started.
     assert.equal(report.network, "unsupported");
-    assert.equal(report.filesystemWrite, "unsupported");
+    assert.equal(report.filesystemWrite, "enforced");
     assert.deepEqual(report.crossings, []);
   });
 
-  it("distinguishes a boundary the operator never asked for from one it cannot enforce", async () => {
+  it("distinguishes a boundary the operator never asked for from one the runner answered for", async () => {
     const built = await ready(
       plan({ boundary: { network: "allow", allow: [], filesystemWrite: "sandbox" } }),
     );
     assert.equal(built.subject.boundaries().network, "not-requested");
-    assert.equal(built.subject.boundaries().filesystemWrite, "unsupported");
+    assert.equal(built.subject.boundaries().filesystemWrite, "enforced");
   });
 });
 
@@ -971,6 +1055,41 @@ describe("the lifecycle is the same one every other world exposes", () => {
     assert.equal(built.processes.calls[1]?.command, "node");
     assert.deepEqual(built.processes.calls[1]?.args, []);
     assert.equal(built.port.clearCount(), 0);
+  });
+
+  it("keeps the operator's own custom reset command unconfined, because one word cannot describe two authors", async () => {
+    // The provisioner is the *application's* child and gets the allowance; a custom reset command is
+    // the *operator's* and gets none. Confining it too would make the reading claim a boundary was
+    // applied to a program this world was told to run rather than one it provisioned - and the two
+    // arrive through the same `ProcessRunner`, so the request is the only place the distinction can
+    // live.
+    const built = await ready(plan({ reset: { strategy: "custom", command: "node" } }));
+    await built.subject.reset(built.id);
+    assert.notEqual(
+      built.processes.calls[0]?.confinement,
+      undefined,
+      "the provisioner asked for an allowance",
+    );
+    assert.equal(
+      built.processes.calls[1]?.confinement,
+      undefined,
+      "the operator's own command did not",
+    );
+    assert.equal(
+      built.processes.confined.length,
+      2,
+      "both children were answered, so `confined[1] === null` is a reading and not an omission",
+    );
+    assert.equal(
+      built.processes.confined[1],
+      null,
+      "no allowance was asked for, so none was answered",
+    );
+    assert.equal(
+      built.subject.boundaries().filesystemWrite,
+      "enforced",
+      "one word cannot describe two authors: the operator's command does not change the reading",
+    );
   });
 
   it("hands a custom reset the same account facts the provisioner got", async () => {

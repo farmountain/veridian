@@ -191,6 +191,20 @@ export interface EnvironmentLike {
    * for a database file.
    */
   readonly data?: unknown;
+  /**
+   * Present when the world stands in for a mobile device.
+   *
+   * It has no address at all, and it is the second declaration whose subject is a *handset* rather
+   * than a place - the application is installed into the device and launched on it, so "reach the
+   * application over a socket" is not a question this world can answer. Like the filesystem worlds
+   * before it, it carries a sandbox root - so a detector that read "has a directory" as "has an
+   * application to reach over a socket" would be reading this block backwards, exactly as it would
+   * for `vscode` and `process`. It also carries a `platform`, which is a rule rather than a label:
+   * the platform decides how a path inside the device's own storage is spelled, so a detector that
+   * read this block as nothing but a directory would be discarding the one field that changes how
+   * every criterion's paths resolve.
+   */
+  readonly mobile?: unknown;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -226,15 +240,16 @@ const statesComparison = (key: string, value: unknown): boolean =>
  * Whether the document describes a world with no HTTP surface of its own.
  *
  * Decided from the *document*, not from the adapter name, because `core/clarification` is the lowest
- * layer and may not import an adapter to ask it. Nine shapes have no HTTP: a world reached by
+ * layer and may not import an adapter to ask it. Ten shapes have no HTTP: a world reached by
  * opening a file (`databasePath`), one whose address is a substitute control plane (`cluster`), one
  * that is a system rather than a service (`posix`), one that is a machine (`os`), one whose subject
  * is an account rather than a host or a system (`cloud`), one whose subject is a runtime holding
  * images and containers (`container`), one whose subject is the editor host that loads an
  * extension (`vscode`), one whose subject is the process boundary itself, where a command runs
- * and a file exists but nothing is listening (`process`), and one whose subject is a broker holding
+ * and a file exists but nothing is listening (`process`), one whose subject is a broker holding
  * topics, partitions and records, reached over a real socket that speaks neither HTTP nor anything
- * a browser can render (`data`). Anything else is a socket world, and is still asked for its URL.
+ * a browser can render (`data`), and one whose subject is a handset the application is installed
+ * into and launched on (`mobile`). Anything else is a socket world, and is still asked for its URL.
  *
  * `data` is the clause worth reading twice, because it is the first shape that is **not** a world
  * with no socket. Its address is a real TCP listener this machine can open; what it has no HTTP
@@ -269,7 +284,8 @@ const hasNoHttp = (environment: EnvironmentLike): boolean =>
     !isMissing(environment.container) ||
     !isMissing(environment.vscode) ||
     !isMissing(environment.process) ||
-    !isMissing(environment.data));
+    !isMissing(environment.data) ||
+    !isMissing(environment.mobile));
 
 const asArray = <T>(value: readonly T[] | undefined): readonly T[] => value ?? [];
 

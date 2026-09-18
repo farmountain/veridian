@@ -9,6 +9,7 @@ import type { DatabasePort } from "../adapters/local-db/database-port.ts";
 import { DB_ENGINE, LocalDbEnvironment } from "../adapters/local-db/local-db-environment.ts";
 import type { EnvironmentPlan, ObservationRequest } from "../core/environment/types.ts";
 import { DB_OBSERVATION_KIND, isDbObservationData } from "../core/environment/db-observation.ts";
+import { confineChild, confinementCapability, type ConfinementResult } from "../core/environment/confinement.ts";
 import { EnvironmentError } from "../core/failure.ts";
 import { memoryIo } from "../core/io.ts";
 import type { ProcessRequest, ProcessResult, ProcessRunner } from "../core/process.ts";
@@ -264,6 +265,7 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => ({
   vscode: null,
   process: null,
   data: null,
+  mobile: null,
   health: { path: null, expectStatus: null, timeoutMs: 5_000, intervalMs: 10, readyPattern: null },
   reset: { strategy: "restart", command: null },
   browser: { enabled: false, viewport: { width: 1280, height: 720 }, locale: null, timezoneId: null },
@@ -299,45 +301,93 @@ function fakePort(answer?: (path: string) => Promise<unknown>): FakePort {
   };
 }
 
-function fakeProcesses(result: Partial<ProcessResult> = {}): ProcessRunner {
-  const settled: ProcessResult = {
-    code: 0,
-    signal: null,
-    stdout: "inventory-db ready: 3 products, 1 to reorder\n",
-    stderr: "",
-    timedOut: false,
-    ...result,
-  };
-  return {
+/**
+ * A process runner that never spawns anything, but *does* apply the allowance.
+ *
+ * Applying an allowance is the **runner's** job - that is the whole of the seam this double stands in
+ * for - so the fake calls the real `confineChild` and records its answer on the handle and on the
+ * result. A double that skipped this would leave `result.confinement` undefined and every world would
+ * report `unsupported` for a build that had just handed over a perfectly good allowance, which would
+ * make the boundary reading untestable rather than wrong. This is a lesson this suite is not the first
+ * to pay for: a double has to reproduce the property the reading is about.
+ *
+ * `requests` and `confined` are kept because the allowance this world hands over is a *fact about the
+ * request* and what came back is a fact about the *answer*, and the two are read for different
+ * purposes: the roots say what the world asked for, the result says what the runner did.
+ */
+interface FakeProcesses {
+  readonly runner: ProcessRunner;
+  readonly requests: ProcessRequest[];
+  readonly confined: (ConfinementResult | null)[];
+}
+
+function fakeProcesses(result: Partial<ProcessResult> = {}): FakeProcesses {
+  const requests: ProcessRequest[] = [];
+  const confined: (ConfinementResult | null)[] = [];
+  const runner: ProcessRunner = {
     run(request: ProcessRequest) {
+      requests.push(request);
+      // The result is built per request rather than once, because the reading is per child.
+      const confinement: ConfinementResult | null =
+        request.confinement === undefined
+          ? null
+          : confineChild({
+              command: request.command,
+              args: request.args,
+              readRoots: request.confinement.readRoots,
+              writeRoots: request.confinement.writeRoots,
+              ...(request.confinement.allowChildProcess === undefined
+                ? {}
+                : { allowChildProcess: request.confinement.allowChildProcess }),
+            });
+      confined.push(confinement);
+      // The result is built per request rather than once, because the reading is per child.
+      const settled: ProcessResult = {
+        code: 0,
+        signal: null,
+        stdout: "inventory-db ready: 3 products, 1 to reorder\n",
+        stderr: "",
+        timedOut: false,
+        confinement,
+        ...result,
+      };
       return {
         pid: 1,
         exited: Promise.resolve(settled),
         output: () => settled.stdout,
         error: () => settled.stderr,
+        confinement,
         write: () => undefined,
         waitForPattern: async () => true,
         stop: async () => undefined,
       };
     },
   };
+  return { runner, requests, confined };
 }
 
 function harness(
   environment: EnvironmentPlan,
   options: { readonly port?: DatabasePort; readonly files?: Readonly<Record<string, string>> } = {},
-): { readonly subject: LocalDbEnvironment; readonly port: FakePort; readonly io: ReturnType<typeof memoryIo> } {
+): {
+  readonly subject: LocalDbEnvironment;
+  readonly port: FakePort;
+  readonly io: ReturnType<typeof memoryIo>;
+  readonly requests: ProcessRequest[];
+  readonly confined: (ConfinementResult | null)[];
+} {
   const port = fakePort();
   const io = memoryIo({ "app/build.mjs": "// the build\n", ...options.files });
+  const processes = fakeProcesses();
   const subject = new LocalDbEnvironment(environment, {
     io,
     clock: fixedClock("2026-01-01T00:00:00.000Z"),
     logger: silentLogger,
-    processes: fakeProcesses(),
+    processes: processes.runner,
     stateDir: ".veridian",
     database: options.port ?? port.port,
   });
-  return { subject, port, io };
+  return { subject, port, io, requests: processes.requests, confined: processes.confined };
 }
 
 /**
@@ -433,7 +483,7 @@ describe("readiness is a verdict this world reached, not a status code it lacks"
       io: memoryIo({ "app/data.db": "" }),
       clock: fixedClock(),
       logger: silentLogger,
-      processes: fakeProcesses(),
+      processes: fakeProcesses().runner,
       stateDir: ".veridian",
       database: port,
     });
@@ -475,13 +525,59 @@ describe("a step this world cannot perform is named, not skipped", () => {
 });
 
 describe("a boundary this adapter cannot hold is stated as unheld", () => {
-  it("reports both policies unsupported rather than claiming an enforcement it has no mechanism for", async () => {
-    const { subject } = await ready(plan(), { files: { "app/data.db": "" } });
-    const report = subject.boundaries();
+  it("reports the write boundary unsupported before any child has been confined", async () => {
+    // Nothing has been confined yet, and a world with no child must not claim a boundary over one.
+    const { subject } = harness(plan());
+    await subject.create();
 
-    assert.equal(report.network, "unsupported");
-    assert.equal(report.filesystemWrite, "unsupported", "there is no sandbox here to confine a write in");
-    assert.deepEqual(report.crossings, []);
+    assert.equal(subject.boundaries().filesystemWrite, "unsupported");
+    assert.equal(subject.boundaries().network, "unsupported");
+  });
+
+  it("reports the write boundary enforced once the build child really was confined", async () => {
+    const capability = confinementCapability();
+    assert.equal(
+      capability.available,
+      true,
+      `this suite asserts enforcement, so it can only run where enforcement exists: ${capability.reason}`,
+    );
+
+    const { subject, requests, confined } = await ready(plan(), { files: { "app/data.db": "" } });
+
+    assert.deepEqual(requests[0]?.confinement?.writeRoots, [plan().appPath], "the request carried the allowance");
+    assert.equal(confined[0]?.applied, true, "and the runner applied it");
+    assert.equal(subject.boundaries().filesystemWrite, "enforced");
+    assert.deepEqual(subject.boundaries().crossings, [], "a confinement is not a crossing");
+  });
+
+  it("allows the database's own directory, not only the application directory", async () => {
+    // The half that makes this world's allowance its own rather than a copy of the application worlds':
+    // `databasePath` is an absolute path the operator names, and SQLite writes its journal beside the
+    // file it opens - so the allowance has to be the file's *directory*, and it has to cover a
+    // directory that is not the application's. An allowance naming only `appPath` would confine the
+    // build out of the one file it exists to write.
+    const { requests, confined } = await ready(plan({ databasePath: "/store/data.db" }), {
+      files: { "/store/data.db": "" },
+    });
+
+    assert.deepEqual(requests[0]?.confinement?.writeRoots, ["/store"], "the write allowance is the file's own directory");
+    assert.deepEqual(requests[0]?.confinement?.readRoots, [plan().appPath, "/store"], "and the code that wrote it is read");
+    assert.equal(confined[0]?.applied, true, "which is an allowance the runner could apply");
+  });
+
+  it("does not report enforcement for an allowance the runner refused", async () => {
+    // A command the confinement model cannot reach - `cmd` is not a Node interpreter - is refused *by
+    // name*, and a world reporting `enforced` on the strength of a request it made would be naming a
+    // mechanism that never ran.
+    const { subject, requests, confined } = await ready(
+      plan({ start: { command: "cmd", args: ["/c", "build.bat"], readyPattern: "ready:" } }),
+      { files: { "app/data.db": "" } },
+    );
+
+    assert.ok(requests[0]?.confinement !== undefined, "the request did ask for an allowance");
+    assert.equal(confined[0]?.applied, false, "the runner states that it refused this allowance");
+    assert.notEqual(confined[0]?.reason, "", "and names a reason rather than leaving the reader to guess");
+    assert.notEqual(subject.boundaries().filesystemWrite, "enforced", "a refusal is not an enforcement");
   });
 
   it("refuses an ATTACH, records the crossing, and does not clear it on reset", async () => {
@@ -553,7 +649,7 @@ describe("the evidence a database world can produce is the reading itself", () =
       io,
       clock: fixedClock(),
       logger,
-      processes: fakeProcesses(),
+      processes: fakeProcesses().runner,
       stateDir: ".veridian",
       database: fakePort().port,
     });
