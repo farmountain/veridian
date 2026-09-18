@@ -1,0 +1,43 @@
+# The fixture the contract one directory up runs - and the first document in this repository that is
+# sparse *on purpose*.
+#
+# Every omission below is an input to a rung. `core/definition.ts` reads each of the three documents
+# **raw**, before any default is applied, so a field that is absent from the file is a gap the ladder
+# has to close - and the bundle this contract produces is the record of which rung closed it. So a
+# sparse document here is not a broken one: it is the measurement instrument. The demo contracts
+# elsewhere in this tree are sparse incidentally; this one is sparse by construction.
+#
+# What is *not* omitted is anything whose absence would change the run's shape rather than raise a
+# question - the two pointers below, and `maxIterations`. A fixture sparse in those would be a
+# fixture that never runs, and a document that cannot be run cannot be observed.
+statement: |
+  A deliberately sparse contract. Its purpose is not to judge an application but to make the
+  clarification ladder answer a question at every stage it owns, so that the run's own
+  `clarifications.json` is a record of the ladder working rather than a document asserting that it
+  does. It is judged, in turn, by the contract one directory up - and by nothing else.
+
+id: ladder-fixture
+version: 1
+acceptance: acceptance.yaml
+environment: environment.yaml
+
+# One declaration and five omissions, and the shape of the block is the point:
+#
+#   maxIterations    declared, because it is the one value here that is not a question. A bound of
+#                    one means the fixture cannot re-observe its application even if a repair path
+#                    were installed, so the bundle is one iteration deep and the `iteration` origin
+#                    is raised exactly once. `detectIterationAmbiguities` is the one runtime detector
+#                    that fires on *every* iteration, whatever the verdict, so this is also the
+#                    declaration that makes the runtime half of the ladder's record deterministic.
+#   maxRuntimeMs     omitted, so the ladder derives it from
+#                    `schemas/goal.schema.json#/$defs/Limits/properties/maxRuntimeMs/default`
+#   maxCriterionMs   omitted, and derived by the same rule
+#   networkAllowList omitted, and derived by the same rule
+#   networkPolicy    omitted, and derived by the same rule
+#   filesystemWrite  omitted, and derived by the same rule
+#
+# The last two are worth naming rather than glossing: this fixture claims nothing about enforcement,
+# and the outer contract reads the ladder's record rather than this world's boundary report. A
+# document that declared a policy it did not mean would be making a claim, not raising a question.
+limits:
+  maxIterations: 1

@@ -1,0 +1,51 @@
+# The world the ladder contract is judged in.
+#
+# `local-process`, because the application under this contract is the command line: a real program is
+# started as a real child process and judged on what it printed, what it exited with and the files it
+# really wrote. Nothing is stood in and nothing is simulated - this world has no
+# `*_SIMULATED_SURFACES` constant and none is wanted, and its reading carries no `simulated` field.
+#
+# `app: ../..` is the repository root. `core/environment/load.ts` resolves every path in this file
+# against THIS DOCUMENT'S own location, so `acceptance/ladder/../..` is the directory holding
+# `cli/veridian.ts` - which is what it has to be, because the adapter confines the child with
+# `--allow-fs-read` on exactly two directories: the application directory and the sandbox.
+adapter: local-process
+app: ../..
+
+dependencyInstall: null
+
+process:
+  # Who the run judges as. Read by `process.host` through `renderHost`, which renders
+  # `${host} (root ${root})` - so the criterion that pins this world asserts
+  # "ladder-outer (root sandbox/ladder/fixture)" rather than either half of it.
+  host: ladder-outer
+  # The world's directory, relative to `app`. It holds two things that are deliberately not each
+  # other: `tree`, which is the INNER world's root and is emptied by the inner adapter at its own
+  # `create()`, and `state`, which is the INNER run's `--state-dir` and holds the ambiguity record
+  # these criteria read. Both are recreated by the inner run, so this world's root is a directory the
+  # run builds rather than one it inherits.
+  #
+  # The inner state directory lives INSIDE this root because a path target is resolved against it:
+  # `state/latest-result.json` is how a criterion reaches the record, and a state directory outside
+  # the root would be a path this world refuses by name rather than reads.
+  #
+  # The OUTER run's own `--state-dir` is `sandbox/ladder/outer` - a sibling of this root rather than a
+  # descendant - and `scripts/ladder.mjs` is what passes it. It cannot live inside this root, because
+  # the world empties that directory when it is created and the CLI writes its bundle BEFORE the world
+  # is created: a state directory inside the root would be destroyed by the world whose bundle it
+  # holds. This is the same rule `acceptance/environment.yaml` states for `sandbox`.
+  root: sandbox/ladder/fixture
+
+# Required of every world - `core/environment/load.ts` refuses a document without one - and read by
+# nothing here: this world declares no `process.application`, so `start()` returns before it looks at
+# a readiness pattern.
+start:
+  command: node
+  args: [cli/veridian.ts, help]
+
+# Declared rather than omitted. The ladder's environment detector raises a gap when this is absent,
+# and this contract is about the ladder's record of the INNER run: leaving a gap here would put a
+# resolution of this run's own in the bundle and make the two runs' records harder to tell apart.
+# `local-process` has no snapshot, so `restart` is the only strategy it can honour.
+reset:
+  strategy: restart

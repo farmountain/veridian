@@ -1,0 +1,91 @@
+# The criteria of the sparse fixture. Three, and each one is a different lever on the ladder.
+#
+# `goal_id` is declared, and it is not decoration. `core/definition.ts`'s cross-goal guard refuses a
+# contract that names a goal other than the one it is being resolved against, and its null branch -
+# taken when this field is absent - is a branch no document reaches. This repository has already paid
+# for that once (`examples/sim-os/acceptance.yaml` carried no `goal_id`, and the guard that stops one
+# goal's criteria being judged against another's world was dormant for as long as it did).
+goal_id: ladder-fixture
+
+# `version` is omitted on purpose. `schemas/acceptance.schema.json` fixes it with a `const`, the
+# ladder's first rung cites that `const` as the evidence, and this is the gap that proves a `const`
+# is derived as readily as a `default` - the value is not being guessed, it is being read.
+criteria:
+  # AC-001 - a criterion that RUNS, so the run has a real application to judge, and whose required
+  # evidence cannot exist in this world.
+  #
+  # `description` is omitted, and it is the one gap in the whole fixture that the ladder cannot
+  # close: it has no schema default, nothing to derive it from, and it cannot change a verdict - the
+  # schema says so in as many words ("a field that provably cannot change a verdict must never be the
+  # reason a run stops to ask a human"). So it is *deferred*, non-blockingly, and the deferral carries
+  # its reason. That is the third of the four claims the outer contract makes, and this line is where
+  # the record it reads comes from.
+  #
+  # `mandatory` is omitted too, and the ladder derives it - `true` from the criterion's own schema.
+  # Two omissions, two different fates: what is derived is derived, and what cannot be is recorded.
+  #
+  # `evidence: [screenshot]` is declared and cannot be satisfied. `local-process` writes `json`
+  # artifacts, so this criterion is unproven by construction - which is what raises the `evidence`
+  # origin. The absence does not manufacture an artifact; it writes down why the criterion is
+  # unproven, and that note is what the outer contract reads.
+  - id: AC-001
+    steps:
+      - run: [node, cli/veridian.ts, help]
+    evidence: [screenshot]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 0
+
+  # AC-002 - the `validation` origin, and the one lever that is a *misspelling* rather than an
+  # omission.
+  #
+  # `sandbox.argv` is not a registered validator name; `process.argv` is. The first segment is the
+  # shape that matters here, and it was measured rather than reasoned about. `suggestNames` scores
+  # every registered name by shared-prefix length plus three times its token overlap, so a
+  # misspelling that keeps a long shared prefix drags in all of its siblings: `process.argvx` was
+  # measured to offer three candidates (`process.argv`, `process.contents`, `process.exitcode`), and
+  # rung 4 declines to choose between them - it may eliminate a candidate the contract offered and
+  # may never invent one, and "three names, one of which is probably right" is the case it refuses.
+  #
+  # A misspelled *namespace* is the shape that works, because it shares no prefix with anything: the
+  # registry the detector reads holds eleven families - `api cloud container data db k8s os posix
+  # process vscode web` - and not one of them begins with `s`, and no registered validator name
+  # carries the token `sandbox`. The only signal left is the token `argv`, which exactly one
+  # registered name carries - so this spelling offers exactly one candidate, and the ladder confirms
+  # the single name the misspelling named.
+  #
+  # The bare `argv` does not reach the ladder at all: `Expectation.validator` carries
+  # `/^[a-z0-9]+(\.[a-z0-9]+)+$/`, so a dotless spelling is refused by the schema first, at exit 3,
+  # before any rung is climbed - and a fixture that cannot load is not a measurement of the ladder.
+  #
+  # The resolved criterion is then a legal one in this world, so the resolution is *why* the run could
+  # proceed. A ladder that had deferred this gap instead would have made the definition incomplete and
+  # no run would exist to read.
+  - id: AC-002
+    description: The CLI prints the argument vector it was given, by position.
+    steps:
+      - run: [node, cli/veridian.ts, help]
+    expect:
+      - validator: sandbox.argv
+        target: "1"
+        equals: node cli/veridian.ts help
+
+  # AC-003 - the `execution` origin, which is not about a gap in the *document* at all.
+  #
+  # `goto` is a step kind this world cannot perform, and `adapters/local-process` refuses it by name
+  # rather than skipping it - "skipping it would judge the criterion in a world it never acted on,
+  # which is a verdict the observation cannot justify". So the criterion has no observation, and
+  # `detectExecutionAmbiguities` exists for exactly that case: an `INCONCLUSIVE` with no recorded
+  # reason is indistinguishable from a bug in the judge. The ladder writes the reason down.
+  #
+  # The expectation below is never reached, and it is legal on purpose: a criterion whose document
+  # cannot be resolved would raise a gap about the document instead, and the whole point of this one
+  # is that the document is blameless.
+  - id: AC-003
+    description: A criterion about a page, asked of a world that judges a program.
+    steps:
+      - goto: http://example.invalid/
+    expect:
+      - validator: process.host
+        equals: ladder-fixture (root sandbox/ladder/fixture/tree)

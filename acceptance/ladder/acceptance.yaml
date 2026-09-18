@@ -1,0 +1,389 @@
+# The ladder contract: four deterministic acceptance criteria over the ambiguity record a real run of
+# Veridian writes when it resolves its own gaps.
+#
+# This is the second contract in `acceptance/`, and it is separate from `acceptance/veridian-mvp.yaml`
+# for the same reason that one is separate from the demos: the *application* is different in the one
+# way that matters. `veridian-mvp.yaml` judges the command line **as a product** - its exit codes, the
+# files it writes, the text it prints. This contract judges it **as a witness**: the application under
+# it is a run of the CLI, and what is under judgement is the record that run wrote about the gaps it
+# found and the rungs it resolved them at.
+#
+# So this contract is the only place in the repository where the clarification ladder is observed end
+# to end by the product's own machinery, against a contract that was authored to raise gaps rather
+# than to avoid them. `acceptance/ladder/fixtures/` is that contract, and every gap in it is
+# deliberate: a missing `description`, a misspelled validator namespace, an unregistered step kind.
+#
+# Nothing here is a substitute and nothing is stood in. `local-process` starts the CLI as a real child
+# process, reads real pipes and really opens the file it compares - which is why this world has no
+# `*_SIMULATED_SURFACES` constant and none is wanted, and why its reading carries no `simulated` field.
+#
+# Read the targets as a grammar, because two different kinds of thing are named here and each is
+# refused with its own message:
+#
+#   `process.host`                 no target at all - the host is the reading's
+#   `process.argv`, `process.state`,
+#   `process.exitcode`,            a command: `app` (the program this world started and keeps
+#   `process.run`, `process.stdout`,  running) or a position counted from 1 naming which `run` step
+#   `process.stderr`               is meant
+#   `process.file`, `process.kind`,  a path inside the world's own root - the sandbox the plan
+#   `process.contents`, `process.size`  names, so `ac-001/latest-result.json` means
+#                                      `<repository>/sandbox/ladder/fixture/ac-001/latest-result.json`
+#
+# Three consequences of that grammar decide the shape below.
+#
+# A command can only be judged if *this* criterion ran it. `observe()` records no commands at all, so
+# every command-targeted expectation sits beside the `run` step that produced it - and a criterion
+# that read position 1 without running anything would not fail, it would be `INCONCLUSIVE`, which is
+# the honest answer to a question nobody put to the world.
+#
+# A path is only read when some expectation names it - the read set is derived from the expectations
+# and not from the steps - so a criterion judging a file has to mention the file.
+#
+# Byte counts are not pinned, and this contract has a second and stronger reason for that than the
+# other one does: the file these criteria read is a *serialization of a run*, and its length is a
+# function of the goals, the contracts, the environment document and the repository path that run
+# resolved. Measured rather than reasoned about: two runs of the identical inner command produced
+# transcripts of 4678 and 4679 characters, one character apart, with nothing edited between them. A
+# criterion pinning that length would be pinning this checkout rather than the ladder.
+#
+# ## Why every criterion runs its own invocation into its own state directory
+#
+# The four criteria below each run the same inner command line and differ only in the `--state-dir`
+# they hand it. That repetition is deliberate and it is the shape `acceptance/veridian-mvp.yaml`
+# already argues for, one layer in: *"A criterion whose meaning depends on another criterion having
+# run is not a criterion - it is a note about the order of a file."*
+#
+# Reset is per iteration, not per criterion, so within one iteration the world is shared and the
+# criteria run in array order. A contract that ran the inner CLI once in AC-001 and had AC-002 through
+# AC-004 read the file AC-001 happened to leave behind would pass, and it would pass for a reason none
+# of its criteria could state: reorder the file and three of the four go `INCONCLUSIVE` over a
+# missing path, which reads as a broken world rather than as a broken contract.
+#
+# Handing each criterion its own directory makes every criterion self-contained: it creates the
+# record it judges, with its own `run` step, in a directory no other criterion names. It also makes
+# the four step vectors distinct, which is what keeps the contradiction detector quiet without the
+# contract having to be clever about it - though the detector would stay quiet anyway, because it
+# skips every expectation that states no `equals`, and the record is compared with `contains` (see
+# below). Two independent reasons for the same silence is one more than a contract needs, and the
+# second one is a fact about the detector rather than about this document.
+#
+# ## Why the record is compared with `contains` and never with `equals`
+#
+# `core/clarification/detect.ts`'s contradiction detector keys on `(observable, scenario)` and asks
+# whether two expectations over one observable after one scenario can both hold. The record is one
+# observable and it is read four times, so `equals` here would be four criteria asserting four
+# different whole-file values against one scenario - a contradiction the detector would correctly
+# raise, and correctly, because a whole-file comparison *is* a claim that the file has exactly one
+# value. `contains` is the true claim: this record names this fact.
+#
+# That is not a relaxation. A `contains` on a distinctive sentence fails for exactly the reason the
+# sentence is absent, and every needle below was classified against a real record before it was
+# written - including the ones that came back `NO` and changed the contract.
+#
+# ## What this contract deliberately does not assert
+#
+# - **A whole `rungsAttempted` array.** Measured: the serialization carries `rungsAttempted` on every
+#   record and the individual rung tokens beside it, and the array literal does not appear anywhere in
+#   the file at all - the arrays sit inside JSON-escaped `assumption` and `grounds` strings. A
+#   criterion written from the *shape of the code* would have reached for `["derived"` and reported a
+#   missing key in a well-formed record. The rung claim therefore asserts the tokens the file really
+#   holds.
+# - **Any count of `byVia`, and any identity between `byVia` and `records`.** A run's resolution count
+#   is a fact about that run's own gaps, and re-typing it here would make the contract fail whenever
+#   the fixture gained a criterion for a reason that has nothing to do with the ladder. The count is
+#   held where it belongs - by `tests/runtime-report-slices.test.ts`, which asserts the agreement
+#   directly and was falsified against a report whose two counters disagreed.
+# - **A transcript length.** Measured to move between two runs of one command.
+# - **`ABORTED` as *the* verdict.** The verdict line is `INCONCLUSIVE  (ABORTED, 1 iteration(s))`, and
+#   the two words answer different questions: `INCONCLUSIVE` is the run's state and `ABORTED` is why
+#   it stopped. Asserting the second while calling it the first is how a contract comes to state a
+#   cause the reading never claimed.
+#
+# `goal_id` is declared, and it is not optional in practice: it is what the cross-goal contradiction
+# guard reads, and a contract without one leaves that guard dormant.
+
+version: 1
+goal_id: veridian-ladder
+
+criteria:
+  # ---------------------------------------------------------------------------------------------
+  # AC-001 - the world is the world this goal names, and the inner run is the ladder's witness.
+  #
+  # This is the criterion every other one stands on, and it earns that position by being the one whose
+  # failure means the world is wrong rather than the ladder. It asserts the world first, then that the
+  # run really happened, then what that run said about its own gaps.
+  #
+  # `process.host` compares the *rendering* - `renderHost` has produced `${host} (root ${root})` since
+  # it was written - so the expectation names both halves at once. `root` here is the world's own
+  # spelling of its directory as the environment document declares it, not a resolved path, which is
+  # what keeps the string identical on any machine.
+  #
+  # `process.argv` is the command line this world recorded, compared against the vector this criterion
+  # wrote rather than against the confined one the runner was handed. The reading is about the
+  # declaration, so an operator comparing the bundle to their contract sees the contract's own words.
+  #
+  # `process.exitcode` is `2`, and the number is the point rather than a detail. The inner contract has
+  # three criteria and none of them can be decided: AC-001 asks for a `screenshot` this world cannot
+  # produce, AC-002 asks about a command line, and AC-003 asks for a page. `2` is INCONCLUSIVE. Reading
+  # `0` here would mean the ladder had silently made something decidable that is not, and reading `3`
+  # would mean the fixture had stopped being loadable - a contract that cannot be parsed raises no gaps
+  # at all, so the ladder would have nothing to report and this whole file would be measuring a
+  # document rather than a run.
+  #
+  # The three `process.stdout` needles are the run's own summary of the ladder's work, read off a real
+  # pipe rather than recalled:
+  #
+  #   - the verdict line, which says both what the run's state is and why it stopped;
+  #   - the self-prompted resolution, whose needle carries the *confidence* it resolved at, because a
+  #     confidence is the thing that distinguishes a self-prompted rung from a guessed one and a
+  #     needle that stopped short of it would pass over a run that had quietly started guessing;
+  #   - the deferred resolution's own line, which is the only place in the run's summary where a gap
+  #     that was *not* closed is distinguishable from one that was.
+  #
+  # Two further needles in the same stream are the refusals, and they are what makes this criterion
+  # worth reading rather than merely green:
+  #
+  #   - `Missing required evidence (screenshot); assertions reported PASS` followed by `An unproven
+  #     pass is not a pass.` is AC-001 of the *inner* contract being held to the product's own first
+  #     invariant. A run that reported PASS there would be the false pass `M3` exists to refuse.
+  #   - `this world judges what a program did` is `local-process` refusing AC-003's `goto` step **by
+  #     name**, and it is the criterion that proves a step kind is refused rather than ignored.
+  #
+  # `process.file` answers *whether* a path is there and takes the closed presence vocabulary. It is
+  # asserted here so that a run which resolved every gap and then failed to write its bundle is a
+  # failure of this criterion rather than a silent `INCONCLUSIVE` in the three below.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-001
+    description: the world is the world this goal names, and the inner run's own summary records the verdict, one self-prompted resolution, one deferred gap and two refusals
+    steps:
+      - run: [node, cli/veridian.ts, validate, --goal, acceptance/ladder/fixtures/goal.yaml, --state-dir, sandbox/ladder/fixture/ac-001, --no-repair, --no-memory]
+    evidence: [json]
+    expect:
+      - validator: process.host
+        equals: "ladder-outer (root sandbox/ladder/fixture)"
+        message: the readings name a host or a root other than the ones this goal's environment document declares
+      - validator: process.argv
+        target: "1"
+        equals: 'node cli/veridian.ts validate --goal acceptance/ladder/fixtures/goal.yaml --state-dir sandbox/ladder/fixture/ac-001 --no-repair --no-memory'
+        message: the command line this world recorded is not the argument vector this criterion wrote
+      - validator: process.exitcode
+        target: "1"
+        equals: 2
+        message: the inner run did not end INCONCLUSIVE, so either the ladder decided something it cannot decide or the fixture it was given could not be read
+      - validator: process.stdout
+        target: "1"
+        contains: INCONCLUSIVE  (ABORTED, 1 iteration(s))
+        message: the run's summary does not state both the state it reached and the reason it stopped
+      - validator: process.stdout
+        target: "1"
+        contains: self-prompted at confidence 0.95
+        message: the run did not record the confidence it resolved a self-prompted gap at, so a resolved gap and a guessed one look alike
+      - validator: process.stdout
+        target: "1"
+        contains: '! unresolved: non_blocking'
+        message: the run's summary cannot distinguish a gap it closed from a gap it left open
+      - validator: process.stdout
+        target: "1"
+        contains: Missing required evidence (screenshot); assertions reported PASS
+        message: an inner criterion that passed its assertions without the evidence it named was reported as a pass
+      - validator: process.stdout
+        target: "1"
+        contains: An unproven pass is not a pass.
+        message: the run does not state the rule it applied when it downgraded an unproven pass
+      - validator: process.stdout
+        target: "1"
+        contains: this world judges what a program did
+        message: the world did not refuse the inner contract's goto step by name, so a step kind it cannot perform was either ignored or silently resolved
+      - validator: process.file
+        target: ac-001/latest-result.json
+        equals: present
+        message: the run resolved its gaps and then wrote no bundle into the state directory it was given
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-002 - the run's own record names the resolutions it made and the rung each reached.
+  #
+  # AC-001 reads the summary a person reads. This criterion reads the artifact a machine reads, and it
+  # is the reason the contract is worth having: `clarifications` is the block an external agent parses
+  # to learn what a run had to decide for itself, and `rungsAttempted` is the record of *how far down
+  # the ladder each resolution went* - the difference between a value the schema stated and a value the
+  # run chose.
+  #
+  # The four rung needles are asserted as tokens rather than as one array, and that is a measurement
+  # rather than a preference: the serialization carries `rungsAttempted` on every record, holds the
+  # rung names inside JSON-escaped `assumption` and `grounds` strings, and contains **no** array
+  # literal anywhere. A criterion written from the shape of the code would have asserted `["derived"`
+  # and failed against a well-formed record - which is the failure mode that sends a reader to inspect
+  # the one thing that is not broken.
+  #
+  # `"derived"` is here because it is the rung the *majority* of this fixture's gaps resolve at, and
+  # `"self_prompted"`, `"defaulted"` and `"deferred"` are here because they are the three rungs the
+  # fixture was authored to reach. Between them the four needles say the record distinguishes rungs at
+  # all - which is the property that would be lost if the ladder collapsed every resolution to one
+  # shape, and which no count of resolutions can state.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-002
+    description: the record the run wrote names its clarifications, the resolutions inside them, and the rung each resolution reached
+    steps:
+      - run: [node, cli/veridian.ts, validate, --goal, acceptance/ladder/fixtures/goal.yaml, --state-dir, sandbox/ladder/fixture/ac-002, --no-repair, --no-memory]
+    evidence: [json]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 2
+        message: the run this criterion created its own reading from did not reach INCONCLUSIVE, so the record below is not the record it meant to judge
+      - validator: process.file
+        target: ac-002/latest-result.json
+        equals: present
+        message: the run wrote no record into the state directory this criterion gave it
+      - validator: process.contents
+        target: ac-002/latest-result.json
+        contains: '"clarifications"'
+        message: the run's record does not carry the block an external agent reads to learn what the run decided for itself
+      - validator: process.contents
+        target: ac-002/latest-result.json
+        contains: '"records"'
+        message: the clarifications block carries no records, so a run that resolved nineteen gaps and a run that resolved none are indistinguishable
+      - validator: process.contents
+        target: ac-002/latest-result.json
+        contains: rungsAttempted
+        message: the record does not state how far down the ladder each resolution went, so a value the schema stated and a value the run chose look alike
+      - validator: process.contents
+        target: ac-002/latest-result.json
+        contains: '"derived"'
+        message: the record does not name the rung most of this fixture's gaps resolve at, so the rungs are not being recorded individually
+      - validator: process.contents
+        target: ac-002/latest-result.json
+        contains: '"self_prompted"'
+        message: the record does not name the rung a resolution the run answered from material it already held reached
+      - validator: process.contents
+        target: ac-002/latest-result.json
+        contains: '"defaulted"'
+        message: the record does not name the rung a resolution the schema supplied a default for reached
+      - validator: process.contents
+        target: ac-002/latest-result.json
+        contains: '"deferred"'
+        message: the record does not name the rung for a gap the run left open, so a run that closed everything is indistinguishable from one that gave up
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-003 - a gap the run did not close is recorded with the reason it was not closed, and with the
+  # question it was asked.
+  #
+  # This is the criterion about the honest half of the ladder. `INCONCLUSIVE` is not `PASS`, and a
+  # deferred gap is the resolution that says so from inside a run: the value is absent, the reason is
+  # present, and the operator is told which question they would have to answer.
+  #
+  # The fixture's deferred gap is AC-001's own `description`, and it is deferred for a reason worth
+  # stating because it is the reason the ladder exists: a description of what a criterion asserts is
+  # prose about the operator's intent, and no schema default, no sibling value and no material the run
+  # already holds can supply one. It is therefore *not derivable*, and it is nevertheless *non
+  # blocking*, because a missing description does not stop the criterion being evaluated. Those are two
+  # different judgements and the record carries both.
+  #
+  # `"non_blocking"` is asserted as its own needle rather than as part of the sentence around it,
+  # because the vocabulary is a closed set (`DEFER_REASONS`) and the criterion's claim is that the
+  # record names one member of it. A needle spanning the surrounding punctuation would be a claim about
+  # the serializer's whitespace instead.
+  #
+  # The path needle is the one that makes the reason actionable: `/criteria/0/description` is where the
+  # operator's answer is written, and a report that named only the reason would leave them scanning a
+  # contract. It is also the same string `AGENTS.md` records as the repository's own rule - *a path is
+  # not decoration: the engine writes the operator's resolution to it and the failure report quotes it*.
+  #
+  # The question needle is the last of the three, and it is the one a reader can check by eye: the
+  # deferred gap's `question` is the sentence the ladder would have put to an operator, and asserting
+  # it is asserting that a deferred resolution carries something a human can act on rather than a
+  # reason code alone.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-003
+    description: a gap the run left open is recorded with the reason it was not closed, the path an answer belongs at, and the question it was asked
+    steps:
+      - run: [node, cli/veridian.ts, validate, --goal, acceptance/ladder/fixtures/goal.yaml, --state-dir, sandbox/ladder/fixture/ac-003, --no-repair, --no-memory]
+    evidence: [json]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 2
+        message: the run this criterion created its own reading from did not reach INCONCLUSIVE, so the record below is not the record it meant to judge
+      - validator: process.contents
+        target: ac-003/latest-result.json
+        contains: '"reason"'
+        message: a deferred resolution carries no reason, so an abandoned gap and a deliberately deferred one look alike
+      - validator: process.contents
+        target: ac-003/latest-result.json
+        contains: '"non_blocking"'
+        message: the record does not name a reason from the deferral vocabulary, so a reader cannot tell an unanswerable gap from one that merely went unanswered
+      - validator: process.contents
+        target: ac-003/latest-result.json
+        contains: /criteria/0/description
+        message: the deferred resolution does not name the path an answer belongs at, so the reason is recorded without anything an operator can act on
+      - validator: process.contents
+        target: ac-003/latest-result.json
+        contains: What does criterion AC-001 assert, in one sentence?
+        message: the deferred resolution does not carry the question it was asked, so a deferred gap is a reason code rather than something a human can answer
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-004 - one run raises every origin the ladder can raise.
+  #
+  # The ladder does not only see a gap in the operator's contract. The same seven-step walk runs over
+  # the goal, the acceptance contract, the environment document, the validators a criterion names, the
+  # execution decisions a run makes mid-loop, the evidence a criterion requires, and the iterations
+  # the loop takes - and each of those is a different *origin*, recorded on every resolution so a
+  # reader can tell where a gap came from.
+  #
+  # This is the claim no other criterion in the repository makes: that all seven are reachable in one
+  # run of one contract. The fixture is authored to make that true - a goal that states no safety
+  # limits, a contract with a missing description and an unknown validator, an environment document
+  # that omits the reset strategy, a criterion naming a step kind this world refuses, an evidence kind
+  # this world cannot produce, and a loop that had no repair gate to reach for - and because it is
+  # authored rather than incidental, the seven needles below are the measurement that the authorship
+  # worked.
+  #
+  # Each needle is `origin:path`, the two fields a resolution record carries side by side, in the
+  # spelling the serialization uses. They are asserted individually rather than as a list, for the same
+  # reason the rung tokens are: a run that lost one origin would still be reporting six, and a
+  # criterion that swept the file for "at least most of them" would be green over exactly that run.
+  #
+  # `validation` is the origin worth naming in prose, because it is the one that resolves a gap the
+  # *operator's own document* created: AC-002 of the fixture names `sandbox.argv`, which is not a
+  # registered validator, and no family prefix begins with `s` - so the ladder has no sibling to
+  # suggest and must answer from material it already holds. That is the self-prompted rung, and it is
+  # why this criterion and AC-001's confidence needle describe the same resolution from two sides.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-004
+    description: one run of the fixture's contract raises a gap in every one of the seven origins the ladder walks
+    steps:
+      - run: [node, cli/veridian.ts, validate, --goal, acceptance/ladder/fixtures/goal.yaml, --state-dir, sandbox/ladder/fixture/ac-004, --no-repair, --no-memory]
+    evidence: [json]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 2
+        message: the run this criterion created its own reading from did not reach INCONCLUSIVE, so the record below is not the record it meant to judge
+      - validator: process.contents
+        target: ac-004/latest-result.json
+        contains: goal:/limits/networkPolicy
+        message: the run raised no gap in the goal it was given, so the goal is not being walked for gaps at all
+      - validator: process.contents
+        target: ac-004/latest-result.json
+        contains: acceptance:/criteria/0/description
+        message: the run raised no gap in the acceptance contract it was given, which is the origin every run is expected to reach
+      - validator: process.contents
+        target: ac-004/latest-result.json
+        contains: environment:/reset/strategy
+        message: the run raised no gap in the environment document it was given, so a world it cannot reset is not reported as an ambiguity
+      - validator: process.contents
+        target: ac-004/latest-result.json
+        contains: validation:/criteria/1/expect/0/validator
+        message: the run raised no gap about a validator name it was given, so a criterion naming a validator that does not exist is not reported as an ambiguity
+      - validator: process.contents
+        target: ac-004/latest-result.json
+        contains: execution:/criteria/2/note
+        message: the run raised no gap about a decision it made mid-loop, so an execution the ladder resolved for itself leaves no record
+      - validator: process.contents
+        target: ac-004/latest-result.json
+        contains: evidence:/criteria/0/evidenceNote
+        message: the run raised no gap about the evidence a criterion required, so an evidence requirement this world cannot meet is not reported as an ambiguity
+      - validator: process.contents
+        target: ac-004/latest-result.json
+        contains: iteration:/decision
+        message: the run raised no gap about an iteration it took, so the loop's own decisions are not part of what the ladder records

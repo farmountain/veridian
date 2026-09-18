@@ -1,0 +1,24 @@
+# The goal the ladder contract is judged against, and the second of the two routes in `acceptance/`
+# whose application is Veridian itself.
+#
+# It is separate from `acceptance/veridian-mvp.yaml` for the reason the Cockpit demo is separate from
+# the `sim-vscode` demo: the *application* is different in the one way that matters. That contract
+# judges the command line as a product - its help text, its exit codes, its files. This one judges the
+# command line as a **witness**: it runs a deliberately sparse contract and reads the ambiguity record
+# that run left behind. `docs/GAP-CLOSURE-DESIGN.md` SS W5 states the four claims it makes, and the
+# claims are about the ladder's own record rather than about the CLI's behaviour.
+#
+# `limits.maxIterations: 1` and no repair, deliberately. There is nothing to repair: the application
+# under this contract is Veridian, and a run that repaired it would be editing the thing holding the
+# verdict. The invocation is observed once with `--no-repair`, exactly as the self-acceptance contract
+# is, and the ladder's work happens entirely inside the *inner* run each criterion makes.
+id: veridian-ladder
+version: 1
+statement: >-
+  Veridian's ambiguity ladder resolves the gaps a real run meets without asking anyone, records the
+  rung each resolution reached, carries a reason for a resolution it deferred, bounds the rungs it
+  attempted, and reports all seven of the origins it can raise.
+acceptance: acceptance.yaml
+environment: environment.yaml
+limits:
+  maxIterations: 1

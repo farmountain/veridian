@@ -1,0 +1,44 @@
+# The world the sparse fixture is judged in. It is `local-process` for the same reason the contract
+# one directory up uses it: the application under test is the command line, and a command line is a
+# program. Nothing is stood in and nothing is simulated.
+#
+# `../../..` is the repository root - `core/environment/load.ts` resolves every path in this file
+# against **this document's own location**, so a fixture nested two directories deeper than
+# `acceptance/environment.yaml` has to climb two more. Getting that wrong is not a subtle failure: the
+# world would look for `cli/veridian.ts` inside `acceptance/ladder/`, refuse to load the program it
+# was asked to judge, and every criterion here would be unmeasurable for a reason that has nothing to
+# do with the ladder.
+adapter: local-process
+app: ../../..
+
+# Null: nothing is fetched, so the fixture runs from a clean clone with no network.
+dependencyInstall: null
+
+process:
+  host: ladder-fixture
+
+  # The sandbox is `tree` and the run's own state is `state` - two siblings, both under the outer
+  # world's root, and they must not be each other.
+  #
+  # `local-process`'s `create()` and `reset()` are one implementation, and it *empties* this
+  # directory. The CLI writes its bundle before the world is created, so a state directory inside
+  # `root` would be destroyed by the world the bundle is describing - the bundle would be written
+  # into a directory that the next statement wipes, and the run would end with no result file at all.
+  # Keeping them siblings makes that impossible rather than unlikely.
+  root: sandbox/ladder/fixture/tree
+
+# Required of every world (`core/environment/load.ts` refuses a document without one) and read by
+# nothing: this world declares no `process.application`, so `start()` returns before it looks at a
+# readiness pattern. The command named is the one that *would* be the application - the CLI itself.
+start:
+  command: node
+  args: [cli/veridian.ts, help]
+
+# `reset` is omitted on purpose - the environment origin's gap. `/reset/strategy` carries a schema
+# default, so the ladder derives `restart` from the schema rather than the loader inventing one, and
+# the record of that derivation is one of the seven the outer contract reads.
+#
+# It is worth being explicit that the omission is not a shortcut with a cost: a derived `restart` and
+# a declared one behave identically here, because `local-process` has no snapshot to restore and
+# refuses `snapshot-restore` by name. What differs is only whether the run *knows* why the value is
+# what it is - and that is the entire subject of this contract.

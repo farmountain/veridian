@@ -1,7 +1,27 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { AMBIGUITY_KINDS, AMBIGUITY_ORIGINS, DEFER_REASONS, RUNGS } from "../core/clarification/types.ts";
+import { allDetectors, runtimeDetectors } from "../core/clarification/detect.ts";
+import {
+  ClarificationEngine,
+  NullPromptPort,
+  scriptedPromptPort,
+  scriptedSelfPromptPort,
+  type ClarificationEngineDeps,
+} from "../core/clarification/engine.ts";
+import {
+  AMBIGUITY_KINDS,
+  AMBIGUITY_ORIGINS,
+  DEFER_REASONS,
+  RUNGS,
+  ambiguity,
+  ambiguityId,
+  failSafeDefault,
+  type Ambiguity,
+  type Clock,
+  type DeferReason,
+  type Rung,
+} from "../core/clarification/types.ts";
 import { EVIDENCE_KINDS } from "../core/acceptance/types.ts";
 import { ARTIFACT_KINDS } from "../core/environment/types.ts";
 import { FAILURE_TAXONOMY } from "../core/failure.ts";
@@ -42,6 +62,11 @@ import { CRITERION_STATUSES } from "../core/validation/types.ts";
  * `INCONCLUSIVE` are three of the five). Neither is drift, and a guard that called them drift would
  * be switched off within a week. Drift is not two lists sharing a word; it is two lists claiming to
  * be the same list, and that is exactly what the slot name reveals.
+ *
+ * The same rule has a second half, about the code rather than the schemas, and it is the last
+ * `describe` in this file: a vocabulary the ladder owns must be answerable by the ladder, so every
+ * origin has a detector, every rung has a gap that stops there, and every deferral reason has a path
+ * that produces it. A name no code path emits is not a vocabulary; it is a comment.
  */
 
 const repo = nodeIo();
@@ -282,6 +307,301 @@ describe("schemas and code share one vocabulary", () => {
         (ARTIFACT_KINDS as readonly string[]).includes(kind),
         `EVIDENCE_KINDS names "${kind}", which is not an ArtifactKind, so no adapter can ever ` +
           "declare it and a criterion requiring it can only end in missing evidence.",
+      );
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// The same rule from the other side: a vocabulary the ladder owns must be answerable by the ladder.
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Every word the clarification layer owns, held to a code path that produces it.
+ *
+ * The `describe` above holds the *schemas* to the vocabulary. This one holds the *code* to it, which
+ * is the same defect seen from the other side: a name the engine can emit but no path can produce is
+ * not a vocabulary, it is a comment. Three claims, and each derives its coverage from the register
+ * rather than from a list written beside it - a hand-kept list of what is covered is a second copy of
+ * the vocabulary, and it drifts exactly as the schema copies did.
+ *
+ *  1. Every `AMBIGUITY_ORIGINS` member is named by exactly one of the two detector tables, and no
+ *     table names anything that is not a member. The tables partition the origins - four DEFINE-time
+ *     detectors and three that read a run's own output - so "exactly one" is the whole claim: zero is
+ *     a gap nothing can raise, and two is a gap two detectors raise at once.
+ *  2. Every `RUNGS` member is where the ladder stops, for some gap the ladder was handed.
+ *  3. Every `DEFER_REASONS` member is produced by some gap.
+ *
+ * Claims 2 and 3 are declared as `Record<Rung, ...>` and `Record<DeferReason, ...>`, so a member
+ * added to the vocabulary without a scenario that reaches it is a *typecheck* error rather than an
+ * assertion a loop never got to. That is deliberate, and it is the strongest form available: the
+ * compiler holds the roster and the assertions hold the behaviour of each entry. The third claim's
+ * other direction - that no deferral carries a reason outside the vocabulary - is held by the same
+ * mechanism, because `Resolution`'s deferred branch declares `reason: DeferReason`.
+ */
+
+const ladderClock = (): Clock => {
+  const at = 1_000;
+  return { now: () => at, iso: () => new Date(at).toISOString() };
+};
+
+/** A gap that no port is configured to answer in most scenarios, so it walks to the end. */
+const ladderGap = (path: string, blocking: boolean): Ambiguity =>
+  ambiguity({
+    origin: "goal",
+    path,
+    kind: "missing_value",
+    question: `What is ${path}?`,
+    blocking,
+  });
+
+interface LadderScenario {
+  /** Only the rungs this scenario needs. A deriver installed beside a self-prompt port would prove
+   *  nothing about which of the two answered. */
+  readonly deps: ClarificationEngineDeps;
+  readonly gaps: readonly Ambiguity[];
+}
+
+/**
+ * One scenario per rung: the smallest gap that stops the ladder there.
+ *
+ * `inferred`, `answered` and `self_prompted` are all blocking on purpose - rung 2 is spent only where
+ * the answer changes a verdict, and rungs 4 and 5 exist only for a gap a human would have been asked
+ * about - so a non-blocking gap in any of those three would prove nothing about the rung.
+ */
+const RUNG_SCENARIOS: Readonly<Record<Rung, LadderScenario>> = {
+  derived: {
+    deps: {
+      user: NullPromptPort,
+      clock: ladderClock(),
+      derive: {
+        derive: () => ({ value: "derived-value", evidence: "schema default at /probe/derived" }),
+      },
+    },
+    gaps: [ladderGap("/probe/derived", false)],
+  },
+  inferred: {
+    deps: {
+      user: scriptedPromptPort({}),
+      clock: ladderClock(),
+      infer: {
+        infer: () =>
+          Promise.resolve({ value: "inferred-value", confidence: 0.95, source: "memory:prior-run" }),
+      },
+    },
+    gaps: [ladderGap("/probe/inferred", true)],
+  },
+  defaulted: {
+    deps: { user: NullPromptPort, clock: ladderClock() },
+    gaps: [
+      {
+        ...ladderGap("/probe/defaulted", true),
+        ...failSafeDefault(10, "a cap of ten cannot make a run report PASS more readily than the truth"),
+      },
+    ],
+  },
+  self_prompted: {
+    deps: {
+      user: NullPromptPort,
+      clock: ladderClock(),
+      selfPrompt: scriptedSelfPromptPort({
+        [ambiguityId("goal", "/probe/self", "missing_value")]: {
+          value: "self-value",
+          confidence: 0.95,
+          grounds: "read /probe/self out of the contract in hand",
+        },
+      }),
+    },
+    gaps: [ladderGap("/probe/self", true)],
+  },
+  answered: {
+    deps: {
+      user: scriptedPromptPort({
+        [ambiguityId("goal", "/probe/answered", "missing_value")]: "the operator's answer",
+      }),
+      clock: ladderClock(),
+    },
+    gaps: [ladderGap("/probe/answered", true)],
+  },
+  deferred: {
+    deps: { user: NullPromptPort, clock: ladderClock() },
+    gaps: [ladderGap("/probe/deferred", false)],
+  },
+};
+
+/**
+ * One scenario per deferral reason: the smallest gap whose ladder ends without a value.
+ *
+ * The branch order inside the engine's `#deferReason` is what decides which reason is *producible*,
+ * and two facts about it are worth stating because neither is guessable from the vocabulary:
+ *
+ *  - `non_blocking` is returned before anything else is considered, so a non-blocking gap can never
+ *    be deferred for any other reason. That is why every other scenario here is blocking.
+ *  - The wall clock and the question budget are checked only inside the asking rounds, so those two
+ *    reasons cannot be produced by a gap alone. Their scenarios set one budget knob to its boundary
+ *    and let an available-but-silent prompt port do the rest.
+ *
+ * `not_derivable` and `no_default` differ by one thing, and it is the thing the fail-safe rule is
+ * about: whether the author declared a default at all. `not_derivable` is a gap whose author declared
+ * a value and argued for it with nothing, so the default is ignored and nothing else closes it;
+ * `no_default` is a gap whose author declared nothing.
+ */
+const DEFER_SCENARIOS: Readonly<Record<DeferReason, LadderScenario>> = {
+  not_derivable: {
+    deps: { user: scriptedPromptPort({}), clock: ladderClock() },
+    gaps: [
+      {
+        ...ladderGap("/probe/not-derivable", true),
+        defaultValue: "unusable-default",
+        defaultRationale: "",
+      },
+    ],
+  },
+  no_default: {
+    deps: { user: scriptedPromptPort({}), clock: ladderClock() },
+    gaps: [ladderGap("/probe/no-default", true)],
+  },
+  low_confidence: {
+    deps: {
+      user: scriptedPromptPort({}),
+      clock: ladderClock(),
+      infer: {
+        // Below `inferThreshold`, so the rung is attempted and refused rather than skipped.
+        infer: () =>
+          Promise.resolve({ value: "maybe", confidence: 0.69, source: "memory:prior-run" }),
+      },
+    },
+    gaps: [ladderGap("/probe/low-confidence", true)],
+  },
+  no_user_available: {
+    deps: { user: NullPromptPort, clock: ladderClock() },
+    gaps: [ladderGap("/probe/no-user", true)],
+  },
+  non_blocking: {
+    deps: { user: NullPromptPort, clock: ladderClock() },
+    gaps: [ladderGap("/probe/non-blocking", false)],
+  },
+  question_budget_exhausted: {
+    deps: {
+      user: scriptedPromptPort({}),
+      clock: ladderClock(),
+      policy: { maxQuestionsPerRun: 0 },
+    },
+    gaps: [ladderGap("/probe/no-questions-left", true)],
+  },
+  time_budget_exhausted: {
+    deps: {
+      user: scriptedPromptPort({}),
+      clock: ladderClock(),
+      policy: { budgetMs: 0 },
+    },
+    gaps: [ladderGap("/probe/no-time-left", true)],
+  },
+};
+
+describe("the ladder answers every word it owns", () => {
+  it("gives each origin a detector in exactly one register", () => {
+    const tables: readonly (readonly { readonly origin: string }[])[] = [
+      allDetectors(),
+      runtimeDetectors(),
+    ];
+    const named = tables.flat().map((entry) => entry.origin);
+
+    assert.ok(
+      named.length > 0,
+      "neither detector table names an origin, so this test proves nothing about either of them",
+    );
+    for (const origin of AMBIGUITY_ORIGINS) {
+      const count = named.filter((value) => value === origin).length;
+      assert.equal(
+        count,
+        1,
+        `AMBIGUITY_ORIGINS names "${origin}" and ${String(count)} of the two detector tables ` +
+          "claim it. Zero is a gap no run can ever raise; two is a gap two detectors raise at once, " +
+          "so the ladder is handed the same question twice.",
+      );
+    }
+    for (const origin of named) {
+      assert.ok(
+        (AMBIGUITY_ORIGINS as readonly string[]).includes(origin),
+        `a detector table claims origin "${origin}", which is not a member of AMBIGUITY_ORIGINS, ` +
+          "so nothing declares what a resolution of it would mean.",
+      );
+    }
+  });
+
+  it("stops the ladder on every rung the vocabulary names", async () => {
+    for (const rung of RUNGS) {
+      const scenario = RUNG_SCENARIOS[rung];
+      const outcome = await new ClarificationEngine(scenario.deps).resolve({}, [...scenario.gaps]);
+      const record = outcome.report.records[0];
+      assert.ok(
+        record,
+        `the scenario written for the "${rung}" rung recorded no resolution at all, so it proves ` +
+          "nothing about that rung",
+      );
+      assert.equal(
+        record.resolution.via,
+        rung,
+        `the gap written to stop the ladder at "${rung}" resolved via ` +
+          `"${record.resolution.via}" instead. Either the scenario no longer reaches that rung or ` +
+          "the rung itself moved.",
+      );
+      assert.equal(
+        record.rungsAttempted[record.rungsAttempted.length - 1],
+        rung,
+        `the "${rung}" resolution did not record "${rung}" as the last rung it attempted, so the ` +
+          "record of how it was resolved disagrees with the resolution.",
+      );
+      assert.ok(
+        record.rungsAttempted.length <= RUNGS.length,
+        `the "${rung}" resolution recorded ${String(record.rungsAttempted.length)} rungs attempted ` +
+          `out of ${String(RUNGS.length)}, which the ladder cannot do: it is a straight line and ` +
+          "each rung is attempted at most once per gap.",
+      );
+      assert.equal(
+        new Set(record.rungsAttempted).size,
+        record.rungsAttempted.length,
+        `the "${rung}" resolution recorded the same rung twice, which means the ladder revisited a ` +
+          "rung - the one property that makes its termination structural.",
+      );
+      assert.equal(
+        outcome.report.byVia[rung],
+        1,
+        `the summary counted ${String(outcome.report.byVia[rung])} resolutions via "${rung}" for a ` +
+          "gap that resolved exactly once.",
+      );
+    }
+  });
+
+  it("defers for every reason the vocabulary names", async () => {
+    for (const reason of DEFER_REASONS) {
+      const scenario = DEFER_SCENARIOS[reason];
+      const outcome = await new ClarificationEngine(scenario.deps).resolve({}, [...scenario.gaps]);
+      const record = outcome.report.records[0];
+      assert.ok(
+        record,
+        `the scenario written for "${reason}" recorded no resolution at all, so it proves nothing ` +
+          "about that reason",
+      );
+      assert.equal(
+        record.resolution.via,
+        "deferred",
+        `the gap written to be deferred as "${reason}" resolved via "${record.resolution.via}" ` +
+          "instead of deferring, so it produced a value where the document says there is none.",
+      );
+      assert.equal(
+        record.resolution.via === "deferred" ? record.resolution.reason : null,
+        reason,
+        `the gap written to be deferred as "${reason}" was deferred as something else. The order of ` +
+          "the branches that choose a reason is part of the ladder, not an implementation detail: " +
+          "reordering them changes which reasons a run can produce without changing any of them.",
+      );
+      assert.equal(
+        record.rungsAttempted[record.rungsAttempted.length - 1],
+        "deferred",
+        `the "${reason}" deferral did not record "deferred" as the last rung it attempted, so its ` +
+          "own record does not say that it stopped.",
       );
     }
   });
