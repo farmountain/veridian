@@ -93,6 +93,29 @@ examples/sim-container/app/context/
 # tree the world creates and the tree this rule excludes are the same one by construction.
 examples/sim-vscode/app/sandbox/
 
+# The sandbox tree the `sim-mobile` example's world builds. The reasoning is the `sim-posix`,
+# `sim-os`, `sim-container` and `sim-vscode` one, and what is stored in it is the handset: the device
+# record with its boot state and geometry, the bundle store holding a real copy of every installed
+# tree, the permission decisions, the deep-link registrations, the notification queue, the keychain
+# entries and the captured log streams. A committed copy would let a criterion read a bundle the run
+# never installed, a permission the run never granted, a notification the run never posted, or a
+# keychain entry the run never set - and the bundle would then hold a PASS for a device this machine
+# did not stand up. It sits under `app/` because `core/environment/load.ts` resolves `mobile.root`
+# against this document's own `app:` value, so the tree the world creates and the tree this rule
+# excludes are the same one by construction.
+examples/sim-mobile/app/sandbox/
+
+# The bundle sources the `sim-mobile` application generates. This one is not the world's state, it is
+# the application's *output*: `provision.mjs` derives the manifest and the four bundle files from its
+# own arrays on every run, and `bundle install` copies this directory into the store. It is excluded
+# for the reason every generated tree in this repository is - `dist/`,
+# `extension/vscode/out/`, `sim-k8s/app/build/`, `sim-container/app/context/` all carry it - and for
+# one more this world shares with `sim-container`: a committed copy would be a *second* copy of the
+# files, and a defect injected into the derived copy instead of the array it is derived from would be
+# erased by the next iteration's own provisioning, so the demo would report a repair the world never
+# observed.
+examples/sim-mobile/app/context/
+
 # The sandbox tree the `local-process` example's world builds. The reasoning is the `sim-posix`,
 # `sim-os`, `sim-container` and `sim-vscode` one, and what is stored in it is the plainest thing any of
 # them stores: a release the application actually wrote - `dist/`, a manifest and a few files - plus the

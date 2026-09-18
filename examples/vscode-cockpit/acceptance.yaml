@@ -45,7 +45,7 @@ criteria:
       declares. A criterion below could otherwise pass against a different extension entirely.
     expect:
       - validator: vscode.identity
-        contains: veridian-cockpit 0.3.0
+        contains: veridian-cockpit 0.4.0
         message: >-
           The name and version the world recorded are not the ones the Cockpit's manifest declares, so
           this run judged something other than the artifact it claims to have judged.

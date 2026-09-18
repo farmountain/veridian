@@ -4,7 +4,7 @@ Agent instructions for the **Veridian** repository. This is the single always-on
 instructions file for this workspace — do not add a second one
 (`.github/copilot-instructions.md`) alongside it.
 
-> **Status: the MVP is implemented and green, and nine more sandbox worlds have landed.** Core, the
+> **Status: the MVP is implemented and green, and eleven more sandbox worlds have landed.** Core, the
 > `local-web` adapter, the Playwright validators, the CLI, the schemas and the canonical demo all exist.
 > `local-db` - a second adapter and a second validator family, against a SQLite file with no browser -
 > exists beside them, and is the proof that `EnvironmentAdapter` is a seam. `sim-k8s` is the third, and
@@ -70,8 +70,18 @@ instructions file for this workspace — do not add a second one
 > the sixth world's does, and the pair means the same inverted thing there: `data.call` reads the
 > requests the **application** put to the broker, `data.probe` the ones the **criterion** itself
 > issued, so a criterion's own request cannot be mistaken for evidence about the application.
-> `npx tsc --noEmit` is silent and `node --test` reports 2259 passing tests -
-> Veridian's own 2187 plus the 72 the VS Code Cockpit contributes, which the root runner discovers
+> `sim-mobile` is the twelfth and the eighth **simulated** one, and the first whose subject is a
+> handset. A real application process provisions a substitute device by printing command vectors on
+> its stdout, and the substitute holds the boot state, the installed bundles with their versions,
+> permissions and grants, deep links, notifications, keychain entries and per-bundle log lines,
+> answers a 22-command register in process, really spawns a bundle through `core/process.ts` and
+> applies the launch deadline itself. Judged as a bundle rather than as the device. It says what it
+> stands in for rather than hiding it - `MOBILE_SIMULATED_SURFACES` names nine surfaces and the
+> reading carries `simulated` - and nothing is emulated: no emulator, no image and no booted system
+> anywhere in the loop. It adds no step kind: the application provisions with the `run` steps the
+> second world introduced, and three of its criteria use one.
+> `npx tsc --noEmit` is silent and `node --test` reports 2472 passing tests over 412 suites -
+> Veridian's own 2400 plus the 72 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Five distribution routes ship - a clone, an npm package, the Cockpit (as
 > a development install and as a `.vsix`), the extension marketplaces that `.vsix` is published to,
 > and a container image - and there is still **no
@@ -247,6 +257,17 @@ Server: `http://127.0.0.1:3030` (override with `HIPCORTEX_URL`).
   current context window alone.
 - **Write after** every decision, architectural choice, bug fix, reversal, or dead end.
 - Prefer `/memory/ingest` (auto-classification) over hand-built records.
+- **The substrate may refuse a write, and a refusal is not an unreachability.** A refusal arrives as
+  `HTTP 403` with a content precondition in the body - measured as
+  `precondition blocked: PII risk=0.90 patterns=["PII:..."]` - and the honest response is to report the
+  reason the substrate gave and keep writing on the next decision. This rule exists because the opposite
+  one was believed here: the severity of the refusal had been read as "the substrate refuses every
+  write", a claim about a frequency that nothing in the tree can check, because `HttpMemory#post()` sees
+  one response at a time and cannot count attempts. Two consecutive writes succeeded while it was being
+  cited. The mechanism was always right and is held by `tests/memory-port.test.ts` - a refused write
+  reports `precondition blocked` and does **not** contain "unreachable", while a genuine `ECONNREFUSED`
+  still does. *An error message may only name a cause the reporter observed*, and the same rule applies
+  to a document describing how often a dependency fails.
 - Environment observations must go through the intent/receipt path
   (`open_intent` → `accept_receipt`), never `add_memory`.
 - If the server is unreachable, run `hipcortex start`, or say memory is unavailable — never
@@ -339,9 +360,21 @@ core/environment/       EnvironmentAdapter interface + Environment Manager (life
                         two target grammars that family needs - a selector naming a command, a
                         world-relative path naming a file - beside the refusal that decides which
                         spellings of a path leave the world, so a validator family whose world has
-                        no socket and no substitute still needed no core change either) + the boundary
+                        no socket and no substitute still needed no core change either) + data-
+                        observation.ts for the broker family (the eleventh, and the ninth reason
+                        that rule holds, and the one that carries the request an application made
+                        rather than a document a world holds - the `call`/`probe` pair whose two
+                        halves answer opposite questions, and a reference grammar whose nouns fix
+                        their own segment counts) + mobile-observation.ts for the handset family
+                        (the twelfth, and the tenth reason that rule holds, and the one that carries
+                        the register's result vocabulary, so a command the world does not implement
+                        is `refused` while a resource it does not hold is `absent`) + the boundary
                         vocabulary (BoundaryPolicy/BoundaryReport) that keeps a declared safety limit
-                        from being mistaken for an enforced one.
+                        from being mistaken for an enforced one. `load.ts` carries each world's plan
+                        block into the parsed `EnvironmentPlan`, which makes it the **twelfth**
+                        additive place a new world must touch - a place an earlier census of those
+                        places missed, so the figure is written down here rather than left to be
+                        rediscovered by whoever adds the thirteenth.
 core/evidence/          Evidence Engine. Writes the run bundle.
 core/run/               Run identity, history, iteration state.
 core/memory/            Optional durable memory client (HipCortex). Never required to run.
@@ -355,7 +388,9 @@ core/assets.ts          Where Veridian's OWN files live, derived from import.met
                         io.ts, which resolves the OPERATOR's files against the working directory;
                         conflating the two is the defect this file exists to remove.
 adapters/local-web/     LocalWebEnvironment — start/health-check/stop/reset a local app, and the
-                        lazy Playwright browser port. Playwright is NOT a dependency.
+                        lazy Playwright browser port. Playwright is a declared OPTIONAL PEER rather
+                        than a dependency, so `npm ci` installs nothing for it and the absence is
+                        what the world reports when it cannot observe.
 adapters/local-db/      LocalDbEnvironment - build a SQLite file, read it, reset by rebuilding.
                         The second adapter, and the proof that EnvironmentAdapter is a seam rather
                         than a browser harness with an interface bolted on. `database-port.ts`
@@ -462,6 +497,25 @@ adapters/sim-data/      SimDataEnvironment - the eleventh world and the seventh 
                         `DATA_ENV` names the application reads, of the five it declares. Its only
                         evidence kind is `json`, and it writes two of them per criterion when there
                         was traffic.
+adapters/sim-mobile/    SimMobileEnvironment - the twelfth world and the eighth SIMULATED one, and
+                        the first whose subject is a handset. A real application process provisions
+                        a substitute device by printing command vectors on its stdout, and the
+                        substitute holds boot state, installed bundles with their versions,
+                        permissions and grants, deep links, notifications, keychain entries and
+                        per-bundle log lines, answers a 22-command register in process, really
+                        spawns a bundle through `core/process.ts` and applies the launch deadline
+                        itself, and refuses by name a path outside both the application's own tree
+                        and its sandbox. No emulator, no image and no booted system anywhere in the
+                        loop. `mobile-port.ts` is the substitute and `sim-mobile-environment.ts`
+                        is the adapter, which declares the four `MOBILE_ENV` names the application
+                        reads. It differs from the other `sim-*` ports in four ways its suites
+                        state: a command the world does not implement is `refused` while a
+                        resource it does not hold is `absent` (`MOBILE_ACTION_RESULTS`),
+                        `rebuild()` deliberately keeps `calls` and `escapes` across a reset because
+                        the boundary record describes the run rather than the world, a recorded
+                        command has its secret flag value **redacted rather than omitted** so the
+                        request's shape survives into the bundle, and the reading is
+                        `core/environment/mobile-observation.ts`'s `mobile.device`.
 validators/playwright/  Playwright web validators (element, visible, value, text, count, url,
                         console.clean, network.ok).
 validators/database/    Database validators (table, column, count, value). Judge a reading in
@@ -579,6 +633,18 @@ validators/data/        Broker validators (node, topic, layout, partition, recor
                         inside the value it compares - `replication 1 recorded` beside `isr [1]` -
                         because a substitute that is honest about its boundary has to carry that
                         honesty into the comparison rather than beside it.
+validators/mobile/      Handset validators (device, os, screen, orientation, bundle, installed,
+                        permission, deeplink, notification, logs, call, probe). Judge a reading in
+                        core/environment/mobile-observation.ts - the twelfth family, and the tenth
+                        reason that rule holds. It has no new step kind: the application provisions
+                        through command vectors printed on its stdout and is acted on with `run`.
+                        Five of the twelve are targetless - `device`, `os`, `screen`, `orientation`
+                        and `installed` ask about the world itself. `mobile.deeplink` is spelled
+                        without a hyphen because a validator name has to match
+                        `^[a-z0-9]+(\.[a-z0-9]+)+$`, and `mobile.call` reads the requests the
+                        **application** put to the device while `mobile.probe` reads the ones the
+                        **criterion** issued - the same inversion `cloud.call`/`cloud.probe` and
+                        `data.call`/`data.probe` carry.
 cli/                    The interface that exists today: arguments, support, worlds.ts (the adapter
                         register and the requirements each adapter declares), veridian.ts.
 schemas/                goal/acceptance/environment/run/result/ambiguity .schema.json - the
@@ -682,6 +748,16 @@ examples/vscode-cockpit/ The twelfth demo, and the only one whose application is
                         suite. Its staged tree and its sandbox are both generated and ignored, and
                         `vscode.identity` pins the version in the manifest it stages, so a version
                         bump moves that expectation in the same pass.
+examples/sim-mobile/    The thirteenth demo, and the eighth simulated world: the app provisions a
+                        substitute handset through commands it really issues, and is judged on the
+                        bundles, permissions, deep links, notifications, keychain entries and log
+                        lines that device holds. Four defects, twenty-five criteria, three of which
+                        act in the world through a `run` step and one of which expects the world to
+                        **refuse** it. Three of the four defects are the controls, each read by
+                        exactly one criterion; the fourth spells a release constant that is printed
+                        both in the bundle the device holds and in the notification body, so one
+                        edit moves **two** readings. The failing count descends
+                        `5 -> 4 -> 2 -> 1 -> 0` over five iterations.
 examples/defect-text.ts One implementation of the CRLF rule for a textual overlay on a source file.
                         Two demos injecting defects is two chances to teach the rule differently;
                         a third copy is where the rule gets broken.
@@ -702,7 +778,7 @@ acceptance/             Veridian judged by Veridian: `veridian-mvp.yaml` (the go
                         because the application it judges is the CLI itself and there is nothing to
                         repair.
                         It has **no `*-demo.test.ts` of its own**, and that asymmetry is deliberate
-                        rather than an omission. The twelve demo suites hold properties of a defect
+                        rather than an omission. The thirteen demo suites hold properties of a defect
                         table - the `correct` block present exactly once in the shipped program, the
                         criterion a defect is filed against, the progression the table predicts - and
                         a contract with no defects has none of those. What actually matters here is
@@ -734,8 +810,9 @@ registered adapter was `local-web` and all eight registered validators were brow
 contract about a CLI would have made every criterion `INCONCLUSIVE` and exited 2 - the same defect as
 `--browser none` on the canonical demo.
 
-**That reason is spent, and the directory is what says so rather than a paragraph claiming it.** Eleven
-adapters are registered, ten of them need no browser, and `local-api`, `local-process` and `sim-data`
+**That reason is spent, and the directory is what says so rather than a paragraph claiming it.** Twelve
+adapters are registered, eleven of them need no browser - `local-web` is the only one that drives one -
+and `local-api`, `local-process` and `sim-data`
 are precisely the "non-web adapter" this file once said the scope boundary forbade building
 speculatively - they were not built speculatively, they were built because a world whose subject is an
 HTTP contract is inside the boundary, a world whose subject is a program is too, and a world whose
@@ -823,9 +900,11 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 2259 tests, ~5s. No directory argument.
-                           # 2259 = the root's own 2187 + the Cockpit's 72, because the runner walks
-                           # the tree and reaches extension/vscode/src/*.test.ts. Neither figure is
+node --test                # the whole suite. 2472 tests over 412 suites, ~7s. No directory argument.
+                           # 2472 = the root's own 2400 + the Cockpit's 72, because the runner walks
+                           # the tree and reaches extension/vscode/src/*.test.ts. The inclusion is
+                           # measured rather than assumed: a test title that exists only in the
+                           # Cockpit appears twice in this run. Neither figure is
                            # the whole story on its own: the root tsconfig EXCLUDES extension/**, so
                            # `npx tsc --noEmit` here does not typecheck the Cockpit and the root gate
                            # is not the extension's gate.
@@ -857,15 +936,16 @@ npm run package            # vsce package --no-dependencies
                            # The archive lands at veridian-cockpit-<version>.vsix - `vsce` takes the
                            # name and the version out of the manifest it packages, so the filename
                            # cannot claim a version the extension inside it does not have.
-                           # 12 files, 119.32 KB, at the extension root. Deliberately NOT in `gate`:
+                           # 12 files, 119.75 KB, at the extension root. Deliberately NOT in `gate`:
                            # a packaging tool's output is not part of the source tree's contract,
                            # and making the local gate depend on `vsce` would make every local run
                            # need it. CI runs it, and runs the check below against it.
 npm run smoke:vsix         # read that archive back as a zip and assert what it holds: the entry
                            # point `main` names, the manifest field-for-field, the absence of
-                           # src/, tests and node_modules, the licence byte for byte, and every
-                           # compiled file identical to the build's. 34 checks. Exit 1 if the
-                           # archive is stale, incomplete or wider than the manifest allowlists.
+                           # src/, tests and node_modules, the licence and the readme byte for
+                           # byte, and every compiled file identical to the build's. 35 checks.
+                           # Exit 1 if the archive is stale, incomplete or wider than the
+                           # manifest allowlists.
 ```
 
 **`npm run smoke:out` exists for the same reason `npm run smoke:dist` does, one runtime further out.**
@@ -880,13 +960,19 @@ the middle.** A `.vsix` is a zip that `vsce` builds from an allowlist in the man
 decision about what travels is made by that tool and by nothing in this tree. The script opens the zip
 itself - central directory, stored and deflated entries, `inflateRawSync` - because there is no
 runtime dependency here and adding one to read an archive would be the tail wagging the dog. It was
-falsified four ways rather than trusted: adding `src` to the allowlist fails both negative checks and
+falsified five ways rather than trusted: adding `src` to the allowlist fails both negative checks and
 exits 1; adding a byte to a compiled file *after* packaging fails the byte-identity check and exits 1;
 appending a line to the licence copy fails with `the licence in the archive is the repository's, byte
-for byte (1388 bytes)` and exits 1; and taking `LICENSE` out of `files` is the instructive one, because
-`vsce` prints `WARNING LICENSE, LICENSE.md, or LICENSE.txt not found`, packages **10** files and
-**exits 0** - so the packaging step reports nothing wrong and `smoke:vsix` is what fails. *A warning
-is not a check.*
+for byte (1327 bytes)` and exits 1; appending a line to `extension/vscode/README.md` *after* packaging
+fails `the readme in the archive is the source's, byte for byte` and exits 1 - the check
+that had to be written before it could be falsified, because the readme is the marketplace's long
+description and until this pass it was the one file in the archive compared for *existence* and nothing
+else, so an archive built before the last edit to it shipped a description that disagreed with the
+repository while every check here passed; and taking `LICENSE` out of `files` is the instructive one,
+because `vsce` prints `WARNING LICENSE, LICENSE.md, or LICENSE.txt not found`, packages **10** files
+and **exits 0** - so the packaging step reports nothing wrong and `smoke:vsix` is what fails. *A
+warning is not a check, and a file a packaging tool copies by convention is a file nothing promised to
+compare.*
 
 **The marketplaces are a declared route now rather than a habit.** `vsce publish` and `ovsx publish`
 were named in `extension/vscode/README.md` as the third distribution route while `ovsx` was installed
@@ -1007,6 +1093,14 @@ npm run demo:cockpit                        # the twelfth demo, and the only one
                                             # `extension/vscode` first, and REFUSES by name when
                                             # `out/` is absent rather than skipping. Exit 0 when it
                                             # passes: measured, 1 iteration and 11/11 criteria.
+npm run demo:mobile                         # the thirteenth demo, and the eighth simulated world:
+                                            # the app provisions a substitute handset through
+                                            # commands it really issues, judged on the bundles,
+                                            # permissions, deep links, notifications and logs that
+                                            # device holds. No emulator, no image, no booted system.
+                                            # Exit 0 when it passes: measured, 5 iterations and
+                                            # 25/25 criteria, the failing count descending
+                                            # 5 -> 4 -> 2 -> 1 -> 0.
 npm run demo:no-browser                     # the same demo with `--browser none`. Every criterion is
                                             # a browser observation, so this must end INCONCLUSIVE
                                             # (exit 2). It shows the refusal, not the aha.
@@ -1019,6 +1113,20 @@ npm run acceptance                          # Veridian judged by Veridian: its o
                                             # application under it is the CLI itself. Exit 0 when it
                                             # passes: measured, run 1 and run 2 both
                                             # `PASS (COMPLETED, 1 iteration(s))`, 7/7 criteria.
+npm run acceptance:ladder                   # the second self-acceptance route, and it judges what the
+                                            # first cannot: not the command line as a *product* but a
+                                            # *run* as a witness. Each of its four criteria issues its
+                                            # own `veridian validate` against `acceptance/ladder/
+                                            # fixtures/`, then reads that nested run's own
+                                            # `latest-result.json` for the rung each gap reached, the
+                                            # reason a resolution deferred, the origin it was raised
+                                            # from and the rungs attempted. Run TWO passes for the same
+                                            # reason the route above is a script. Writes to
+                                            # `sandbox/ladder/outer` - a sibling of the sandbox, never
+                                            # `.veridian/` - so it cannot contend for the single-slot
+                                            # summary. Exit 0 when it passes: measured, ~21 s wall for
+                                            # both passes, each `PASS (COMPLETED, 1 iteration(s))`,
+                                            # 4/4 criteria.
 npm run e2e:install                         # one-time: fetch the Playwright browser
 npm run e2e                                 # the canonical demo, --browser playwright explicitly
 ```
@@ -1047,7 +1155,7 @@ through a child process, so it has to be runnable whatever state the tree's type
 [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) has six jobs. `gate` runs `npm run gate` on
 `ubuntu-latest` and `windows-latest` (both resolving Node from `.nvmrc`). `demo` runs the canonical
 demo on ubuntu, asserts that `--browser none` really exits 2, and uploads `.veridian/` as an artifact.
-`browserless worlds` runs eleven of the thirteen declared demos and names the world that regressed,
+`browserless worlds` runs twelve of the fourteen declared demos and names the world that regressed,
 because before that job existed no CI ran any of them - it ran seven under the name `simulated
 worlds` until the name stopped describing its own membership, and `demo:api`, `demo:local-process`,
 `demo:data` and `demo:cockpit` were declared, shipped, documented and run by nothing.
@@ -1141,8 +1249,16 @@ conflating them is the defect. `tests/assets.test.ts` holds both halves.
 
 What the package deliberately does **not** include is Playwright, and that is still a real
 limitation rather than a detail: an installed Veridian cannot observe a page until its user adds one.
-It degrades honestly (`INCONCLUSIVE`, never `PASS`) and names the command that fixes it. Settling
-that properly needs a peer-dependency story, which is the next thing a distribution phase owes.
+It degrades honestly (`INCONCLUSIVE`, never `PASS`) and names the command that fixes it. **The route
+is declared rather than documented**: Playwright is an optional peer dependency
+(`peerDependencies` with `peerDependenciesMeta.playwright.optional: true`), so a package manager
+states the requirement at install time while `npm install veridian` still succeeds without it.
+Nothing is installed by the declaration, so the degradation above is unchanged - which is the point,
+because a peer that *was* installed would have made the honest `INCONCLUSIVE` unreachable. The
+version floor is a lower bound (`>=1.40.0`) rather than a pin, because the adapter declares the slice
+of the API it uses structurally and every property in that slice is optional, so a newer Playwright
+fails at `launch()` with a named cause rather than being refused at install time.
+`tests/package-manifest.test.ts` holds the declaration in both places it is written.
 
 Guards, in place of the old `private: true`:
 
@@ -1178,8 +1294,8 @@ npx tsc --noEmit    silent (exit 0)
 node --test         72 tests, 0 failing
 npm run build       out/, 6 files
 npm run smoke:out   15 checks, exit 0
-npm run package     veridian-cockpit-0.3.0.vsix, 12 files, 119.32 KB
-npm run smoke:vsix  34 checks, exit 0
+npm run package     veridian-cockpit-0.4.0.vsix, 12 files, 119.75 KB
+npm run smoke:vsix  35 checks, exit 0
 npm run gate        exit 0
 ```
 
@@ -1742,7 +1858,20 @@ port had none, which is why the defect reached a demo run.
   and restoring the shorthand fails *"which is not a validator name - the family prefix was factored
   out into the column, and that is how a name went missing"*. *A document that prints a vocabulary must
   print every member in full, and the cheapest way to hold it is a test that reads both.* The third
-  occurrence of the shape the `db.query` / `db.rowCount` entries record.
+  occurrence of the shape the `db.query` / `db.rowCount` entries record. The **fourth** is the
+  observation vocabulary, and it is the first whose enumeration is a *chain of ordinals*: `AGENTS.md`'s
+  `core/environment/` layout row and `README.md`'s layering paragraph both listed the twelve
+  `*-observation.ts` files, and both were one family short while each clause carried its own ordinal -
+  so `the eleventh` was already spoken for and the row misinformed rather than merely omitting. Both
+  are corrected, and `tests/observation-vocabulary.test.ts` holds them. **And the guard's own first
+  draft was the same defect one layer in, which is why this paragraph exists**: it asked its question
+  of the *whole document*, and every stem in `AGENTS.md` is named at least twice (once in the ordinal
+  chain, once in a `validators/` row; `data` and `mobile` three times), so it would have passed with
+  the chain two families short - the exact drift it was written after. That was found by *counting*
+  the stems rather than by reasoning about the guard, and the fix is a scope (the enumeration only,
+  with two in-guard controls asserting the scope held) plus three falsifying probes. *A set test over
+  a whole document cannot see a block that is short when every member of that block is also named
+  elsewhere in the document - and the way to know is to count, not to reason.*
 
 - **A predicate written as an `||` chain covers a new world with somebody else's block.** Adding
   `os` to `hasNoHttp` left the earlier `posix` test passing unchanged - it iterates its own kind, so the
@@ -1920,7 +2049,73 @@ port had none, which is why the defect reached a demo run.
   read by no code, and a count cannot be pinned by a test that itself changes the count. *Both are the same defect as a roster printed in a
   document: a number is a claim about the code, and the cheapest way to hold it is to read the code -
   the difference is that a number cannot be pinned by a test the way a name can, so it has to be
-  re-measured at the moment the document is touched.*
+  re-measured at the moment the document is touched.* **It moved a third time, for the same reason and
+  by four suites rather than one**: the W1 boundary migration and the `sim-data` world took the root run
+  to **2305** and this tree's own to **2233** (the Cockpit's 72 unchanged), and the figure was corrected
+  in four places across `AGENTS.md` and `README.md` in the same pass. The four suites are
+  `tests/sim-vscode-environment.test.ts`, `tests/sim-container-environment.test.ts`,
+  `tests/sim-data-environment.test.ts` and `tests/sim-cloud-environment.test.ts`, each of which gained
+  an assertion that its world hands the runner a file allowance - the first three as new files, the
+  fourth growing in place. The entry's own figures are left standing above because a record of what was
+  measured then is not made false by what is measured now. **A fourth movement came from W4's guard,
+  and it is the smallest one yet**: `tests/package-manifest.test.ts` contributed 8 tests, taking the
+  root run to **2313** and this tree's own to **2241** (the Cockpit's 72 unchanged), corrected in the
+  same four places. It was measured by running `node --test` rather than by adding 8 to 2305, which is
+  the whole point of the rule - and the addition would have been right, which is exactly why a figure
+  that happens to be reachable by arithmetic is the figure nobody goes back and checks. **A fifth
+  movement came from W5, and it is the first one this record can attribute only in part**: the root run
+  now reports **2321** and this tree's own **2249** (the Cockpit's 72 re-measured by running its own
+  `node --test` rather than assumed, and the suite count still **377**). Two of the eight are named
+  outright - `tests/runtime-report-slices.test.ts` contributes 4 and has no `describe`, so it moves the
+  test count and not the suite count, and `tests/demo-rosters.test.ts` gained one `it` block when the
+  fourth roster was generalised from a constant into a set - and the remaining four are **not
+  attributed here**, because they were never measured at the moment they were written: an earlier gate
+  in this stretch read **2316** where the document then said 2313, and the difference was not chased.
+  That is the honest half of this rule, and the half worth keeping: *a figure that is re-measured is
+  corrected, and a figure whose movement is not measured is only ever restated.* **A sixth movement is
+  the first one this record can attribute in full, because a single new file caused all of it**:
+  `adapters/sim-mobile/mobile-port.test.ts` contributes **49** tests over **14** suites, taking the
+  root run to **2370** tests over **391** suites and this tree's own to **2298** (the Cockpit's 72
+  re-measured by running its own `node --test`, not assumed, and still **72**). Both figures were
+  measured by running `node --test` on both trees. The decomposition itself was **measured rather than
+  assumed** this time, which is the part the record had never done before: 2370 - 72 = 2298 rests on
+  the claim that the Cockpit's tests are *inside* the root run, so that claim was checked directly by
+  searching the root run's own output for a test title that exists only in the Cockpit
+  (*"the manifest and the Cockpit declare the same commands"*) and finding it there **twice**. *A
+  decomposition is an arithmetic claim about two measurements, and it is only as good as the evidence
+  that its two halves are nested rather than disjoint.* **A seventh movement is the second one
+  attributable in full, and this time every contributing file was measured alone rather than inferred
+  from the total**: the root run reports **2456** tests over **410** suites and this tree's own
+  **2384**, with the Cockpit's 72 re-measured by running its own `node --test` and still **72** -
+  though its `# suites` line reads **0**, because no test in that tree sits inside a `describe`, so the
+  root run's 410 suites are all this tree's own rather than the 338 a subtraction would have produced.
+  Three files account for the whole test movement: `tests/sim-mobile-demo.test.ts` **34** tests over
+  **6** suites, `validators/mobile/mobile-validators.test.ts` **48** over **12**, and
+  `tests/sim-mobile-environment.test.ts` **4** over **1** - 86 tests and 19 suites, which is exactly
+  2370 + 86 and 391 + 19. `adapters/sim-mobile/mobile-port.test.ts`'s **49** over **14** is
+  deliberately absent from that sum, because it was already inside the previous figure: *a file that
+  has not moved since the last measurement is not part of this movement, and adding it back would
+  have produced an attributed total that reconciles with nothing.* **An eighth movement is the first
+  caused by a *test* rather than by a world, and the first whose second figure deliberately did not
+  move**: `tests/clarification-ladder.test.ts` contributes **5** tests over **0** suites, taking the
+  root run to **2461** tests with the suite count unchanged at **410**. The unchanged half is the
+  load-bearing one, because that file holds five bare `it` blocks and no `describe`, so a reader who
+  expected the suite count to rise with the test count would have gone looking for a missing
+  `describe` that was never wanted - and the temptation is real, because every earlier movement in
+  this record moved both figures. Re-measured by running `node --test` on both trees (the Cockpit's
+  **72** re-measured rather than assumed, its `# suites` still **0**), with the decomposition proved
+  the way the seventh movement proved it: a title that exists only in the Cockpit *("the manifest and
+  the Cockpit declare the same commands")* appears **twice** in the root run's own output. **A ninth
+  movement is the first moved by a guard rather than by a world or by a ladder**:
+  `tests/observation-vocabulary.test.ts` contributes **5** tests over **1** suite, taking the root run
+  to **2466** tests over **411** suites and this tree's own to **2394** (the Cockpit's **72**
+  re-measured by running its own `node --test` rather than assumed, its `# suites` still **0**, so all
+  411 of the root run's suites are this tree's own rather than the 339 a subtraction would have
+  produced). Both figures were predicted before they were measured - 2461 + 5 and 410 + 1 - and both
+  predictions were **right**, which is precisely the case this record exists to distrust: *an
+  arithmetic total that happens to reconcile is the total nobody goes back and checks*, and the eighth
+  movement is the entry above recording a figure whose movement was not measured at the moment it was
+  written. The decomposition was proved the way the seventh and eighth were.
 
 - **A document that names what a world *substitutes* is making a claim about a `*_SIMULATED_SURFACES`
   constant, and a claim nothing reads drifts.** `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` §5 recorded
@@ -1965,7 +2160,7 @@ port had none, which is why the defect reached a demo run.
   redistributed under. `LICENSE` is now listed, the copy at `extension/vscode/LICENSE` is compared
   byte for byte against the repository by `src/packaging.test.ts` and again inside the archive by
   `smoke:vsix`, and both halves were falsified - appending a line to the copy fails with *"the licence
-  in the archive is the repository's, byte for byte (1388 bytes)"* and exit 1, and taking `LICENSE` out
+  in the archive is the repository's, byte for byte (1327 bytes)"* and exit 1, and taking `LICENSE` out
   of `files` fails *only* the archive's licence check, because the packaging step reports nothing.
   *The tool's behaviour was read out of the tool* - both the licence filter and the `LICENSE` to
   `LICENSE.txt` rename come from `@vscode/vsce`'s own source, after the first hypothesis (that `files`
@@ -1979,6 +2174,17 @@ port had none, which is why the defect reached a demo run.
   the archive is byte-identical to the one on disk"* and exits 1. *An archive has to be read back to
   be known, which is the same reason `smoke:dist` and `smoke:out` exist - one runtime further out
   each time, and never optional.*
+- **A file a packaging tool copies by convention is a file nothing promised to compare, and the
+  readme is the one a marketplace shows.** `smoke:vsix` byte-compared the six compiled files, the
+  icon and the licence, and asked of `extension/readme.md` only that it *existed* - while that file is
+  the extension's long description and sits inside the artifact the upload carries. So editing it
+  *after* packaging shipped a description that disagreed with the repository, and every check here
+  passed. Found by editing it after a packaging pass and then asking which files this script actually
+  reads back; fixed by comparing its bytes to the source's, beside the licence comparison it mirrors;
+  falsified by appending a line to `extension/vscode/README.md` after packaging -
+  `FAIL the readme in the archive is the source's, byte for byte`, exit 1, restored byte
+  for byte to `30A9464E...`. *A check a tool's convention makes look redundant is a check nobody
+  writes - and the order is: edit every file that travels, then package, then read the archive back.*
 
 - **A guard built on a `*_SIMULATED_SURFACES` constant has to be extended in three places at once, and
   the new entry has to be falsified.** `tests/simulated-surfaces.test.ts` reads four things that must
@@ -2059,6 +2265,31 @@ port had none, which is why the defect reached a demo run.
   the harness must not treat "did not fire" as "did not matter". *A probe that cannot run is not
   evidence, and a verdict line computed over a skipped probe is a claim about work that did not
   happen.*
+
+- **A probe is falsified by the test it breaks, not by a string it searches for - and a needle naming
+  a string the failing assertion never reaches reports the reverse of what happened.** The third form
+  of the same defect, found while falsifying `adapters/sim-mobile/mobile-port.ts` against its own
+  suite. The escape probe replaced the boundary predicate with an unconditional acceptance, and it
+  **fired**: `tests=49 pass=46 fail=3`, naming `refuses a path outside both trees a command may open,
+  and records the attempt` and `records which client made the crossing`. The harness nevertheless
+  printed `verdict: did not fire`, because it searched the output for
+  `outside both directories a command may open` - the **reason string** the refusal path builds, which
+  the coverage never reaches: the first assertion the tree evaluates is `call.result === "refused"`,
+  and it fails there. So the three probes were tightened to declare `breaks: [<test title>, ...]` and
+  to require **every** declared title to appear in the scraped failing-test names, which is a claim
+  about what the probe *moved* rather than about what the file happens to contain. That distinction
+  is load-bearing rather than stylistic: the other two probes' original needles were `absent` and
+  `<redacted>`, and neither is evidence of anything. `absent` is a word that appears in the
+  **titles** of the tests the probe broke, so it would have read `FIRED` with the probe disabled;
+  `<redacted>` appears in no failing title at all and was matching somewhere else in the output
+  entirely. So two verdicts that read `FIRED` were coincidentally right about coverage and had never
+  been computed from it. *A substring is a question about a document; the question was "which tests
+  did this break", and only the failing-test names answer it.* This is the
+  fourth time this repository has recorded a harness reporting something it did not measure, after
+  the CRLF anchor, the column-zero `not ok` scrape, and the probe that restored the file before
+  running the suite - and the generalisation they now share is one sentence: **a harness's verdict
+  has to be computed from the same evidence a reader would use, or it is a second opinion about the
+  wrong thing.**
 
 - **An assertion about a message must read the message's wording from the code, not recall it.**
   The new `createSelfPromptPort` suite asserted the decline note matched
@@ -2372,6 +2603,132 @@ port had none, which is why the defect reached a demo run.
   an absent subject as a match, and dropping the formatter's mixed branch each fail the subtest that
   names the property.
 
+- **A premise in prose is neither a name nor a count, and the guard over a document cannot hold it.**
+  Moving the confine seam into `core/process.ts` did not touch `core/environment/types.ts`, and it
+  falsified a bolded invariant inside that file's doc block: *"The three worlds that confine a child
+  are exactly the three that answer this question with a measurement"*. True when written, because
+  only three worlds confined a child at all; after the migration **all eleven** hand the runner a file
+  allowance, so the left side of that equality denotes every row while the right side still holds of
+  three. The same premise was repeated in `tests/boundary-roster.test.ts` as an explanation (*"the
+  other eight act in process and hold no boundary to measure"*) and as an assertion title and
+  message, and nothing failed: the assertion's **set** stayed correct, because the migration left the
+  network arm alone, so what went stale was the **reason**. It was found by searching the tree for the
+  claim rather than by reading the file the change touched, which is the only way it could have been
+  found. The correction is narrower and is now what all four places say - the separation is **a front
+  door, not a child**: the two worlds whose every request passes a guarded route answer `enforced`,
+  `local-process` has no door and answers `unenforceable` because `--allow-net` does not exist on this
+  runtime, and the other eight answer `unsupported`. And the guard over that doc block was **measured
+  rather than assumed** to be useless against it: patching the false sentence back in leaves
+  `tests/boundary-roster.test.ts` at **14 pass / 0 fail** (exit 0, line ending detected first, anchor
+  asserted present, edit asserted to have changed the file, file restored byte for byte), because that
+  block asserts only that the prose **names** all four enforcement values and all three worlds - *a
+  guard that holds a vocabulary's membership cannot hold its meaning.* Three kinds of prose claim now
+  have three recorded fates: a **name** can be pinned by a test that reads the code, a **count** can
+  only be re-measured when the document is touched, and a **premise** can be invalidated by a change
+  that never opens the file it lives in - so the way to hold one is to search for it.
+
+- **A guard's *purpose* is the property it must hold; its *mechanism* is only how it was measured,
+  and the two drift apart in silence.** `tests/boundary-roster.test.ts` exists so that *"a twelfth
+  world cannot join either side of this split in silence"* - that is its purpose, and it is right.
+  Its mechanism paired the rows it had walked off `adapters/` against a `readdirSync` of the
+  **directory names** under `adapters/`, so what it actually asserted was that every directory under
+  `adapters/` holds a world. That is a claim about the tree's **layout** rather than about the
+  **code**, and it was true for exactly as long as the two happened to coincide. `adapters/sim-mobile/`
+  is where they stop coinciding: it holds a substitute device port, a 49-test suite and a reading
+  vocabulary, and **no adapter** - so the guard's first assertion failed with
+  `every adapter directory contributed exactly one row to this guard's walk`, `actual` naming
+  `'sim-mobile'` and `expected` not. The directory is not a world, so it cannot escape a split about
+  worlds; what *can* is an **adapter nobody classified**, and that is found by selecting on
+  `implements EnvironmentAdapter` - robust to the filename, the directory and the filing - which
+  measured exactly the twelve `*-environment.ts` files and nothing else. The guard's walk now derives
+  its population that way, and a register cross-check beside it holds the complementary failure in
+  **both** directions: an adapter nothing can construct, and a declared world with nothing behind it.
+  *The tempting repair was to write the missing adapter, and it was the wrong one* - a twelfth world
+  is not one file but a plan block, a schema, a loader, a `WORLDS` entry, a surfaces-guard extension,
+  a validator family and a demo (`docs/GAP-CLOSURE-DESIGN.md` W2 specifies all of it and
+  `docs/BOUNDARY-SPINE-DESIGN.md` decision 6 defers it), and **a declared world with no adapter
+  behind it is worse than none, because the register cross-check now names it** - which is what the
+  falsification probe watched happen when an unregistered adapter file was seeded into the tree and
+  the guard failed with *"every adapter in `adapters/` is a world `cli/worlds.ts` declares, and every
+  world it declares has one"*. Falsified rather than trusted, three probes, each firing by name and
+  message and each restored byte for byte: the old directory-name walk back in place (`fail=1`), the
+  seeded unregistered adapter (`fail=2`), and `asksForConfinement` answering `false` for everyone
+  (`fail=3`). *A guard whose mechanism is a naming convention is a guard whose coverage is a
+  coincidence, and a guard whose stated purpose survives a change to its mechanism is the guard
+  working - read the purpose, then fix the mechanism, and never widen the claim to fit.*
+
+- **A test built from a positive cap cannot see where a bound is placed, and the input that can see
+  it is the cap already reached.** `core/clarification/engine.ts` checks the per-run round budget
+  **before** it spends a round, which is what makes the worst case a bound that was already reached
+  rather than one that is one over - and the guard written for the ladder
+  (`tests/clarification-ladder.test.ts`) was first drafted with `maxSelfPromptRoundsPerAmbiguity: 2`
+  for the bound and a *positive* per-run cap for the placement. Falsified rather than trusted, by
+  moving the cap block below `rounds += 1;` and `this.#selfPromptRounds += 1;` in a probe: the
+  bound subtest **still passed**, because with a positive cap the two placements differ only in a
+  boundary the per-gap cap already covers. The subtest that failed was the one whose policy sets
+  `maxSelfPromptRoundsPerRun: 0` - a cap already spent, where *check first* answers `attempts: 0`
+  and *increment first* answers `attempts: 1`. *A test whose inputs cannot reach the difference
+  cannot see the difference*, and a guard about a before/after placement therefore has to be written
+  from the degenerate case rather than the typical one; the same file's four properties were each
+  falsified by a probe naming exactly one subtest, 4 of 4, with the tree restored byte for byte.
+
+- **A read allowance and a write allowance answer two different questions, and `--allow-fs-read` is
+  an allowlist rather than a widening.** `demo:k8s` was found failing at `INCONCLUSIVE (ABORTED, 0
+  iteration(s))`, exit 2, and the cause was not the cluster and not the application: the adapter
+  confined the deploy child with `readRoots: [appPath]`, while `examples/sim-k8s/app/deploy.mjs`
+  imports `yaml`. The permission model **enforces its allowlists against the interpreter's own module
+  resolution**, so `node_modules/yaml/package.json` was refused - `ERR_ACCESS_DENIED`,
+  `permission: FileSystemRead` - **before the program's first statement ran**, the child exited 1,
+  preparation reported `ENVIRONMENT_FAILURE`, and the run aborted with no iteration to observe: an
+  `ENVIRONMENT_FAILURE` wearing the application's clothes. Correlated exactly rather than assumed:
+  an import census over `examples/**` returned three lines, and `sim-k8s` is the only world whose
+  application imports a real package - and the only world that failed. The repair extends the
+  *existing* allowance (`readRoots: [appPath, ...dependencyReadRoots(appPath)]`, derived by walking
+  **up** the way Node does) and leaves `writeRoots` alone, so the measured `filesystemWrite`
+  dimension is unchanged. *A program's source and its dependencies are two directories, and a
+  permission model that enforces allowlists does not know the difference.*
+- **The guard that should have caught it asserts the presence of an allowance, never its width - and
+  the unchanged test count is the measurement that proves nothing in the tree held the rule.**
+  `tests/boundary-roster.test.ts` selects every adapter via `implements EnvironmentAdapter` and asks
+  `asksForConfinement(text)` whether `confinement:` appears at all; every assertion is about
+  membership, none about content. So the `sim-k8s` regression was green in the suite and red in the
+  demo, and the repair left the suite at **2466 tests unchanged** - which is not a coincidence but
+  the diagnosis: a suite whose count does not move when a rule is repaired and re-broken is a suite
+  that never held it. The guard that does hold it (`tests/sim-k8s-environment.test.ts`, asserting the
+  runner's allowance reaches the dependencies the application imports) moved the run to **2472 over
+  412 suites**, and it was falsified **2 of 2** - an adapter-only allowance breaks the adapter guard,
+  and a derivation that stops at the start directory breaks four confinement subtests beside it.
+  *Two independent claims: "the allowance is declared" and "the allowance covers what the program
+  reads" - and a guard written against one of them cannot see the other.* Its sibling: a guard that
+  asserts a helper's output against a literal cannot hold a helper that walks the **real** filesystem,
+  because the literal is then a property of the machine the test happens to run on.
+- **A count in prose is a claim, and a handoff that recalls one is a claim too.** Twelve worlds have
+  landed and `AGENTS.md`'s own summary line says so correctly (*"the MVP is implemented and green,
+  and eleven more sandbox worlds have landed"* - 1 plus 11 is 12), but six other places still said
+  eleven or thirteen, and **the handoff that listed them was itself wrong twice**: it flagged
+  `AGENTS.md:7` and `AGENTS.md:814` as drift, and measurement showed the first is an MVP-plus-eleven
+  decomposition and the second reads *"Twelve adapters are registered, eleven of them need no
+  browser"*, which is internally consistent. Both false flags were caught by **counting**
+  (`adapters/*-environment.ts` returns 12, `demo*` scripts in `package.json` return 14, the ci.yml
+  loop names 12) rather than by reading, and the six real corrections were then applied against those
+  measurements: two manifest descriptions, three `ci.yml` comments and one `AGENTS.md` clause. *A
+  number cannot be pinned by a test the way a name can - which is why the only durable fix is to
+  re-measure at the moment the document is touched, and why a handoff that recalls a count instead of
+  taking one inherits the same defect it is reporting.* The extension's description travels inside a
+  packaged artifact, so correcting it required a repackage and a readback - and the readback is the
+  half that matters: **the archive's hash moved** (`85BD2672DFE9A6B5` to `FB0898395806AB19`, 122303
+  to 122304 bytes) and `smoke:vsix` compared the archived manifest field-for-field, which is the only
+  thing that says the file a reader downloads is the file the correction is in.
+- **A readback that globs a directory selects by name order, and a name order is not the artifact you
+  meant.** The distribution-route script resolved the built archive with
+  `Get-ChildItem *.vsix | Select-Object -First 1` and returned **`veridian-cockpit-0.2.2.vsix`** - the
+  stale one - because both versions are gitignored and accumulate, and `0.2.2` sorts before `0.3.0`.
+  A hash read off the wrong file is a measurement of something, and it is not a measurement of the
+  build. The archive name has a single definition in this tree (`scripts/vsix-archive.mjs`, the same
+  one `smoke:vsix` uses) and it is resolved from the manifest's own `version` field rather than from
+  the directory listing. *A readback that globs answers "which file is first" when the question was
+  "which file did the build just write".*
+
 ## Documentation
 
 | Document | Contents |
@@ -2380,8 +2737,10 @@ port had none, which is why the defect reached a demo run.
 | [`docs/PLAN.md`](./docs/PLAN.md) | The authoritative product and architecture specification: product definition, scope boundary, execution lifecycle, acceptance/validation model, MVP scope, repo structure, 4-week build plan, Definition of Done, roadmap. **Read before any non-trivial design decision.** |
 | [`docs/IMPLEMENTATION-PLAN.md`](./docs/IMPLEMENTATION-PLAN.md) | What was actually built against that plan: module inventory, the decisions taken and the ones reversed, the open items. **Read before assuming something is missing.** |
 | [`docs/BOUNDARY-ENFORCEMENT.md`](./docs/BOUNDARY-ENFORCEMENT.md) | Why the goal's safety limits are applied rather than only recorded: the audit that found the third clause of the `PASS` rule unfalsifiable, the self-prompted questions that resolved it, the four-move design, what the implementation changed about the plan, and §10 - what §8 anticipated and what arrived. Its own superseded Q4 answer is kept and marked rather than rewritten, because the error is the instructive part. |
+| [`docs/GAP-CLOSURE-DESIGN.md`](./docs/GAP-CLOSURE-DESIGN.md) | The seven work items that close the remaining gaps (W1..W7), the census each was designed against, and the audit trail of what executing them decided: §9's F1..F6 are the findings of the first one - an operator's reset command is not the application's child, an account has no path, the absence of `--allow-net` does not break a socket-using world, six port-level spawns are the substitute acting rather than the application provisioning, the guard was falsified in two halves, and a document's stated premise did not survive the seam. **Read before building a world or moving a seam**, because the findings are the parts of the design that turned out to be wrong. |
 | [`docs/BOUNDARY-SPINE-DESIGN.md`](./docs/BOUNDARY-SPINE-DESIGN.md) | The design the boundary work was executed against: the eight gaps as they were found, the self-prompted questions each one resolved into, the `confinement.ts` seam and its two-stage probe, and the acceptance criteria the work was judged by. **Read before changing what a world reports about its own boundaries**, because the vocabulary it defines is now derived by `tests/boundary-roster.test.ts` rather than recalled. |
 | [`docs/DISTRIBUTION-AND-ENVIRONMENTS.md`](./docs/DISTRIBUTION-AND-ENVIRONMENTS.md) | What comes after the MVP: the npm, Docker and VS Code routes, the next adapters in the order they can be **proven**, the self-prompting resolution table that ordered them, and §5's reframing of what "blocked" actually means - every remaining row names the `sim-*` world that answers it, because a world may be simulated and a real-infrastructure absence is not a blocker. **Read before promising an adapter.** |
+| [`docs/GAP-CLOSURE-PLAN.md`](./docs/GAP-CLOSURE-PLAN.md) | The implementation plan for W2 - `sim-mobile`, which was the last unbuilt world and is now the twelfth. Twelve additive places each measured at a file and an anchor rather than recalled (the twelfth being `core/environment/load.ts`, which an earlier census missed), the six guards the change trips and the expected failure of each, and the falsification probe for every claim. **Read before building a thirteenth world**, because it is the checklist a world has to satisfy and the record of what one of the six guards does when a directory is not a world. |
 | [`extension/vscode/README.md`](./extension/vscode/README.md) | The Cockpit's front door. `src/host/activate.ts` points here, so it has to exist and say what the extension is not (VS Code is not Veridian), how to install it for development, and - explicitly - what only a real VS Code test host could exercise and what no check in this tree can reach at all. |
 
 Add a one-line index entry here for each new doc instead of duplicating its content in this file.
@@ -2524,11 +2883,11 @@ already has a style is a second rulebook rather than a description.
 
 - **`allValidators()` returns objects, not strings, so a roster compared against it has to read a
   property.** `cli/validators.ts` declares `export function allValidators(): Validator[]` and returns
-  the eleven families' arrays - each member an object with a `.name` beside its `targetNoun`, its
+  the twelve families' arrays - each member an object with a `.name` beside its `targetNoun`, its
   `validate` and the rest. A guard that did `list.includes("data.record")` would be false for a
   registered validator, and a guard that iterated the array and printed each member would print
-  `[object Object]` in a message meant to name a family. Measured: the roster is **123** members
-  (`8+4+7+12+12+11+19+17+8+12+13`). *A vocabulary is a list of things, and whether a member is a string
+  `[object Object]` in a message meant to name a family. Measured: the roster is **135** members
+  (`8+4+7+12+12+11+19+17+8+12+13+12`). *A vocabulary is a list of things, and whether a member is a string
   or a record is the first fact to read - a comparison against the wrong one is false for every member
   and reads as an empty register.*
 

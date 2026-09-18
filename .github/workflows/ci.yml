@@ -141,7 +141,42 @@ jobs:
       # would pass over a world that never rebuilt at all.
       - name: Veridian must accept its own contract, twice in a row
         run: npm run acceptance
-      # Eleven of the thirteen declared demos, and until this job existed **none of them was run by
+      # The second acceptance route, and it judges something the step above cannot: not the command
+      # line as a *product* but a *run* as a witness. Where that contract asks "does Veridian work",
+      # this one asks "does a run resolve its own gaps, record the rung each resolution reached, carry
+      # a reason for what it deferred, bound the rungs it attempted and report every origin it can
+      # raise" - and it asks it of a **nested** run, so the outer world is a `local-process` host
+      # running the CLI and the inner one is a `local-process` host the CLI started itself. Neither
+      # route would have found the other's defects, which is why both are here rather than one.
+      #
+      # Run twice for the reason the step above is a script: `#rebuild` empties a sandbox at
+      # `create()`, so run 1 starts clean on every machine and run 1 then leaves its own state behind,
+      # because nothing removes the tree at the end of a run - only at the start of the next one. A
+      # single run would pass over a world that never rebuilt at all.
+      #
+      # It sits above the loop alongside the step above, and it is worth being precise about *why* it
+      # does not contend for the single-slot summary either way: `scripts/ladder.mjs` passes
+      # `--state-dir sandbox/ladder/outer`, a sibling of the sandbox rather than a descendant of it,
+      # so this route writes nothing into `.veridian/` at all and the artifact below cannot carry its
+      # bundle. The exit code is the check here; the ordering is still asserted rather than assumed,
+      # because an assertion about a *place* is what keeps the next edit from moving it.
+      #
+      # Measured on this machine before it was added: ~21 s wall for both passes, each pass running
+      # the inner contract four times. Cheap enough that leaving it out of CI would be the expensive
+      # choice - and leaving it out was the state this step corrects: `acceptance:ladder` was
+      # declared, shipped and runnable while no pipeline executed it, which is this repository's
+      # oldest shape.
+      #
+      # It has not run on a runner yet. That is a real caveat and not a formality: the workflow that
+      # had never executed found two ubuntu-only defects on its first run (`resolveSibling` dropping
+      # a POSIX root, and a test building a repo root from `url.pathname` with the leading separator
+      # stripped). The contract avoids both shapes by construction - its `process.argv` needle
+      # compares the vector the *criterion* wrote rather than a resolved path, and its file targets
+      # are world-relative and split on `/` - but "avoids by construction" is a reading of the code,
+      # and this step's first green run is what turns it into a measurement.
+      - name: Veridian must resolve its own ambiguities, twice in a row
+        run: npm run acceptance:ladder
+      # Twelve of the fourteen declared demos, and until this job existed **none of them was run by
       # CI** - the `demo` job above covers the canonical browser demo and `--browser none`, and nothing
       # else. Every one of these passes on a developer's machine, and "passes on a developer's machine"
       # is a claim about one machine: this project has already paid twice for a check that had never run
@@ -157,19 +192,19 @@ jobs:
       # only one of them can be executed.* A name that states the wrong property is the same defect as
       # a step whose name states an outcome it does not check.
       #
-      # None of the eleven needs Playwright, which is why this job does not install it. That is a real
+      # None of the twelve needs Playwright, which is why this job does not install it. That is a real
       # property of the worlds and not a convenience: the browser is the *first* world's observation
       # port, and every other world declares its own.
       #
       # `set +e` around each run because Actions runs bash with `-e`, which would abort on the first
       # non-zero before the assertion could name the world that produced it. A failure here has to say
-      # *which* world regressed - a job that only says "a demo failed" sends the reader to run eleven
+      # *which* world regressed - a job that only says "a demo failed" sends the reader to run twelve
       # commands to find out which one.
       - name: every world must demo green, and say which one did not
         run: |
           set +e
           failed=""
-          for world in db k8s posix os cloud container vscode api local-process data cockpit; do
+          for world in db k8s posix os cloud container vscode api local-process data cockpit mobile; do
             echo "::group::npm run demo:$world"
             npm run "demo:$world"
             code=$?
@@ -185,12 +220,19 @@ jobs:
             exit 1
           fi
       # The artifact carries every run this job made, not one: `.veridian/runs` holds a directory per
-      # run and nothing removes them, so it holds eleven demo bundles plus the *two* the
+      # run and nothing removes them, so it holds twelve demo bundles plus the *two* the
       # self-acceptance contract writes, because that contract is invoked twice. What is single-slot
       # is `.veridian/latest-result.json` - the summary an external agent reads first - and it is
       # written by whichever run went last, which is why `cockpit` is ordered last above and why the
       # self-acceptance step sits above the loop. So the *latest* reading in the artifact is the
       # Cockpit's, the only demo whose application is Veridian's own client.
+      #
+      # One route this job runs is deliberately *not* in here, and the omission is a decision rather
+      # than an oversight: `npm run acceptance:ladder` passes `--state-dir sandbox/ladder/outer`, a
+      # sibling of the sandbox it builds, so its bundle lands under the git-ignored `sandbox/` and
+      # never touches `.veridian/`. Its step's exit code is the check. A reader who expects four
+      # criteria' worth of ladder evidence to be in this archive is looking for a file this job was
+      # never asked to carry.
       #
       # The name says "worlds" rather than "sim" because three of the eleven stand nothing in - `db` is
       # a real SQLite file, `api` a real service and `local-process` a real program - and the job also

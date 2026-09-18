@@ -4,7 +4,7 @@
 
 **The sandbox testing and validation layer for AI coding agents.**
 
-**v0.3.0** - eleven reproducible sandbox worlds, across five distribution routes.
+**v0.4.0** - twelve reproducible sandbox worlds, across five distribution routes.
 
 Coding agents are good at producing code and have an *environmental* problem: they cannot tell
 whether their code actually works. An agent saying "I believe this is fixed" is not a result.
@@ -52,12 +52,19 @@ and a `Dockerfile` that has never been built is a claim.
 git clone <this-repository-url> veridian
 cd veridian
 npm ci                    # runtime dependency: yaml. dev: typescript, @types/node.
-npm run gate              # tsc --noEmit, then the whole test suite. 2259 tests, about five seconds
-                          # (this tree's own 2187 plus the Cockpit's 72, which the runner discovers
-                          # because it walks the tree; the extension has its own gate as well).
+npm run gate              # tsc --noEmit, then the whole test suite. 2472 tests over 412 suites,
+                          # about seven seconds (this tree's own 2400 plus the Cockpit's 72, which
+                          # the runner discovers because it walks the tree; the extension has its own
+                          # gate as well).
 npm run acceptance        # Veridian judged by Veridian: its own contract - goal, criteria, world -
                           # run TWICE, so the world the second run inherits is proved to be one it
                           # rebuilt rather than one the first left behind
+npm run acceptance:ladder # the second self-acceptance route, and it judges what the first cannot:
+                          # not the command line as a product but a RUN as a witness - each criterion
+                          # issues its own `veridian validate` against the ladder fixtures and then
+                          # reads that nested run's record of the rung each gap reached. Writes to
+                          # `sandbox/ladder/outer`, never `.veridian/`. Measured: ~21 s for both
+                          # passes.
 
 npm run e2e:install       # one-time, ~150 MB: fetch the Playwright browser
 npm run demo              # the canonical demo: 3 defects, FAIL -> repair -> PASS
@@ -80,14 +87,18 @@ npm run demo:data         # the eleventh: the app provisions a SIMULATED message
                           # over a real TCP socket, judged on the topics, records and offsets it holds
 npm run demo:cockpit      # the twelfth: Veridian's OWN client is the application, loaded by a
                           # SIMULATED extension host and judged on what it really did while loaded
+npm run demo:mobile       # the thirteenth: the app provisions a SIMULATED handset through commands
+                          # it really issues, judged on the bundles, permissions, deep links,
+                          # notifications and logs that substitute device holds
 ```
 
-Run those fifteen in that order. `npm ci` removes `node_modules` and rebuilds it from the lockfile, and
-Playwright is installed **outside** the lockfile on purpose, so installing the browser before `npm ci`
-would discard it.
+Run the seventeen `npm run` commands below in that order, after `npm ci`. `npm ci` removes
+`node_modules` and rebuilds it from the lockfile,
+and no Playwright *package* is in that lockfile's installed set - the peer declaration names a range
+and installs nothing - so fetching the browser before `npm ci` would discard it.
 
 `demo`, `demo:db`, `demo:api`, `demo:local-process`, `demo:posix`, `demo:os`, `demo:cloud`,
-`demo:container`, `demo:vscode` and `demo:data` need no
+`demo:container`, `demo:vscode`, `demo:data` and `demo:mobile` need no
 extra setup - while `demo:cockpit` needs the Cockpit built first, because its application is a build
 product. `demo:k8s` needs neither a cluster nor `kubectl`, `demo:posix` needs neither a virtual
 machine nor a Linux host, `demo:os` needs neither a Windows guest nor a hypervisor, `demo:cloud` needs
@@ -154,9 +165,12 @@ The source tree is still what runs during development - `npm test` executes `.ts
 Node - and `npm run build` is what produces the artifact. The two facts do not contradict each other;
 they describe two different trees.
 
-**Playwright is deliberately not a dependency**, so a freshly installed Veridian is a validator that
-cannot yet observe a page, and every criterion in a browser contract will honestly report
-`INCONCLUSIVE` until one is present. Add it wherever Veridian can resolve it:
+**Playwright is declared as an optional peer dependency, and is never installed by us.** It is in
+`peerDependencies` with `peerDependenciesMeta.playwright.optional: true`, so a package manager can
+tell you at install time that a browser observation needs it, while `npm install veridian` still
+installs cleanly without it. A freshly installed Veridian is therefore a validator that cannot yet
+observe a page, and every criterion in a browser contract will honestly report `INCONCLUSIVE` until
+one is present. Add it wherever Veridian can resolve it:
 
 ```bash
 npm install playwright
@@ -217,9 +231,11 @@ through the working directory, because that is what `--goal my-app/goal.yaml` me
 
 What the package does **not** include is Playwright, and that is still a real cost rather than a
 detail. Veridian validates a browser application but is not shipped with a browser, so an installed
-Veridian cannot observe anything until its user adds one. This is the peer-dependency story a future
-version would have to settle; for now it degrades honestly - `INCONCLUSIVE`, never `PASS` - and says
-which command fixes it.
+Veridian cannot observe anything until its user adds one. That route is now declared rather than
+documented: Playwright is an **optional peer dependency**, so the package manager states the
+requirement at install time while `npm install veridian` continues to succeed without it. The
+degradation is unchanged and was already honest - `INCONCLUSIVE`, never `PASS` - and names the command
+that fixes it. `tests/package-manifest.test.ts` holds the declaration in both places it is written.
 
 Two guards keep a package that cannot work from being published by accident. `prepublishOnly` runs
 `npm run gate`, so a build whose own tests are red cannot leave the machine, and `npm run smoke:dist`
@@ -1100,7 +1116,7 @@ the demo says so and names `npm run build` rather than quietly judging a stale c
 *a skipped check does not fail, it silently reduces coverage while reporting a green suite.*
 
 **Its expectations move with the version, so a version bump moves them.** `vscode.identity` pins
-`veridian-cockpit 0.3.0`, which is the version in the manifest the demo stages. Bumping the extension
+`veridian-cockpit 0.4.0`, which is the version in the manifest the demo stages. Bumping the extension
 means editing that expectation in the same pass; if you do not, the run will judge the artifact it
 claims to judge only by accident, and `tests/vscode-cockpit-demo.test.ts` fails naming both versions
 rather than letting it through.
@@ -1186,6 +1202,12 @@ adapters/sim-data/      the substitution and the transport are deliberately on o
                         line: a real TCP listener that decodes real bytes, and a substitute holding
                         the topics, partitions, records, offsets, replication assignments and
                         consumer-group state a broker would. No broker, no ZooKeeper, no Kafka
+adapters/sim-mobile/    the twelfth world and the eighth SIMULATED one: a substitute handset a real
+                        application process provisions through command vectors printed on its own
+                        stdout. Boot state, bundles, permissions, deep links, notifications,
+                        keychain entries and log lines, behind a 22-command register. It states
+                        what it stands in for rather than hiding it, and nothing is emulated:
+                        no emulator, no image and no booted system anywhere in the loop
 validators/playwright/  web.element, web.visible, web.text, web.value, web.count, web.url,
                         web.console.clean, web.network.ok
 validators/database/    db.table, db.column, db.count, db.value
@@ -1216,6 +1238,9 @@ validators/process/     process.host, process.probe, process.argv, process.state
 validators/data/        data.node, data.topic, data.layout, data.partition, data.record, data.key,
                         data.value, data.group, data.member, data.commit, data.call, data.probe,
                         data.meter
+validators/mobile/      mobile.device, mobile.os, mobile.screen, mobile.orientation,
+                        mobile.bundle, mobile.installed, mobile.permission, mobile.deeplink,
+                        mobile.notification, mobile.logs, mobile.call, mobile.probe
 schemas/                goal / acceptance / environment / run / result / ambiguity
 scripts/                bootstrap and build steps that must run before anything is checked, beside
                         `acceptance.mjs` - the runner for the contract below
@@ -1249,6 +1274,12 @@ examples/vscode-cockpit/ the twelfth demo, and the only one whose application is
                         the compiled Cockpit is staged into a substitute extension host, activated
                         in a real child process, and judged on what it really did while loaded.
                         Eleven criteria. The staged tree is generated and ignored, never committed
+examples/sim-mobile/    the thirteenth demo, and the eighth SIMULATED world: the app provisions a
+                        substitute handset through commands it really issues, and is judged on the
+                        bundles, permissions, deep links, notifications, keychain entries and log
+                        lines that device holds. Four defects, twenty-five criteria, and the
+                        failing count descending `5 -> 4 -> 2 -> 1 -> 0` - three of the four
+                        defects are read by exactly one criterion each, and the fourth moves two
 extension/vscode/       the VS Code Cockpit: a thin client, no validation logic. The one directory
                         with a build step, because the extension host is not Node's loader
                         (`npm run package` produces the `.vsix` you can hand to somebody else)
@@ -1257,8 +1288,8 @@ acceptance/             Veridian judged by Veridian: `veridian-mvp.yaml` (the go
                         `environment.yaml`. `npm run acceptance` runs it TWICE - a first run that
                         passes and a second that fails is the signature of a world a run inherited
                         rather than built
-tests/                  2259 tests in a root `node --test` run: this tree's own 2187 plus the
-                        Cockpit's 72
+tests/                  2472 tests over 412 suites in a root `node --test` run: this tree's own
+                        2400 plus the Cockpit's 72
 
 dist/                   GENERATED by `npm run build`. Never edited, never committed.
 extension/vscode/out/   GENERATED by `npm run build` inside extension/vscode. Same rule.
@@ -1289,7 +1320,7 @@ Layering is enforced by hand, and `core/*` may not import `adapters/*`, `validat
 `core/environment/web-observation.ts`, `db-observation.ts`, `k8s-observation.ts`,
 `posix-observation.ts`, `os-observation.ts`, `cloud-observation.ts`,
 `container-observation.ts`, `vscode-observation.ts`, `api-observation.ts`,
-`process-observation.ts` and `data-observation.ts`
+`process-observation.ts`, `data-observation.ts` and `mobile-observation.ts`
 for exactly that reason);
 `cli/*` is the only layer that may import all three.
 
@@ -1298,8 +1329,8 @@ for exactly that reason);
 ## Scope
 
 **In, for the MVP:** VS Code + Veridian Core + a local application + a browser + Playwright +
-deterministic acceptance criteria + evidence + reset/replay. Eleven adapters exist: `local-web`,
-`local-db`, `local-api` and `local-process` - four worlds that substitute nothing - and seven
+deterministic acceptance criteria + evidence + reset/replay. Twelve adapters exist: `local-web`,
+`local-db`, `local-api` and `local-process` - four worlds that substitute nothing - and eight
 *simulated* ones. Three of the real ones are also the argument that `EnvironmentAdapter` is a seam
 rather than a browser harness with an interface bolted on: `local-db` judges a SQLite file,
 `local-api` is that proof's mirror - a world that is **real** and reached over a socket, where the
@@ -1324,12 +1355,15 @@ that process recorded, with no editor, no window and no installed VS Code anywhe
 `sim-data`: a real application process really opens a TCP socket and really writes a broker protocol
 to it, and is judged on the topics, partitions, records, offsets, replication assignments and
 consumer-group state the substitute behind that socket holds, with no broker, no ZooKeeper and no
-message-broker software anywhere in the loop.
+message-broker software anywhere in the loop. `sim-mobile`: a real application process really issues
+commands and really reads the device back, and is judged on the bundles, permissions, deep links,
+notifications, keychain entries and log lines the substitute handset holds, with no emulator, no
+image and no booted system anywhere in the loop.
 `local-api`: no substitute at all - a real service, judged through its own HTTP interface on loopback,
 with the contract's own requests as the observation. `local-process`: no substitute at all either,
 and no socket - a real program run as a real child process and judged on the text it printed, the
 code it exited with and the files it really wrote. In all
-seven of the simulated ones, the substitution is
+eight of the simulated ones, the substitution is
 **declared**: `environment.json` names what was stood in for and the reading carries a `simulated`
 field, so a `PASS` is traceable to a named substitute rather than to unexamined reality - and a
 verdict a substitute cannot justify is reported `INCONCLUSIVE`.

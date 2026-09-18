@@ -1,7 +1,7 @@
 {
   "name": "veridian",
-  "version": "0.3.0",
-  "description": "Veridian - the sandbox testing and validation layer for AI coding agents. Eleven reproducible sandbox worlds, explicit acceptance criteria, the safety boundary each world can really hold, and machine-verifiable evidence; the agents stay external. Ships the `veridian` CLI and the VS Code Cockpit.",
+  "version": "0.4.0",
+  "description": "Veridian - the sandbox testing and validation layer for AI coding agents. Twelve reproducible sandbox worlds, explicit acceptance criteria, the safety boundary each world can really hold, and machine-verifiable evidence; the agents stay external. Ships the `veridian` CLI and the VS Code Cockpit.",
   "type": "module",
   "license": "BSD-2-Clause",
   "repository": {
@@ -38,6 +38,7 @@
     "veridian": "node cli/veridian.ts",
     "clarify": "node cli/veridian.ts clarify",
     "acceptance": "node scripts/acceptance.mjs",
+    "acceptance:ladder": "node scripts/ladder.mjs",
     "demo": "node examples/shopping-cart/demo.ts",
     "demo:db": "node examples/inventory-db/demo.ts",
     "demo:k8s": "node examples/sim-k8s/demo.ts",
@@ -50,12 +51,21 @@
     "demo:api": "node examples/local-api/demo.ts",
     "demo:local-process": "node examples/local-process/demo.ts",
     "demo:data": "node examples/sim-data/demo.ts",
+    "demo:mobile": "node examples/sim-mobile/demo.ts",
     "demo:no-browser": "node examples/shopping-cart/demo.ts --browser none",
     "e2e:install": "node scripts/e2e-install.mjs",
     "e2e": "node examples/shopping-cart/demo.ts --browser playwright"
   },
   "dependencies": {
     "yaml": "^2.8.1"
+  },
+  "peerDependencies": {
+    "playwright": ">=1.40.0"
+  },
+  "peerDependenciesMeta": {
+    "playwright": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^26.5.1",

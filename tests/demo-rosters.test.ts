@@ -156,15 +156,43 @@ const inReadme = commandsIn(readme);
 const inAgents = commandsIn(agents);
 const inWorkflow = demosInWorkflow(workflow);
 
-/**
- * The self-acceptance route, which is a roster of one and deliberately not a demo.
- *
- * Held here rather than in a file of its own because it is the same question asked about the same
- * four places - the manifest, the two command blocks and the workflow - and a second file asking it
- * would be the second implementation of one rule this repository keeps paying for.
- */
+/** The shape both acceptance routes are named with: the bare name, or a `:`-suffixed sibling. */
 const ACCEPTANCE = "acceptance";
-const acceptanceBody = declaredScripts(manifest)[ACCEPTANCE] ?? null;
+
+/**
+ * The self-acceptance routes: every manifest script named `acceptance` or `acceptance:*`.
+ *
+ * **Derived rather than listed, and that is a correction rather than a flourish.** The first version
+ * of this roster held one constant, `const ACCEPTANCE = "acceptance"`, and asked its four questions
+ * of that one name - so when `acceptance:ladder` landed, declared, shipped and runnable, this file
+ * went on being green while reading none of it. That is the same shape as `hasNoHttp` growing a
+ * clause per world while `tests/environment-gaps.test.ts` carried the same vocabulary by hand one
+ * world behind: *a test that re-states a register instead of iterating it can only cover the members
+ * it was written with.* The set is now read out of the manifest, so the next route is held by this
+ * file the moment it is declared.
+ *
+ * Each route's *driver* is derived from the script's own body rather than restated beside it, which
+ * is the same move one layer in: the roster's job is to say that the command a reader is promised
+ * exists, and a promised command whose target file was never written is `Missing script` with an
+ * extra step. Reading the path out of the body is what lets the existence of that file be asserted
+ * rather than a regex literal agreed with.
+ */
+function acceptanceRoutes(manifest: string): readonly { name: string; driver: string }[] {
+  const scripts = declaredScripts(manifest);
+
+  return Object.keys(scripts)
+    .filter((name) => name === ACCEPTANCE || name.startsWith(`${ACCEPTANCE}:`))
+    .sort()
+    .map((name) => {
+      const body = scripts[name] ?? "";
+      // `node scripts/ladder.mjs` - the path is the first word ending in `.mjs`, which is the only
+      // shape either route uses and the shape a third one would have to use to be run by node.
+      const match = /(\S+\.mjs)/.exec(body);
+      return { name, driver: match?.[1] ?? "" };
+    });
+}
+
+const acceptanceScripts = acceptanceRoutes(manifest);
 
 /**
  * The one declared demo `README.md` is not required to put in its quickstart block.
@@ -284,84 +312,118 @@ describe("every declared demo is run by a CI job", () => {
 });
 
 /**
- * The fourth roster, and the first whose subject is not a demo: Veridian's own acceptance contract.
+ * The fourth roster, and the first whose subjects are not demos: Veridian's own acceptance contracts.
  *
- * `acceptance/` holds the goal, the contract and the environment, `scripts/acceptance.mjs` drives
- * them, and the application under test is the CLI itself - so the route is a thing a reader can walk,
- * which makes it a name that has to appear in the same four places the demo roster does.
+ * `acceptance/` holds the goals, the contracts and the environments, `scripts/*.mjs` drive them, and
+ * the application under test is the CLI itself - so each route is a thing a reader can walk, which
+ * makes it a name that has to appear in the same four places the demo roster does.
  *
- * It is *not* a `demo:*` script, and naming it one would have been the cheaper edit: the existing
- * derivation would have picked it up with no change to this file at all. A demo shows a defect being
- * found and repaired, and this contract has no defect to repair - `maxIterations: 1` with `--no-repair`
- * makes it a control rather than a demonstration - so borrowing the prefix would have enrolled it in
- * three checks above that would then have been satisfied by a lie, and `it` #7 would have started
- * requiring a *refusal* demo's worth of narrative about a script that refuses nothing. The roster it
- * actually belongs to is this one, and the reason it needs a check at all is the defect this
+ * The two routes answer different questions and that is why there are two rather than one.
+ * `acceptance/veridian-mvp.yaml` judges the command line **as a product** - seven criteria about
+ * exits, output and files, observed once with `--no-repair`. `acceptance/ladder/acceptance.yaml`
+ * judges it **as a witness** - four criteria about the record a *nested* run wrote, so the outer
+ * world is a `local-process` host running the CLI and the inner one is a `local-process` host the
+ * CLI itself started. Neither would have found the other's defects.
+ *
+ * Neither is a `demo:*` script, and naming them one would have been the cheaper edit: the existing
+ * derivation would have picked both up with no change to this file at all. A demo shows a defect
+ * being found and repaired, and these contracts have no defect to repair - `maxIterations: 1` with
+ * `--no-repair` makes them controls rather than demonstrations - so borrowing the prefix would have
+ * enrolled them in three checks above that would then have been satisfied by a lie. The roster they
+ * actually belong to is this one, and the reason they need a check at all is the defect this
  * repository has now paid for four times: a name declared somewhere and read by nothing.
  */
-describe("the self-acceptance route is reachable from every place that names it", () => {
-  it("is declared by the manifest, so the command a reader is promised exists", () => {
+describe("the self-acceptance routes are reachable from every place that names them", () => {
+  it("holds a roster large enough for the comparison to mean anything", () => {
+    // The same floor argument the demo roster makes: rename the scripts and this set empties, after
+    // which every assertion below is a claim about the empty set and passes without reading anything.
     assert.ok(
-      acceptanceBody !== null,
-      "package.json declares no `acceptance` script, so `npm run acceptance` - the command " +
-        "README.md and AGENTS.md hand a reader - fails with `Missing script`",
-    );
-    assert.match(
-      acceptanceBody,
-      /scripts\/acceptance\.mjs/,
-      "the `acceptance` script no longer drives scripts/acceptance.mjs, so whatever it runs now is " +
-        "a command this file's other assertions are not about",
+      acceptanceScripts.length >= 2,
+      `package.json declares ${String(acceptanceScripts.length)} acceptance routes, so this roster ` +
+        "is checking almost nothing - either the naming convention changed or a route was removed",
     );
   });
 
-  it("is named in README.md's quickstart block", () => {
-    assert.ok(
-      inReadme.includes(ACCEPTANCE),
-      "README.md's quickstart never names `npm run acceptance`, so the front door does not offer the " +
-        "one route that answers 'does Veridian work?', as opposed to 'do its tests pass?'",
-    );
+  it("declares each route, and each drives a script file that exists", async () => {
+    for (const route of acceptanceScripts) {
+      assert.notEqual(
+        route.driver,
+        "",
+        `the \`${route.name}\` script names no .mjs file, so this roster cannot tell what it runs - ` +
+          "and a route whose driver is unreadable is a route nothing here is about",
+      );
+
+      const source = await repo.readTextFile(route.driver);
+      assert.notEqual(
+        source,
+        null,
+        `the \`${route.name}\` script drives ${route.driver}, which does not exist - so the command ` +
+          "README.md and AGENTS.md hand a reader fails at its first step",
+      );
+    }
   });
 
-  it("is named in AGENTS.md's command block", () => {
-    assert.ok(
-      inAgents.includes(ACCEPTANCE),
-      "AGENTS.md's `Running things:` block never names `npm run acceptance`, so the hand-off to the " +
-        "next agent does not carry the contract that judges this repository with its own product",
-    );
+  it("names every route in README.md's quickstart block", () => {
+    for (const route of acceptanceScripts) {
+      assert.ok(
+        inReadme.includes(route.name),
+        `README.md's quickstart never names \`npm run ${route.name}\`, so the front door does not ` +
+          "offer a route that answers a question its tests cannot - for `acceptance` that is 'does " +
+          "Veridian work?', for `acceptance:ladder` it is 'does the ambiguity ladder work, inside a " +
+          "run of Veridian?'",
+      );
+    }
+  });
+
+  it("names every route in AGENTS.md's command block", () => {
+    for (const route of acceptanceScripts) {
+      assert.ok(
+        inAgents.includes(route.name),
+        `AGENTS.md's \`Running things:\` block never names \`npm run ${route.name}\`, so the ` +
+          "hand-off to the next agent does not carry a contract that judges this repository with " +
+          "its own product",
+      );
+    }
   });
 
   it("is run by a CI job, rather than only described by one", () => {
-    assert.ok(
-      runsInWorkflow(workflow, ACCEPTANCE),
-      ".github/workflows/ci.yml never runs `npm run acceptance`, so the contract is declared, " +
-        "documented twice and executed by nothing - which is exactly the defect the demo half of " +
-        "this file was written for",
-    );
+    for (const route of acceptanceScripts) {
+      assert.ok(
+        runsInWorkflow(workflow, route.name),
+        `.github/workflows/ci.yml never runs \`npm run ${route.name}\`, so the contract is ` +
+          "declared, documented twice and executed by nothing - which is exactly the defect the " +
+          "demo half of this file was written for",
+      );
+    }
   });
 
-  it("runs it before the demo loop, so the artifact's newest reading is the Cockpit's", () => {
-    const selfAt = workflowRunIndex(workflow, ACCEPTANCE);
+  it("runs each route before the demo loop, so the artifact's newest reading is the Cockpit's", () => {
     const loopAt = /^[ \t]*for world in [^\n]*; do[ \t]*$/m.exec(workflow)?.index ?? -1;
 
     assert.ok(
-      selfAt >= 0,
-      "the self-acceptance step is not in .github/workflows/ci.yml, so its position cannot be " +
-        "checked at all",
-    );
-    assert.ok(
       loopAt >= 0,
       ".github/workflows/ci.yml no longer carries a `for world in ...; do` loop, so there is " +
-        "nothing for the self-acceptance step to be ordered against",
+        "nothing for the acceptance steps to be ordered against",
     );
-    assert.ok(
-      selfAt < loopAt,
-      "the self-acceptance step runs *after* the demo loop. Every run in this job writes the same " +
-        "`.veridian/latest-result.json`, and the upload step at the end carries the whole of " +
-        "`.veridian/` - so the reading a reader opens first is whichever run wrote that file last, " +
-        "and the upload step's own comment says that has to be `cockpit`. Below the loop, this " +
-        "step is the last writer instead, and the artifact's comment goes on describing a bundle " +
-        "it no longer carries. A comment about CI is read by nothing; this is that comment as an " +
-        "assertion",
-    );
+
+    for (const route of acceptanceScripts) {
+      const routeAt = workflowRunIndex(workflow, route.name);
+
+      assert.ok(
+        routeAt >= 0,
+        `the \`npm run ${route.name}\` step is not in .github/workflows/ci.yml, so its position ` +
+          "cannot be checked at all",
+      );
+      assert.ok(
+        routeAt < loopAt,
+        `the \`npm run ${route.name}\` step runs *after* the demo loop. Every run in this job ` +
+          "writes the same `.veridian/latest-result.json`, and the upload step at the end carries " +
+          "the whole of `.veridian/` - so the reading a reader opens first is whichever run wrote " +
+          "that file last, and the upload step's own comment says that has to be `cockpit`. Below " +
+          "the loop, this step is the last writer instead, and the artifact's comment goes on " +
+          "describing a bundle it no longer carries. A comment about CI is read by nothing; this " +
+          "is that comment as an assertion",
+      );
+    }
   });
 });

@@ -21,7 +21,7 @@ the MVP, this one covers what comes after it.
 | 3 | VS Code extension | **Built** (Phase B) | `PLAN.md` §30, this doc, Phase B |
 | 4 | Database environment | Roadmap "Later" | `PLAN.md` §38, this doc, Phase C |
 | 5 | Linux / Kali / Windows / macOS | Roadmap Tier 2-3 | Linux/Kali built as a **simulated** world, `sim-posix` (Phase C3); Windows **and macOS** built as `sim-os` (Phase C4), one world with two declared families, §7 |
-| 6 | Kubernetes, cloud, data platform | Roadmap Tier 4-5 | Kubernetes built as a **simulated** world, `sim-k8s`; cloud built as `sim-cloud` (Phase C5); the container runtime built as `sim-container` (Phase C6); data planned (§5) |
+| 6 | Kubernetes, cloud, data platform | Roadmap Tier 4-5 | Kubernetes built as a **simulated** world, `sim-k8s`; cloud built as `sim-cloud` (Phase C5); the container runtime built as `sim-container` (Phase C6); the data platform built as a **simulated** broker, `sim-data` (Phase C8) |
 
 Nothing in this list is forbidden. `PLAN.md` §3 forbids Veridian becoming a *Kubernetes management
 platform*, a *cloud deployment platform*, a *CI/CD platform*; it explicitly permits integrating with
@@ -160,8 +160,8 @@ rather than asserted, in the note after the gate table below:
 | Decisions, headless | `node --test` | 72 tests, 0 failing |
 | Build | `npm run build` | `out/` - 6 files |
 | **Compiled artifact** | `npm run smoke:out` | 15 checks, exit 0 |
-| Package | `npm run package` | `veridian-cockpit-0.3.0.vsix` - 12 files, 119.32 KB |
-| **Packaged archive** | `npm run smoke:vsix` | 34 checks, exit 0 |
+| Package | `npm run package` | `veridian-cockpit-0.4.0.vsix` - 12 files, 119.75 KB |
+| **Packaged archive** | `npm run smoke:vsix` | 35 checks, exit 0 |
 | All of the above | `npm run gate` | exit 0 |
 
 The third row is the reason this phase could be built at all: the extension host is not Node's
@@ -194,7 +194,7 @@ distinction §5 draws about worlds, applied one layer up to a tool.
 **And the double was proved too weak, which is the strongest argument this document has for the
 distinction it just drew.** `smoke:out` activates the compiled entry point twice and asserts the six
 commands are registered; it never invokes a handler, so nothing in it reads the *answer* a handler
-gives back. Putting the real compiled Cockpit inside `sim-vscode` - one of the eleven worlds, whose
+gives back. Putting the real compiled Cockpit inside `sim-vscode` - one of the twelve worlds, whose
 subject is an extension host - and judging it with eleven acceptance criteria reported **two defects,
 both real, both invisible to every check above**: `registerCommand` discarded the promise its handler
 returned (`void handler().catch(...)`, so `registerCommand` answered `undefined` and any caller that
@@ -210,16 +210,19 @@ opposite - that packaging needs `@vscode/vsce`, that the output had never been p
 machine, and that adding a package script nobody had run would be the same unverified claim this
 document refuses for a Dockerfile. That reasoning was right, and the fix was to run it rather than to
 keep declining: `@vscode/vsce` is now a dev dependency, `npm run package` produces
-`veridian-cockpit-<version>.vsix` (12 files, 119.32 KB) and `npm run smoke:vsix` reads it back as a zip - by
+`veridian-cockpit-<version>.vsix` (12 files, 119.75 KB) and `npm run smoke:vsix` reads it back as a zip - by
 hand, with `node:zlib`, because this tree has no runtime dependency and adding one to read an archive
 would be the tail wagging the dog. The archive is a **fourth** artifact that nothing else here can
 load, so the same discipline `smoke:dist` and `smoke:out` follow one runtime further out applies:
-compare it against the build rather than trust the tool. Four facts were falsified rather than
+compare it against the build rather than trust the tool. Five facts were falsified rather than
 trusted - `src` in the allowlist fails both negative checks; a byte appended to a compiled file after
 packaging fails the byte-identity check; corrupting the licence copy fails *"the licence in the
-archive is the repository's, byte for byte (1388 bytes)"*; and removing `LICENSE` from `files` is the
-instructive one, because `vsce` prints `WARNING LICENSE, LICENSE.md, or LICENSE.txt not found`,
-packages **10** files and **exits 0** - a warning is not a check, so `smoke:vsix` is what fails.
+archive is the repository's, byte for byte (1327 bytes)"*; editing `extension/vscode/README.md` after
+packaging fails *"the readme in the archive is the source's, byte for byte"*, which is the comparison
+added in this pass, because the readme is the marketplace's long description and had been the one file
+in the archive checked for existence alone; and removing `LICENSE` from `files` is the instructive one,
+because `vsce` prints `WARNING LICENSE, LICENSE.md, or LICENSE.txt not found`, packages **10** files
+and **exits 0** - a warning is not a check, so `smoke:vsix` is what fails.
 
 The installed floor moved with it. The manifest declares `"type": "module"`, so the compiled
 `out/host/activate.js` is an ES module, and the Node.js extension host could not load one until VS
@@ -246,7 +249,7 @@ gate`, so a package whose own tests are red cannot leave the machine, where `pri
 - **A version is written in four files and reconciled by nothing.** The extension's `package.json`,
   this repository's root `package.json`, and each of their `package-lock.json` root entries carry the
   same figure by convention and no mechanism, so the marketplace's version and the CLI's reported
-  `veridianVersion` can drift apart silently. They are all `0.3.0` as this is written. **This entry
+  `veridianVersion` can drift apart silently. They are all `0.4.0` as this is written. **This entry
   used to claim the check was `npm run package`, and that was wrong about its own subject** - what
   `package` proves is narrower: the archive is named `veridian-cockpit-<manifest version>.vsix`
   because the `package` script passes no `--out`, so the *filename and the manifest it packaged*
@@ -707,6 +710,54 @@ which the design turned on.
 in the world through a `run` step and **one of those expecting the world to refuse it**, and the same
 `FAIL` -> repair -> `PASS` descent. Measured in §7.
 
+### Phase C9 - the twelfth adapter: `sim-mobile`, the handset world
+
+The last of the Tier 2-3 device family, and the first world whose subject is a **handset**. The
+application is a real child process and it provisions the substitution the way `sim-posix`, `sim-os`
+and `sim-container` are provisioned: by printing **command vectors on its stdout**, one JSON argument
+vector per line, with every human-readable line on stderr. What is substituted is the **device** -
+boot state, installed bundles with their versions, permissions and grants, deep links, notifications,
+keychain entries and per-bundle log lines - and there is no emulator, no image, no booted system and
+no hardware anywhere in the loop.
+
+**The one part of it that is not a substitution is the launch.** A bundle launch starts a **real
+child process** through `core/process.ts`, and the launch deadline is applied by the world rather than
+described by it - so a criterion about an activation is a reading of a process that really ran. That
+is where the substitution deliberately stops, and it is the same line `sim-container` draws around a
+container's own captured output.
+
+**What it declines to do, by name.** A path outside both the application's own tree and the world's
+sandbox is **refused and recorded** rather than resolved, because opening the developer's own
+filesystem while calling it the device's is the one thing this world must not do. The vocabulary
+split matters: a command the world does not implement is `refused` while a resource it does not hold
+is `absent`, and the two are different words because they are different observations. `rebuild()`
+deliberately keeps `calls` and `escapes` across a reset, because the boundary record describes the
+*run* rather than the *world* - the rule the boundary work landed generally: a reset restores the
+world, not the record.
+
+- `core/` gains `core/environment/mobile-observation.ts` and one more plan field (`MobilePlan`), and
+  nothing else a validator could have reached through an adapter. That file carries the reading
+  (`mobile.device`), the reference grammar, the renderings the validators compare and the
+  **nine**-member `MOBILE_SIMULATED_SURFACES` constant.
+- A twelfth validator family - `mobile.device`, `mobile.os`, `mobile.screen`, `mobile.orientation`,
+  `mobile.bundle`, `mobile.installed`, `mobile.permission`, `mobile.deeplink`, `mobile.notification`,
+  `mobile.logs`, `mobile.call`, `mobile.probe` - needs no change to `core/validation` or
+  `core/execution`. That is the **tenth** demonstration of the claim this series exists to make, and
+  five of the twelve are targetless because the world itself is their subject.
+- `MOBILE_ENV` declares the **four** names this world publishes to the application it starts, and the
+  split between two of them is the one `sim-container` draws: `sandbox` is a host path this machine
+  can open, `workspace` is a path inside the device that no `run` step may name.
+- **A secret is redacted rather than omitted.** A recorded command keeps the request's shape and
+  replaces the value: a keychain value is never written into a bundle while the **digest** of it is,
+  so a criterion asking whether the value was written is answerable without the value being in the
+  evidence.
+- `snapshot-restore` is not offered by this substitute, so the reset register answers `restart` and the
+  adapter installs no strategy it cannot perform.
+
+**Acceptance:** four deliberate defects, twenty-five criteria, twelve validators, three criteria
+acting in the world through a `run` step and **one of those expecting the world to refuse it**, and
+the same `FAIL` -> repair -> `PASS` descent. Measured in §7.
+
 ---
 
 ## 5. Simulated worlds, and what "blocked" actually means
@@ -766,7 +817,7 @@ run ids rather than adjectives.
 | `sim-os` (windows, macos) | real process runner | `kernel`, `os-identity`, `path-semantics`, `acl`, `registry`, `preferences`, `service-manager`, `egress`, `provisioning` | **built** (Windows, judged as `svc-audit`; macOS is the same world with a different declared family) |
 | `sim-vscode` | a real extension loaded by a real Node process through a resolved module | `extension-host`, `module-resolution`, `activation-events`, `command-registry`, `window`, `configuration`, `workspace` | **built**, see §7 |
 | `sim-data` | real app process issuing real broker-protocol requests over a real TCP socket | `broker`, `replication`, `group-coordination`, `log-storage`, `retention`, `transactions`, `partitioning` | **built**, see §7 |
-| `sim-mobile` | real app code against a real device API surface | the device, the emulator, the touch OS | planned |
+| `sim-mobile` | real app process provisioning a substitute device over a real command surface | `device`, `emulator`, `touch-os`, `display`, `input`, `sandbox`, `keychain-service`, `app-store`, `push-service` | **built**, see §7 |
 
 **The Simulated column prints the world's own declared surface names, and a test holds the
 agreement.** Each cell is the members of that world's `<X>_SIMULATED_SURFACES` constant, spelled the
@@ -1521,8 +1572,13 @@ SHA-256 `45B8196F...`), its `vscode-port.js` read for both repairs, its manifest
 the release API queried for its asset list. The same read was performed for the `0.3.0` build before
 it left this machine, with the one difference that the archive was measured where `npm run package`
 wrote it rather than downloaded back, because the upload is the maintainer's step (below): `122,183
-bytes`, SHA-256 `A352EB79...`, 12 entries, and `npm run smoke:vsix` 34 checks, exit 0. The four-way
-read is owed again once that archive is attached - an upload's success line is not the evidence.
+bytes`, SHA-256 `A352EB79...`, 12 entries, and `npm run smoke:vsix` 34 checks, exit 0. **That figure
+did not reproduce, and the release carries no asset at all.** Re-measured at HEAD the `0.3.0` archive
+is `122,304 bytes`, SHA-256 `FB089839...`, 12 entries - so the note quoted a build this tree does not
+produce - and `gh release view v0.3.0 --json assets` answers `assets: []`. The four-way read was never
+owed to that release because it was never performed on it; `0.4.0` is the first release whose archive
+is attached, and the read is discharged there. *An upload's success line is not the evidence - and
+neither is a figure recalled in a note about one.*
 
 **Regression tests.** `tests/vscode-cockpit-demo.test.ts` (8 tests) holds what a test can hold about a
 demo whose artifact the root gate does not build: the identity it pins, the validators and evidence
@@ -1534,4 +1590,64 @@ moves that expectation in the same pass. And `tests/demo-rosters.test.ts` (4 tes
 roster a reader is offered against the scripts the manifest declares, after `demo:vscode` and
 `demo:data` were found declared, shipped and documented - and named in neither command block of
 `AGENTS.md`.
+
+### Phase C9: the handset world, and what the twelfth adapter proved
+
+The first world whose subject is a **handset**, and the third whose provisioning surface is a command
+stream rather than an API. A real application process is started as a real child process, it is handed
+a device store through its environment, and it provisions the substitution by printing **command
+vectors on its stdout**. What is substituted is the **device**: boot state, installed bundles with
+their versions, permissions and grants, deep links, notifications, keychain entries and per-bundle log
+lines. There is no emulator, no image, no booted system and no hardware anywhere in the loop.
+
+| Step | Status | Evidence |
+|------|--------|----------|
+| The substitute | built | `adapters/sim-mobile/mobile-port.ts` holds the boot state, the installed bundles with their versions, the permissions and grants, the deep links, the notifications, the keychain entries and the per-bundle log lines, and answers its register of commands in process. **Four results rather than a boolean, because each is a different repair**: `MOBILE_ACTION_RESULTS` names `answered`, `absent`, `refused` and `failed`, so a command the world does not implement is `refused` while a resource it does not hold is `absent` - two different words for two different observations. 49 tests. |
+| The one real spawn | built | a launch really starts a child through `core/process.ts`, and the world applies the launch deadline itself - so an activation count is a count of processes rather than of intentions. This is where the substitution stops, and it stops there on purpose. |
+| What it refuses by name | built | a path outside both the application's own tree and the world's sandbox is **refused and recorded** rather than resolved, and the refusal is recorded as a **boundary crossing**, because opening the developer's own filesystem while calling it the device's is the one thing this world must not do. |
+| `rebuild()` keeps the record | built | `calls` and `escapes` deliberately survive a reset, because the boundary record describes the **run** and not the world. Clearing them would destroy the evidence of an early crossing and leave a later iteration free to report a clean run - the shape of false pass M3 exists to refuse. |
+| Redaction rather than omission | built | a recorded command keeps its shape and replaces its value: a keychain value is never written into a bundle while the **digest** of it is, so a criterion asking whether the value was written is answerable without the value being in the evidence. |
+| Adapter lifecycle | built | `adapters/sim-mobile/sim-mobile-environment.ts` implements all ten `EnvironmentAdapter` methods, performs `run` steps, and waits for the readiness line the application prints - `com.veridian.cart provisioned: N files, N commands`. `MOBILE_ENV` names **four** variables (`VERIDIAN_MOBILE_SANDBOX`, `VERIDIAN_MOBILE_WORKSPACE`, `VERIDIAN_MOBILE_DEVICE`, `VERIDIAN_MOBILE_PLATFORM`), and the split between the first two is the same one `sim-container` draws: `sandbox` is a host path this machine can open, `workspace` is a path inside the device that no `run` step may name. |
+| Observation vocabulary | built | `core/environment/mobile-observation.ts` carries the reading (`mobile.device`), the reference grammar, the renderings the validators compare and `MOBILE_SIMULATED_SURFACES` - nine declared surfaces (`device`, `emulator`, `touch-os`, `display`, `input`, `sandbox`, `keychain-service`, `app-store`, `push-service`). The twelfth family needed **no core change** beyond this file, a `MobilePlan` and a name registration: the **tenth** sample of that claim. |
+| Validator family | built | `validators/mobile/` - twelve validators: `device`, `os`, `screen`, `orientation`, `bundle`, `installed`, `permission`, `deeplink`, `notification`, `logs`, `call`, `probe`. Five are targetless because the world itself is their subject, and the two distinguished by *who asked* carry the inversion two earlier families established: `mobile.call` reads the request the **application** put to the device, `mobile.probe` the one the **criterion** issued. 48 tests. |
+| Evidence, honestly bounded | built | its only evidence kind is `json`, and the reading carries `simulated` naming the nine surfaces, because this world stands nine things in. A substitute that states its own limits in a constant and carries them into the reading is the same discipline as `(exposed)` and `(declared, not enforced)` one world earlier. |
+| Demo | built | `examples/sim-mobile/` - four deliberate defects, twenty-five criteria, `npm run demo:mobile`, exit 0. Measured: iteration 1 `FAIL`s exactly five criteria (`AC-005`, `AC-007`, `AC-013`, `AC-015`, `AC-016`), and the defects are repaired in criterion order, so the failing count descends **`5 -> 4 -> 2 -> 1 -> 0`** over five iterations and four repairs. The final run is `PASS (COMPLETED, 5 iteration(s))` with `25/25 mandatory criteria passed, environment valid, no safety violation, evidence complete.` |
+| Regression tests | built | `adapters/sim-mobile/mobile-port.test.ts` (49), `validators/mobile/mobile-validators.test.ts` (48) and `tests/sim-mobile-demo.test.ts` (34), beside `tests/sim-mobile-environment.test.ts`. Plus a `mobile` clause in `tests/environment-gaps.test.ts`, the `mobile` roster entry in `tests/readme-rosters.test.ts`, the `demo:mobile` entry in `tests/demo-rosters.test.ts` and the world-table row in this document, which `tests/simulated-surfaces.test.ts` reads on both sides. |
+
+**Why the defect table needs three controls before it can have a headline.** `D1` (`AC-005`, the
+orientation the application asks the device for), `D3` (`AC-013`, the permission key a grant names) and
+`D4` (`AC-015`, the notification title) are each read by exactly **one** criterion. `D2` (`AC-007`, a
+release constant) moves **two** - `AC-007` and `AC-016` - because the version the bundle carries and
+the version the notification body carries come from the same constant. So the failing count falls by
+one, then two, then one, then one: `5 -> 4 -> 2 -> 1 -> 0`, and the reader watches three single-cause
+movements before watching one edit move two readings. The criteria that compare a **length** rather
+than a value do not move with it, because `1.5.0` is the same length as `1.4.0` - which is why the
+reach is four criteria and not six, and why a descent that is one edit one reading, three times over,
+is what makes the fourth reading attributable to the edit rather than to a flaky world.
+
+**Why two worlds' file allowances had to be widened in the same pass.** The allowance a world hands
+the process runner named the world's own sandbox tree and not the tree beside it, so an application
+whose provisioning writes in both was refused a write the world had itself told it to make. It was
+found by **running** the demos rather than by reading the adapters, and it was found twice: the
+container world and the handset world carried the same shape, the second of them because the rule had
+been paid for at the first and not restated at the next. Both allowances now name the world's context
+root **and** the sandbox tree, and both demos were re-measured afterwards: `npm run demo:container`
+`27/27`, `npm run demo:mobile` `25/25`, both exit 0. *A rule paid for at one world and not restated at
+the next is a rule that has not been learned; the second occurrence is the one that proves it.*
+
+**Why the readiness line is guarded rather than commented.** The line this world waits for is
+`com.veridian.cart provisioned: N files, N commands`, and a defect aimed at it would time out
+`probe()` and report `INCONCLUSIVE` for a defect whose intent was to be observable - the world would
+never come up, so the criterion it was filed against would never get the chance to move. The guard is
+a test that applies each defect in turn, asserts the edited program **differs** from the shipped one
+(the positive control that stops a stale anchor passing vacuously), and only then asserts the
+readiness literal survives. A comment saying "do not aim a defect here" is not a guard; the guard is a
+test that applies the defect and re-reads the line.
+
+**And every claim in this section that a guard can hold is held by one.** The world-table row is read
+on both sides by `tests/simulated-surfaces.test.ts`, and that guard was **falsified four ways** rather
+than trusted - a surface the constant does not declare, a surface the document omits, a surface the
+constant renames, and a duplicate - each firing by name and each restored byte for byte. The demo's own
+34 tests were falsified three ways in the same pass. *A green suite is evidence that nothing has broken
+yet; the evidence that a rule is held is what happens when it is broken on purpose.*
 

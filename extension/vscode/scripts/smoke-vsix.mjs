@@ -204,6 +204,22 @@ for (const name of installed) console.log(`     ${name}`);
 
 check(find("extension/readme.md") !== null, "the archive ships a readme");
 
+// The readme is the marketplace's long description, and unlike the icon and the licence beside it
+// this file had no byte comparison - only the existence check above - so an archive built before the
+// last edit to `extension/vscode/README.md` shipped a description that disagreed with the repository
+// while every check here passed. It was found by editing that file *after* packaging and asking which
+// files this script actually reads back: the compiled tree, the manifest field for field, the icon and
+// the licence, and nothing else. Two independent claims, as everywhere else in this repository - the
+// archive *ships* a readme, and the readme it ships is *this one*.
+const archivedReadme = find("extension/readme.md");
+if (archivedReadme !== null) {
+  const sourceReadme = await readFile(join(PACKAGE_ROOT, "README.md"));
+  check(
+    archivedReadme.data.equals(sourceReadme),
+    `the readme in the archive is the source's, byte for byte (${String(sourceReadme.length)} bytes)`,
+  );
+}
+
 const icon = find("extension/icon.png");
 check(icon !== null, "the archive ships the extension icon");
 if (icon !== null) {

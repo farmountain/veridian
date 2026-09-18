@@ -1,8 +1,8 @@
 {
   "name": "veridian-cockpit",
   "displayName": "Veridian Cockpit",
-  "description": "The Veridian Cockpit - the VS Code client for Veridian. Run a sandbox validation, read the verdict, open the evidence it was reached from. Veridian builds eleven reproducible sandbox worlds, records which limits each one enforces, and decides whether the software works. The coding agent stays external and never decides whether it succeeded.",
-  "version": "0.3.0",
+  "description": "The Veridian Cockpit - the VS Code client for Veridian. Run a sandbox validation, read the verdict, open the evidence it was reached from. Veridian builds twelve reproducible sandbox worlds - some real, some a substitute for one - records which limits each world can actually enforce, and decides whether the software works; a world that cannot justify a verdict is reported INCONCLUSIVE rather than passed. The coding agent stays external and never decides whether it succeeded.",
+  "version": "0.4.0",
   "type": "module",
   "license": "BSD-2-Clause",
   "repository": {

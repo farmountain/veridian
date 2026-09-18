@@ -28,14 +28,27 @@ schemas  →  core/{clarification,goal,acceptance,environment,validation,evidenc
 core/clarification   the Ambiguity Resolution Protocol — see §3
 ```
 
-**Deferred, with the reason:**
+**Deferred, with the reason — and, where a row has since landed, with the measurement that says so.**
 
-| Deferred | Why |
-|---|---|
-| `extension/vscode/` (Veridian Cockpit) | The spec is explicit: *"VS Code ≠ Veridian."* The extension is a thin client over the Core interface. Building it before the CLI proves the same interface would freeze the wrong shape. The Core is designed so the CLI, the extension, CI and MCP can all drive it — but only the CLI is built. |
-| Level-3 MCP integration | Spec §23 marks it out of MVP. *"MCP is the door. Veridian is the building."* |
-| Kubernetes / cloud / mobile / VM adapters | Spec §9 excludes them from MVP. |
-| Goal compiler, marketplace, plugin system | Spec §55 forbids them. |
+The `Status` column was added in place rather than the rows being rewritten, because this table's value
+is as an audit trail: what was decided at the time, and what the tree says now. It is the same pattern
+the assumptions log below already uses (`A5`, `A11` and `A12` are reversals recorded **beside** what
+they reversed rather than replacing it). Two rows were **split** rather than edited, because one row
+naming several things whose statuses have since diverged hides the status of each — the defect this
+repository records as *"a documentary guard's extension point can be a row that must be split, and the
+row that hides two worlds is the row that hides both."* `tests/implementation-plan-status.test.ts`
+reads this table and holds the `Status` vocabulary and the agreement between a named directory and
+whether it exists.
+
+| Deferred | Status | Why, or what landed |
+|---|---|---|
+| `extension/vscode/` (Veridian Cockpit) | **landed** | The spec is explicit: *"VS Code ≠ Veridian."* The extension is a thin client over the Core interface. Building it before the CLI proved the same interface would have frozen the wrong shape — so it was deferred, correctly, and then built once the interface was proven. **Landed**: four shipping routes (a clone, an npm package, the Cockpit as a development install, the Cockpit as a `.vsix` published to the marketplaces), its own three-command gate (`npm run gate` = typecheck, test, build, `smoke:out`), and the twelfth demo (`examples/vscode-cockpit/`) which judges **the real compiled Cockpit** inside the `sim-vscode` world and found two defects the extension's own 72-test suite could not. |
+| Level-3 MCP integration | **deferred** | Spec §23 marks it out of MVP. *"MCP is the door. Veridian is the building."* The gate is unchanged and is restated as a **measurement** rather than a slogan: Level 1 is Veridian driven by a human through the CLI; Level 2 is Veridian driven by an external agent through the failure artifacts (`.veridian/latest-result.json`, `.veridian/latest-failure.md`) and the repair-gate command — **this is what ships today**; Level 3 is Veridian *exposing itself* to an agent as an MCP server. What is measured today is that `core/**` contains no `mcp` whatsoever, so Level 3 is greenfield rather than half-built. |
+| Kubernetes adapter | **landed** (simulated) | Spec §9 excluded it from MVP. **Landed as `adapters/sim-k8s/`**: a real application process really deploying itself over a real HTTP control plane it really calls, into namespaces the control plane really holds — with scheduler, kubelet, etcd and admission standing in, and **no cluster software anywhere in the loop**. The substitution is declared in the plan and in `environment.json`. |
+| Cloud provider adapter | **landed** (simulated) | Spec §9 excluded it from MVP. **Landed as `adapters/sim-cloud/`**: a real HTTP server speaking a provider's own routes over loopback, holding buckets, objects, queues, secrets and principals and deciding every permission question with the account's own evaluator — with **no cloud account, no session, no provider API and no outbound socket anywhere in the loop**. |
+| Mobile device-farm adapter | **landed** (simulated) | Spec §9 excluded it from MVP, and it was the last unbuilt row. **Landed as `adapters/sim-mobile/`**: a real application process really provisions a substitute handset through commands it really issues, and is judged on what that substitute holds — a model, an OS and version, an orientation, a screen size and density, installed bundles, per-bundle permissions, deep links, notifications, logs and keychain entries. The application is a real child process, there is no new step kind, and both of its limits are stated **in the values its criteria compare** rather than in a footnote. Four defects, twenty-five criteria, `examples/sim-mobile/`; **no emulator, no image and no booted system anywhere in the loop**. The design is `docs/GAP-CLOSURE-DESIGN.md` W2. |
+| VM / guest-kernel adapter | **deferred** | Spec §9 excluded it from MVP. **Still deferred on purpose**: `sim-posix` and `sim-os` are *simulated* systems — a real application process really provisioning a substitute Linux / Windows system through commands it really issues, **with no virtual machine and no guest kernel anywhere in the loop** — and a world whose subject is a booted kernel is a different claim that nothing here can prove. `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` §5 records every remaining row beside the `sim-*` world that answers it. |
+| Goal compiler, marketplace, plugin system | **deferred** | Spec §55 forbids them, and `AGENTS.md`'s hard scope boundary repeats the prohibition. Unchanged. |
 
 **Dependencies — one runtime package, two dev packages, and no framework:**
 
@@ -352,6 +365,18 @@ over, and it is the one place the plan is internally inconsistent: its own scope
 the step that proves the scope was met. Veridian's self-validation today is its own `node --test`
 suite, which `npm run gate` actually runs — real, but not the same claim as validating itself.
 
+**Status: landed — and the argument above is kept as the record of why it could not be written
+inside the MVP.** That argument was correct about the MVP and is wrong about the tree that followed
+it, which is why it is preserved rather than rewritten. Twelve adapters are registered and eleven of
+them need no browser, so `acceptance/veridian-mvp.yaml` exists, its criteria are judged by the
+`local-process` family, and `npm run acceptance` runs the contract **twice** and requires both passes
+to agree — because a single run on a fresh checkout would pass over a world that never rebuilt.
+`acceptance/ladder/` is the second self-acceptance route and judges a different claim: not the
+command line as a product but a *run* as a witness, reading each nested run's own `latest-result.json`
+for the rung a gap reached. **A reader who wants the current answer should read the directory rather
+than this paragraph**, which is the same rule §1's table follows with its Status column: the decision
+recorded in place, and the tree beside it.
+
 **Layering rule, enforced by imports:** `core/*` may not import `adapters/*`, `validators/*`, or
 `cli/*`. The Core defines the interfaces; adapters and validators implement them; the CLI wires
 them. This is the mechanical guarantee of *"VS Code ≠ Veridian"* extended to every surface: **the
@@ -405,7 +430,7 @@ one that must not be wrong.
 6  core/environment, core/evidence                      (adapter iface, bundle writer)
 7  core/execution                                       (ports, repair gate, controller, loop)
 8  adapters/local-web, validators/playwright            (the two MVP adapters)
-9  cli                                       (drive it; the self-validation contract is deferred - see §5)
+9  cli                                       (drive it; the self-validation contract landed later - see §5)
 10 examples/shopping-cart                               (the canonical demo)
 11 integration test: full loop, offline                 (the proof)
 12 gate: tsc --noEmit  +  node --test                  (no prettier - see §1, row 3)

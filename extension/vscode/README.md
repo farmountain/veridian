@@ -1,9 +1,10 @@
 # Veridian Cockpit
 
 A thin client for Veridian inside VS Code: run a sandbox validation, read the verdict, open the
-evidence it was reached from. Veridian builds eleven reproducible sandbox worlds, records which
-limits each one enforces, and decides whether the software works. The coding agent stays external
-and never decides whether it succeeded.
+evidence it was reached from. Veridian builds twelve reproducible sandbox worlds - some real, some a
+substitute for one - records which limits each world can actually enforce, and decides whether the
+software works. A world that cannot justify a verdict is reported `INCONCLUSIVE` rather than passed,
+so `PASS` is only ever earned. The coding agent stays external and never decides whether it succeeded.
 
 This paragraph is the extension's marketplace description: both storefronts take the short form from
 the `description` field of `package.json` and the long form from this file, so the two are written
@@ -25,8 +26,8 @@ estimated:
 | Tests | `node --test` | 72 tests, 0 failing |
 | Build | `npm run build` | `out/` - 6 files |
 | Compiled artifact | `npm run smoke:out` | 15 checks, exit 0 |
-| Packaged archive | `npm run package` | `veridian-cockpit-0.3.0.vsix` - 12 files, 119.32 KB |
-| Archive contents | `npm run smoke:vsix` | 34 checks, exit 0 |
+| Packaged archive | `npm run package` | `veridian-cockpit-0.4.0.vsix` - 12 files, 119.75 KB |
+| Archive contents | `npm run smoke:vsix` | 35 checks, exit 0 |
 | All of the above but the archive | `npm run gate` | exit 0 |
 
 **The editor floor is `^1.100.0`, and that is a fact about the entry point rather than a courtesy.**
@@ -175,8 +176,12 @@ repository cannot reach at all:
    file it carries is the build's. Each of those was falsified rather than trusted: putting `src` in
    the allowlist fails both negative checks and exits 1; adding a byte to a compiled file *after*
    packaging fails the byte-identity check and exits 1; appending a line to the licence copy fails
-   with `the licence in the archive is the repository's, byte for byte (1388 bytes)` and exits 1; and
-   taking `LICENSE` out of the manifest's `files` produces the one failure worth reading twice -
+   with `the licence in the archive is the repository's, byte for byte (1327 bytes)` and exits 1;
+   appending a line to this readme *after* packaging fails `the readme in the archive is the source's,
+   byte for byte` and exits 1 - and that comparison is new, because this file is the marketplace's
+   long description while being inside the archive, so it had been the one file compared for
+   existence alone; and taking `LICENSE` out of the manifest's `files` produces the one failure worth
+   reading twice -
    `vsce` prints `WARNING LICENSE, LICENSE.md, or LICENSE.txt not found`, packages **10** files, and
    **exits 0**, so nothing in the packaging step reports a problem. `smoke:vsix` is what fails
    (`the archive ships the licence it is redistributed under`, exit 1). That is the whole reason
