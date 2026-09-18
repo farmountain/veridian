@@ -1,0 +1,111 @@
+# The world this application is judged in: a *simulated* mobile device.
+#
+# `adapter: sim-mobile` is the twelfth adapter and the eighth simulated one. There is no emulator, no
+# instruction translator, no guest kernel, no display, no input pipeline, no touch subsystem, no keychain
+# service, no app store and no push service anywhere in this run. The world is a directory on this
+# machine, a device record, a store of installed bundles with the files really copied into it, and a
+# register of commands it answers in process.
+#
+# The substitution is the point rather than a convenience, and it is declared rather than implied:
+# `mobile-observation.ts` exports the surfaces this world stands in for - device, emulator, touch-os,
+# display, input, sandbox, keychain-service, app-store and push-service - and the adapter writes that
+# list into every reading, so a PASS can be traced to a named substitute instead of to unexamined
+# reality.
+#
+# ## What is never simulated
+#
+# The application's provisioning program really runs as a child process with this operator's own
+# privileges, and its exit code and its two streams are the ones a process really produced. The bundle it
+# writes is a real directory tree with real bytes, a real file count and a real `sha256` over its
+# contents and its names. The bundle the device holds is that tree **really copied** into the sandbox,
+# and the entry point is **really launched** as a child process by this runtime - so the stdout and stderr
+# a `mobile.logs` criterion reads are the streams of a real program, and its exit code is the code a real
+# program exited with. And a command naming a path outside both the application's own tree and this
+# world's sandbox is **refused by name** rather than quietly resolved, with the attempt recorded as a
+# boundary crossing that fails the run, because a program that reached outside its sandbox did not get a
+# verdict.
+#
+# ## The two things this world deliberately does not record
+#
+#   - **No wall clock and no process id.** Both would differ on every run, and `M1` - "the same code gave
+#     the same result twice" - compares two readings of the same world. A number that moves because time
+#     moved would make every pair of runs disagree about a world that did not.
+#   - **No keychain value.** An entry is recorded as its key, its byte length, its accessible state and a
+#     digest over the secret. The digest travels; the value never does. A reading that carried it would
+#     put an application's secret into an evidence bundle, which is the one place it must not be.
+#
+# Read this next to `goal.yaml`, which states the obligations a simulated world has to meet, and next to
+# `acceptance.yaml`, which is phrased entirely in the world's own spelling - `com.veridian.cart` and
+# `veridian://cart/item`, never this machine's path to the sandbox.
+
+adapter: sim-mobile
+
+# The application directory, relative to this file. The provisioning program and the documents are all
+# here; the bundle sources the program writes and the sandbox the world creates both live inside it and
+# are excluded by `.gitignore`.
+app: app
+
+# This world has no HTTP surface at all - no page, no socket to probe, no status to expect. Both of these
+# are `null` rather than omitted, because "declared absent" and "forgotten" are different documents, and
+# `core/environment/load.ts` reads the first as a fact and would treat the second as a gap.
+url: null
+dependencyInstall: null
+
+mobile:
+  # The identity the readings name, and the identity every command is answered for. Declared, never
+  # inferred: `mobile.device` compares the device record this world holds against the document an
+  # operator wrote, so a run that provisioned a different handset is a run a criterion can name.
+  device: sim-cart-device
+
+  # The platform this world stands in for. `core/environment/load.ts` checks it against the same family
+  # list the observation vocabulary exports, and the application refuses any other by name.
+  #
+  # This is a rule rather than a label, which is why it is written here and not in the contract: the
+  # platform a device answers with decides its own path grammar, and a world that accepted `ios` would
+  # be claiming a grammar it does not have.
+  platform: android
+
+  # The sandbox directory, relative to `app`. Resolved against the application directory, so the store
+  # the world creates and the tree `.gitignore` excludes are the same one by construction.
+  #
+  # A directory of the world's own rather than the application directory, because every run rebuilds it
+  # from nothing: rooting the world at `app` would delete the code under test on the first reset.
+  #
+  # There is deliberately no `apiLevel` here. The level is a fact the *device* answers with, reported by
+  # `mobile.os`, and a document that also declared one would be a second place for one fact to disagree
+  # with itself.
+  root: sandbox
+
+start:
+  # The application's own provisioning program. A real Node program, run as a child process with this
+  # operator's own privileges, which is the first obligation a simulated world has to meet - the
+  # application executes for real and only the *device* is substituted.
+  command: node
+  args:
+    - provision.mjs
+
+  # The application's own signal that it finished. Both counts are `\d+` rather than digits on purpose:
+  # the program prints how many files it wrote and how many commands it issued, and a pattern pinning
+  # numbers would pass for a run that provisioned a different set of either.
+  #
+  # The name in front of it is the *bundle id* rather than the program's own name, because that is what
+  # the program prefixes its completeness line with - measured off the program's own output rather than
+  # recalled, since a readiness pattern that matches nothing is a world that never starts.
+  readyPattern: 'com.veridian.cart provisioned: \d+ files, \d+ commands'
+
+health:
+  # No `path` and no `expectStatus`. Both are HTTP concepts and this world has no HTTP surface to probe;
+  # the readiness of the device is the readiness pattern above plus the readings taken afterwards.
+  timeoutMs: 30000
+  intervalMs: 100
+
+reset:
+  # `restart`, and the only strategy this world can honour.
+  #
+  # `sim-mobile` refuses `snapshot-restore` by name rather than downgrading it to a restart: a snapshot
+  # this world cannot take is one it cannot restore, and a reset that silently did something else would
+  # make every claim of repeatability unearned. `restart` is honest here - the device record, the bundle
+  # store, the copied trees, the permission decisions, the deep-link registrations, the notification
+  # queue, the keychain entries and the captured log streams are rebuilt from nothing, so the world a run
+  # starts in is a world that run built rather than one it inherited.
+  strategy: restart

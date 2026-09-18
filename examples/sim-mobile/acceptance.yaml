@@ -1,0 +1,384 @@
+# The acceptance contract: what the substitute handset must hold when the application is right.
+#
+# Twenty-five criteria over all twelve validators the mobile family exports. Three of them carry `run`
+# steps - the commands the *criterion* issues rather than the ones the application did - and one of
+# those three expects the world to **refuse** it. Both figures are read off this document by
+# `tests/sim-mobile-demo.test.ts` rather than trusted, because a count in prose drifts at exactly the
+# rate at which nothing reads it.
+#
+# Every one of the twelve names is used by at least one criterion here: `device`, `os`, `screen`,
+# `orientation`, `installed`, `bundle`, `permission`, `deeplink`, `notification`, `logs`, `call` and
+# `probe`. That is a property a test holds rather than a claim this comment makes - a validator that
+# nothing judges is a validator whose failure modes nobody has watched.
+#
+# ---------------------------------------------------------------------------------------------
+# How to read the targets
+#
+# Five of the family ask about the world itself and name no target at all (`device`, `os`, `screen`,
+# `orientation`, `installed`), because there is only one handset to describe and one screen on it. The
+# remaining seven name something the world holds, and there are four spellings between them:
+#
+#   `mobile.bundle`        `com.veridian.cart`                   - a bundle id
+#   `mobile.permission`    `com.veridian.cart/camera`            - a bundle id, a slash, a permission key
+#   `mobile.deeplink`      `veridian://cart/item`                - a whole URI, scheme and all
+#   `mobile.notification`  `com.veridian.cart#1`                 - a bundle id, `#`, a 1-based position
+#
+# `mobile.logs` reads a bundle id as well, because a log stream belongs to the bundle that wrote it.
+# `mobile.call` and `mobile.probe` take either an action name as the world records it
+# (`bundle.install`) or a whole command line (`device factoryReset`) - and a command this world does not
+# serve has no action to be keyed by, which is the only reason the second spelling exists.
+#
+# ---------------------------------------------------------------------------------------------
+# The two questions that look the same and are not
+#
+# `mobile.call` reads the request the **application** made; `mobile.probe` reads the one the
+# **criterion** made. AC-022 judges a refusal the application asked for and AC-025 judges one the
+# criterion asked for, and the pair is here on purpose: a contract that could earn `answered` from its
+# own request would be able to pass without the application ever having reached the world.
+#
+# ---------------------------------------------------------------------------------------------
+# The four facts this world states instead of overstating
+#
+# A screen is `rendered and never drawn` - the geometry is resolved for real and nothing reached a
+# surface. A notification is `queued, never delivered` - there is no push service. A deep link is
+# `resolved, no bundle launched` - the world matched a URI to the bundle that registered it, and
+# matching is not routing. A permission says whether the bundle `declared` it and whether anything ever
+# `prompted` for it, because a permission granted against a manifest that never named it is a different
+# defect with a different repair. Each of those parentheticals is part of the value a criterion
+# compares, not a note beside it, which is the `container.limit` precedent one family over.
+#
+# ---------------------------------------------------------------------------------------------
+# What no criterion here may do, and the one validator this family does not have
+#
+# Nothing here claims a handset was touched, a package was installed from a store, or a signal left
+# this machine. There is no criterion about a keychain entry, and the omission is deliberate rather
+# than forgotten: `keychain.set` records the digest of what the application gave it and never the
+# value, and the family exports no `keychain` validator that reads it. The world really hashed the
+# secret, so the fact is in the observation - it is simply not something this contract asks about, and
+# a criterion invented for it would be a name no validator answers to.
+# ---------------------------------------------------------------------------------------------
+
+version: 1
+
+# Declared rather than omitted. A contract without a `goal_id` sets `goalId` to `null`, which is the
+# value that makes the cross-goal contradiction guard's live branch unreachable - a guard whose null
+# branch is reachable by leaving a field out is a guard no document reaches.
+goal_id: sim-mobile
+
+criteria:
+  - id: AC-001
+    description: >-
+      The device came up as the application described it. The application sent every one of these as a
+      flag on `device.boot`, so the reading is computed from what it asked for rather than from a
+      default this world supplied - which is why the criterion compares the whole tail of the rendering
+      and not the model alone.
+    expect:
+      - validator: mobile.device
+        contains: 'Veridian Veridian Pixel 8 android Android 14, booted, locale en-US'
+    evidence: [json]
+
+  - id: AC-002
+    description: >-
+      The device has an identifier, and the identifier is *derived* rather than declared: this world
+      builds it from the device name the environment document gave it, so the same document produces
+      the same handset every run while no document can claim an identifier the world did not compute.
+      The criterion pins the shape - the prefix and the eight upper-case hex digits - and deliberately
+      not the digest, because a contract that pinned the value would be asserting a fact about the name
+      the operator chose rather than about the world's derivation of it.
+    expect:
+      - validator: mobile.device
+        matches: '^EMULATOR-[0-9A-F]{8} '
+    evidence: [json]
+
+  - id: AC-003
+    description: >-
+      The operating system is a record, not an installation. `apiLevel` came in on the boot command and
+      is rendered beside the version, so a world that answered `Android` and dropped the level would
+      report a handset nobody could write an application for.
+    expect:
+      - validator: mobile.os
+        equals: Android 14 (apiLevel 34)
+    evidence: [json]
+
+  - id: AC-004
+    description: >-
+      The screen geometry is resolved for real and drawn nowhere. `1080x2400 at 420dpi` is the contract
+      and `scale 2.625` is the ratio this world computed from it, so the numbers are a calculation and
+      not an echo. The parenthetical is the honest half: there is no renderer, nothing reached a
+      surface, and a criterion that pinned the geometry alone would be asserting a screen the world
+      never painted.
+    expect:
+      - validator: mobile.screen
+        equals: 1080x2400 at 420dpi, scale 2.625 (rendered and never drawn)
+    evidence: [json]
+
+  - id: AC-005
+    description: >-
+      The device was rotated onto the axis the application asked for, and the rotation and the lock are
+      reported beside it. `rotation 90` is not a constant of the reading: it is what this world resolved
+      for `landscape`, so a criterion comparing the word alone would accept an orientation the world had
+      recorded and never turned.
+    expect:
+      - validator: mobile.orientation
+        equals: landscape (rotation 90, unlocked)
+    evidence: [json]
+
+  - id: AC-006
+    description: >-
+      The bundle is on the device. This is the set question - what the handset holds - and it is a
+      different question from AC-007, which asks what one bundle says about itself. A device that had
+      accepted an install and recorded it nowhere would answer this with `0 bundle(s)`.
+    expect:
+      - validator: mobile.installed
+        contains: com.veridian.cart
+    evidence: [json]
+
+  - id: AC-007
+    description: >-
+      The bundle's own record: the name and version it was installed under, and the release code beside
+      them. All three arrived on the install command, so this is the identity the device was asked to
+      hold rather than one it inferred from the directory it copied. The state is read as `[stopped]`
+      rather than `[installed]` because the application launches this bundle before any criterion is
+      observed, and a state is a fact the world changes as it is acted on - pinning `[installed]` here
+      would be pinning a moment the run has already passed, and the reading below is what a reader can
+      actually check against the bundle. What the launch did is AC-011's and AC-012's question.
+    expect:
+      - validator: mobile.bundle
+        target: com.veridian.cart
+        contains: Cart 1.4.0 (versionCode 14) [stopped]
+    evidence: [json]
+
+  - id: AC-008
+    description: >-
+      The entry point is recorded as the manifest named it, and it is quoted in the rendering because a
+      file name is a value rather than a word - `main.mjs` and a path that merely ends in it are two
+      different claims, and the world compares the first.
+    expect:
+      - validator: mobile.bundle
+        target: com.veridian.cart
+        contains: 'entry "main.mjs"'
+    evidence: [json]
+
+  - id: AC-009
+    description: >-
+      The device holds five files, which is the count of the files the application *wrote* and not a
+      figure it declared. The manifest is one of them, because the application composed it too, and a
+      world that read a declared size would report a bundle of whatever size the application claimed.
+    expect:
+      - validator: mobile.bundle
+        target: com.veridian.cart
+        contains: 5 file(s)
+    evidence: [json]
+
+  - id: AC-010
+    description: >-
+      The digest is a digest of bytes this machine really read - the world walked the installed tree and
+      hashed it - so the criterion pins the shape rather than the value. The value would be a fact about
+      the five files' contents, and the point of this reading is that a digest exists at all: a world
+      that invented one could not produce the same string twice.
+    expect:
+      - validator: mobile.bundle
+        target: com.veridian.cart
+        matches: 'digest sha256:[0-9a-f]{12}'
+    evidence: [json]
+
+  - id: AC-011
+    description: >-
+      The bundle was launched, once, and how many times is a fact about the bundle - the same fact
+      `container.runs` is, one family over. A device that recorded an install and no launch would report
+      this as zero, and the criterion is what makes that visible.
+    expect:
+      - validator: mobile.bundle
+        target: com.veridian.cart
+        contains: launched 1 time(s)
+    evidence: [json]
+
+  - id: AC-012
+    description: >-
+      The launched program exited cleanly. This is the only reading in the family that carries a
+      process's own exit code, because the entry point really is a child process this world started -
+      the substitute launches a real file with a real runtime, so the code is one a process really
+      produced rather than one this world decided to report.
+    expect:
+      - validator: mobile.bundle
+        target: com.veridian.cart
+        contains: last exit 0
+    evidence: [json]
+
+  - id: AC-013
+    description: >-
+      The permission is granted, and the two parentheticals are the interesting half. `declared by the
+      bundle` is read out of the manifest the application installed and `never prompted for` is read out
+      of whether anything ever asked - so this single line distinguishes a grant against a manifest that
+      named the permission from one against a manifest that did not, and separates both from a grant a
+      user made.
+    expect:
+      - validator: mobile.permission
+        target: com.veridian.cart/camera
+        contains: 'camera (android.permission.CAMERA): granted (declared by the bundle, never prompted for)'
+    evidence: [json]
+
+  - id: AC-014
+    description: >-
+      The deep link resolved and nothing ran. The application registered `veridian://cart`, registered
+      `veridian://cart/profile`, and then opened `veridian://cart/item` - a URI under the host it
+      registered, so the world matched it to the bundle and recorded that it did. The record the count
+      lands on is the **registration** rather than the route, because a device holds links a bundle
+      registered and not the routes it happens to open: scheme and host match exactly and the registered
+      path matches by prefix, which is what lets one registration under `veridian://cart` answer for
+      every route beneath it. So the target here is the registered spelling, and a world that had
+      resolved nothing would render `opened 0 time(s)` - or answer `mobile.deeplink` nothing at all.
+      `no bundle launched` is not a failure of the world: routing is what a real handset would do and
+      matching is what this one does, and the rendering says which.
+    expect:
+      - validator: mobile.deeplink
+        target: veridian://cart
+        equals: veridian://cart -> com.veridian.cart (opened 1 time(s), resolved, no bundle launched)
+    evidence: [json]
+
+  - id: AC-015
+    description: >-
+      The notification was queued on the channel and at the priority the application asked for, with the
+      title it gave. The title is quoted in the rendering so that a title which happens to contain the
+      channel name cannot be mistaken for the channel field.
+    expect:
+      - validator: mobile.notification
+        target: com.veridian.cart#1
+        contains: 'cart-updates/normal: "Order ready"'
+    evidence: [json]
+
+  - id: AC-016
+    description: >-
+      The notification's body names the release the application installed. It is a second criterion
+      rather than a second expectation on AC-015 because the two facts have two different repairs: a
+      wrong title is a wording the application chose, and a wrong version in the body is the release
+      constant reaching a surface nobody thinks of as carrying it.
+    expect:
+      - validator: mobile.notification
+        target: com.veridian.cart#1
+        contains: ready on Cart 1.4.0
+    evidence: [json]
+
+  - id: AC-017
+    description: >-
+      The world kept the output of exactly one run. This is the part of a launch no exit code carries:
+      the program the device started wrote to both streams, and the world counts what it wrote rather
+      than discarding it. `over 1 launch(es)` is compared rather than the bytes, because the count of
+      runs is a fact about the device and the byte counts have their own criteria.
+    expect:
+      - validator: mobile.logs
+        target: com.veridian.cart
+        contains: over 1 launch(es)
+    evidence: [json]
+
+  - id: AC-018
+    description: >-
+      The launched program printed the banner it is supposed to print, and the only channel through
+      which a bundle's own words reach a criterion is how many bytes of them there were. That is why
+      this criterion pins a figure: the entry point writes one line to stdout, the line is composed from
+      the manifest the application installed, and a release the manifest does not carry makes the line a
+      different length. Nothing in that stream depends on this machine - every word of it is a constant
+      of the application - so the figure is a fact about the bundle rather than about a checkout.
+    expect:
+      - validator: mobile.logs
+        target: com.veridian.cart
+        contains: stdout 17 byte(s)
+    evidence: [json]
+
+  - id: AC-019
+    description: >-
+      The bundle's diagnostics are captured as well as its output. The application's entry point writes
+      its human-readable lines to stderr on purpose - stdout is the channel a launcher reads - so a world
+      that captured only stdout would report a program that said nothing while it was saying plenty.
+    expect:
+      - validator: mobile.logs
+        target: com.veridian.cart
+        contains: stderr 75 byte(s)
+    evidence: [json]
+
+  - id: AC-020
+    description: >-
+      The application really asked the device to install the bundle, and the world really did it. This
+      reads the request the **application** made and not the answer this world computed for it, which is
+      the whole difference between `mobile.call` and `mobile.probe`: the criterion can see that the
+      install happened because a request for it is in the record, and it can see that the request was
+      answered because the result says so.
+    expect:
+      - validator: mobile.call
+        target: bundle.install
+        equals: answered
+    evidence: [json]
+
+  - id: AC-021
+    description: >-
+      The application launched what it had just installed. Kept apart from AC-020 because installing a
+      bundle and running one are two requests with two outcomes, and a world that answered the first and
+      dropped the second would report a handset holding an application nobody ever started.
+    expect:
+      - validator: mobile.call
+        target: bundle.launch
+        equals: answered
+    evidence: [json]
+
+  - id: AC-022
+    description: >-
+      The application sent a command this world does not serve, and the world refused it - as a
+      *result*, in the record, rather than as an error that ended the run. The count of commands after
+      it is the evidence that a refusal is not a crash: the eleven vectors that follow the refused one
+      were all answered, which could not have happened if the first had stopped the run.
+
+      The target is the command line rather than an action name, because a command outside the register
+      has no action to be keyed by - the record carries the words that were sent and nothing else.
+    expect:
+      - validator: mobile.call
+        target: device factoryReset
+        equals: refused
+    evidence: [json]
+
+  - id: AC-023
+    description: >-
+      The criterion rotated the device itself and the world performed it. The second expectation is what
+      makes the first one evidence rather than a claim: the orientation the criterion asked for is the
+      orientation the reading reports, and the application had asked for the other one - so a world that
+      recorded a command and resolved nothing would be caught by the pair rather than by either.
+    steps:
+      - run: ['device', 'rotate', '--orientation', 'portrait']
+    expect:
+      - validator: mobile.probe
+        target: device.rotate
+        equals: answered
+      - validator: mobile.orientation
+        equals: portrait (rotation 0, unlocked)
+    evidence: [json]
+
+  - id: AC-024
+    description: >-
+      The criterion uninstalled the bundle and the device stopped holding it. This is an operation a
+      criterion can use to prove the install path is live rather than replayed: the set had one member
+      before the command and none after, and the command is the only thing that could have removed it.
+      `0 bundle(s)` rather than an empty string, because a set that is empty has to render as a value a
+      criterion can compare.
+    steps:
+      - run: ['bundle', 'uninstall', 'com.veridian.cart']
+    expect:
+      - validator: mobile.probe
+        target: bundle.uninstall
+        equals: answered
+      - validator: mobile.installed
+        equals: 0 bundle(s)
+    evidence: [json]
+
+  - id: AC-025
+    description: >-
+      The criterion sent the same unserved command the application did, and the world refused that one
+      too. This is the half of the pair that cannot be earned by accident: the application's refusal is
+      in the record from the run's own provisioning, and this one exists only because a criterion issued
+      it - so a world that fabricated refusals, or one that resolved every command it was handed, would
+      have to be wrong in both directions at once to pass both criteria.
+    steps:
+      - run: ['device', 'factoryReset']
+    expect:
+      - validator: mobile.probe
+        target: device factoryReset
+        equals: refused
+    evidence: [json]

@@ -35,6 +35,7 @@ import { SimK8sEnvironment } from "../adapters/sim-k8s/index.ts";
 import { SimCloudEnvironment } from "../adapters/sim-cloud/index.ts";
 import { SimContainerEnvironment } from "../adapters/sim-container/index.ts";
 import { SimDataEnvironment } from "../adapters/sim-data/index.ts";
+import { SimMobileEnvironment } from "../adapters/sim-mobile/index.ts";
 import { SimOsEnvironment } from "../adapters/sim-os/index.ts";
 import { SimPosixEnvironment } from "../adapters/sim-posix/index.ts";
 import { SimVSCodeEnvironment } from "../adapters/sim-vscode/index.ts";
@@ -621,6 +622,71 @@ const WORLDS: readonly World[] = [
     ],
     build: ({ environment, io, logger, processes, stateDir }) =>
       new LocalProcessEnvironment(environment, {
+        io,
+        clock: systemClock,
+        logger,
+        processes,
+        stateDir,
+      }),
+  },
+  {
+    kind: "sim-mobile",
+    summary:
+      "a simulated handset the application is installed into and launched on, judged on the bundles, " +
+      "permissions, deep links, notifications and keychain entries that substitute device holds",
+    // Three fields, and each is a rule rather than a label - which is why none of them has a default.
+    // The device is what every reading names, so a world that invented one could neither confirm nor
+    // deny that the handset it describes is the one the criteria were written about. The platform is
+    // not decoration: it decides how a path inside the device's own storage is spelled, so a
+    // defaulted one would resolve every criterion by a grammar the document never named. The root is
+    // the sandbox on this machine the bundles, data directories and device state live in, and a
+    // defaulted root would judge the contract against whichever directory the runner happened to
+    // start in.
+    //
+    // Asked as pointers rather than as one `mobile` object for the reason every world after `sim-k8s`
+    // records here: the ladder resolves a requirement against a *place*, so a single `mobile` field
+    // would report the whole block missing however much of it the document already stated.
+    //
+    // `apiLevel` is deliberately absent from this list, and its absence is not an omission - see
+    // `core/environment/types.ts`'s `MobilePlan`. Nothing in this world is booted, drawn, prompted for
+    // or delivered, so a document able to state a level would be able to assert something no reading
+    // in this world could ever corroborate.
+    //
+    // There **is** a `MOBILE_SIMULATED_SURFACES` constant for this world, because it stands nine
+    // things in: the device itself, its boot state, its display, its input, its filesystem, its
+    // keychain service, an app store and a push service. That is the difference between this entry and
+    // `local-process`'s, which sits beside it in registration order and stands nothing in at all.
+    requires: [
+      {
+        field: "mobile.device",
+        question: "What should the device this world stands in for be called?",
+        why:
+          "Every reading of this world names it, so it is the one fact that makes a run which " +
+          "silently judged a different device a detectable failure rather than a silent one. There " +
+          "is no default: a name invented by the world could not be compared against anything the " +
+          "operator wrote, which is exactly what a criterion asserting an identity needs.",
+      },
+      {
+        field: "mobile.platform",
+        question: "Which handset platform does this world implement?",
+        why:
+          "It is a rule rather than a label: the platform decides how a path inside the device's own " +
+          "storage is spelled, so a document that did not state one would leave every criterion " +
+          "resolved by a grammar its own document never named.",
+      },
+      {
+        field: "mobile.root",
+        question: "Which directory on this machine does this world hold its device in?",
+        why:
+          "The bundles the application installs, the data directories they write and the device " +
+          "state all live under it, and it is stated relative to the world's own application " +
+          "directory the way `databasePath` is - so a bundle quotes a path a reader can take back to " +
+          "the document it came from. A defaulted root would judge the contract against whichever " +
+          "directory the runner happened to be started in.",
+      },
+    ],
+    build: ({ environment, io, logger, processes, stateDir }) =>
+      new SimMobileEnvironment(environment, {
         io,
         clock: systemClock,
         logger,

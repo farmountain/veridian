@@ -1,0 +1,127 @@
+# The goal. One sentence describing an observable end state, and the two documents that decide whether
+# it holds.
+#
+# Read `context` below before changing anything here. A simulated world can be mistaken for a real one,
+# and that mistake is the only failure this adapter has that a criterion cannot detect - so the
+# obligations it meets and the things that are never simulated are written down where the goal is, rather
+# than left in a comment in the adapter where a reader of a *result* would never find them.
+
+version: 1
+
+id: sim-mobile
+
+# An observable end state, not an activity. "The application installs itself on the device" would be an
+# activity and would be satisfied by a program that sent the commands and read nothing back; this says
+# what the substitute handset holds when the program is right, and every clause of it is read by at least
+# one criterion in `acceptance.yaml`.
+statement: >-
+  After the application deploys itself onto the device it was handed, that device holds a booted handset
+  named sim-cart-device at 1080x2400 and 420dpi, held in landscape, and a bundle com.veridian.cart named
+  Cart at version 1.4.0 (versionCode 14) whose five files really were copied into the store and hashed
+  there, which has been launched once and exited zero, whose camera permission reads granted because the
+  bundle declared it and nobody ever prompted for it, whose deep link veridian://cart/item resolves to it,
+  with a notification queued on the cart-updates channel at normal priority and a session entry in the
+  keychain recorded by its length and a digest rather than by its value - while the handset itself has
+  refused a command it does not implement.
+
+acceptance: acceptance.yaml
+environment: environment.yaml
+
+context: |-
+  ## This world is simulated, and what that obliges it to do
+
+  There is no emulator, no instruction translator, no guest kernel, no display, no input pipeline, no
+  touch subsystem, no keychain service, no app store and no push service anywhere in this run. The device
+  under test is a substitute: a directory this machine can open, and records of a handset, of installed
+  bundles, and of the commands the world answered that it maintains in process. The device is reached the
+  way a real one is reached - over commands - and the substitution is in what answers them.
+
+  A substitute is only worth anything if it is held to the same three obligations a real device would
+  impose. Where this run meets them:
+
+    1. The application executes for real. `start.command` is a real Node program run as a child process
+       with this operator's own privileges. It reads its environment, refuses a platform it does not
+       provision for, refuses a workspace that is not the one it was written for, writes a real bundle
+       tree with real bytes, and prints one real command vector per line for the world to execute. Nothing
+       about the application is simulated - not its decisions, not its file writes, not its output.
+
+    2. The interfaces are real. The bundle is a real directory tree, really copied into the device's store,
+       and its version string is a real `sha256` over that tree's **contents and its names** - names
+       included, so a tree whose files were renamed is a different bundle. The installed bundle's entry
+       point is a **real child process** launched by this runtime, with its working directory inside the
+       copy the store holds, so the stdout and stderr a `mobile.logs` criterion reads are the streams of a
+       real program and its exit code is the code a real program exited with. The keychain entry's digest
+       is a real `sha256` over the value that was really set. A command naming a path outside the
+       application's own tree and outside the world's sandbox is refused by name, with both directories
+       quoted in the refusal, and the attempt is recorded.
+
+    3. The substitution is declared. Every reading carries `simulated`, naming the surfaces that stood in
+       for the real thing - device, emulator, touch-os, display, input, sandbox, keychain-service,
+       app-store and push-service - so a result says which parts of a real handset were replaced instead
+       of leaving a reader to infer it. The two criteria whose limits the family states in the same line
+       rather than hides are `mobile.screen`, which renders `(rendered and never drawn)` because nothing
+       in this world paints a pixel, and `mobile.notification`, which renders `(queued, never delivered)`
+       and `(delivered)` across the two states a real push service would produce. The `simulated` list
+       itself is asserted by `tests/sim-mobile-environment.test.ts` and not by a criterion, deliberately:
+       no validator in this family reads that field, and inventing one whose only purpose was to agree
+       with the world would be a criterion that cannot fail.
+
+  ## What is never simulated
+
+  Whether the application's code ran. What it wrote, with what bytes, and the hash it produced over the
+  names as well as the contents. Whether the launched bundle's entry point really started as a process,
+  what it really printed, and the code it really exited with. What the world did in answer to each
+  command, with the result and the wording, including the commands it refused. The reading taken
+  afterwards. The verdict each criterion reaches, including the authority to report `FAIL`. The reset
+  between iterations, and the fact that it happened. None of these is substituted, and no criterion in
+  this contract could be satisfied by a world that faked one of them without the others disagreeing.
+
+  ## The two things this world deliberately does not record
+
+    - **No wall clock and no process id.** Both would differ on every run, and `M1` - "the same code gave
+      the same result twice" - compares two readings of the same world. A number that moved because time
+      moved would make every pair of runs disagree about a world that did not. This is why a bundle
+      reading states its launch *count* and never the milliseconds a launch took.
+    - **No keychain value.** An entry is recorded as its key, its byte length, its accessible state and a
+      digest over the secret. The digest travels; the value never does. A reading that carried the value
+      would put an application's secret into an evidence bundle, which is the one place it must not be -
+      so the omission is a property of the *world*, not a gap in a validator, and there is no
+      `mobile.keychain` validator that a contract could write and be satisfied by.
+
+  ## Why the boundary is reported as `unsupported` and not as `enforced`
+
+  The application is an ordinary child process of this run, so it can open any socket and any file this
+  operator can: `networkPolicy` and `filesystemWrite` are **declared** here and the adapter reports them
+  `unsupported` rather than claiming to hold them. One part of the boundary *is* held, and it is held by
+  the world rather than by a sandbox: a command naming a host path outside both the application's own tree
+  and the world's sandbox is refused, and an escape attempted by the *application* - as opposed to by a
+  criterion - is recorded as a boundary crossing and fails the run. The asymmetry is deliberate: the
+  operator's own criteria may probe the guard, because the operator already has these privileges, while
+  the untrusted party is the generated code.
+
+tags:
+  - mobile-world
+  - simulated
+  - twelfth-adapter
+  - android
+  - simulator
+
+limits:
+  # The demo needs five iterations: the first pass fails one criterion per control defect and several for
+  # the headline one, and each iteration repairs exactly one defect. Ten is the schema's ceiling and the
+  # honest ceiling for a loop that must not be able to run forever.
+  maxIterations: 10
+  maxRuntimeMs: 300000
+  maxCriterionMs: 30000
+
+  # Declared, and reported as `unsupported` - see the context above. Writing `allow` here would be a
+  # claim about a boundary nothing holds: the provisioning program is a real child process and can reach
+  # the network this operator can reach.
+  networkPolicy: deny
+
+  # The application writes its bundle sources beside itself and the world writes its sandbox beneath the
+  # application directory, and a command naming a host path that climbs out of both is refused by the
+  # world and recorded as a crossing. So this is the one boundary policy that is partly real, and it is
+  # still not enforcement of the *process* - which is why the adapter says so rather than quoting this
+  # value back as a guarantee.
+  filesystemWrite: sandbox

@@ -6,6 +6,7 @@ import { CLOUD_SIMULATED_SURFACES } from "../core/environment/cloud-observation.
 import { CONTAINER_SIMULATED_SURFACES } from "../core/environment/container-observation.ts";
 import { DATA_SIMULATED_SURFACES } from "../core/environment/data-observation.ts";
 import { K8S_SIMULATED_SURFACES } from "../core/environment/k8s-observation.ts";
+import { MOBILE_SIMULATED_SURFACES } from "../core/environment/mobile-observation.ts";
 import { OS_SIMULATED_SURFACES } from "../core/environment/os-observation.ts";
 import { POSIX_SIMULATED_SURFACES } from "../core/environment/posix-observation.ts";
 import { VSCODE_SIMULATED_SURFACES } from "../core/environment/vscode-observation.ts";
@@ -28,7 +29,7 @@ import { VSCODE_SIMULATED_SURFACES } from "../core/environment/vscode-observatio
  * So the document's Simulated column now prints each world's declared names verbatim, and this file
  * reads both sides. It is deliberately two questions rather than one:
  *
- *   - the seven worlds that declare surfaces must print **exactly** those surfaces, so a renamed
+ *   - the eight worlds that declare surfaces must print **exactly** those surfaces, so a renamed
  *     member fails here rather than in a reader's head;
  *   - a world the document calls **built** must not print a surface name no constant declares, so a
  *     surface cannot be conferred on a world by editing prose.
@@ -74,7 +75,7 @@ function worldTable(body: string): ReadonlyMap<string, WorldRow> {
   }
 
   // The header was found and the rows were not, which is the one way this parse could pass
-  // vacuously. Twelve rows stand in the table; ten is the floor that leaves room for an edit to the
+  // vacuously. Thirteen rows stand in the table; ten is the floor that leaves room for an edit to the
   // table's prose without leaving room for the parse to have silently collected nothing.
   assert.ok(rows.size >= 10, `${DOC}'s world table parsed to ${rows.size} rows`);
   return rows;
@@ -94,6 +95,7 @@ const DECLARED: readonly (readonly [string, readonly string[]])[] = [
   ["sim-container", CONTAINER_SIMULATED_SURFACES],
   ["sim-vscode", VSCODE_SIMULATED_SURFACES],
   ["sim-data", DATA_SIMULATED_SURFACES],
+  ["sim-mobile", MOBILE_SIMULATED_SURFACES],
 ];
 
 /** A surface is a lower-case slug: the naming rule every vocabulary in this tree already follows. */

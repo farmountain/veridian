@@ -20,15 +20,16 @@ import { vscodeValidators } from "../validators/vscode/index.ts";
 import { apiValidators } from "../validators/api/index.ts";
 import { processValidators } from "../validators/process/index.ts";
 import { dataValidators } from "../validators/data/index.ts";
+import { mobileValidators } from "../validators/mobile/index.ts";
 
 /**
  * Every validator this build can judge with.
  *
  * Every family, because the registry is what decides whether a criterion is *answerable* and
  * the answer must not depend on which world the run chose. A contract that names `web.element`,
- * `db.value`, `k8s.ready`, `posix.permission`, `os.access`, `cloud.object`, `container.state` or
- * `vscode.command`, `api.status`, `process.exitcode` or `data.record` is judged by the
- * world that can observe it and refused with `unresolvable_entity` everywhere else - by the plan
+ * `db.value`, `k8s.ready`, `posix.permission`, `os.access`, `cloud.object`, `container.state`,
+ * `vscode.command`, `api.status`, `process.exitcode`, `data.record` or `mobile.bundle` is judged by
+ * the world that can observe it and refused with `unresolvable_entity` everywhere else - by the plan
  * decoder, at DEFINE, before anything starts. Registering a family only when a world that can answer
  * it was selected would make the *same contract* resolvable in one world and nonsensical in another,
  * and the resolvability of a criterion is a property of the criterion.
@@ -46,5 +47,6 @@ export function allValidators(): Validator[] {
     ...apiValidators(),
     ...processValidators(),
     ...dataValidators(),
+    ...mobileValidators(),
   ];
 }
