@@ -130,8 +130,27 @@ async function runClarify(parsed: CliArguments, logger: Logger): Promise<number>
  * second copy of the wiring would be a second answer to what a run is.
  */
 async function runValidate(parsed: CliArguments, logger: Logger): Promise<number> {
+  const session = await openSession(sessionOptions(parsed), logger);
+
+  // Reported *before* the definition settles, and the ordering is the point rather than the position
+  // of the statement: a caller whose goal document is missing sees the failed definition on stdout
+  // and the fact that resolution was attempted on the log stream, so a failure has a context on the
+  // terminal rather than appearing from nowhere.
+  //
+  // This line is asserted by `acceptance/acceptance.yaml` AC-006, which is run by `npm run
+  // acceptance` and by a CI job and *not* by `node --test` - so the refactor that moved the
+  // composition into `./validate.ts` kept the sibling line in `runClarify`, dropped this one, and
+  // left the whole suite green. The contract found it on its first execution on a runner. A log line
+  // an operator watches is a behaviour, and it needs an assertion somewhere that runs.
+  logger.info("resolving the definition", {
+    goal: parsed.goalPath,
+    memory: session.memoryLabel,
+    selfPrompt: session.selfPromptLabel,
+    prompt: session.user.available ? "terminal" : "unavailable",
+  });
+
   const outcome = await runValidation({
-    session: await openSession(sessionOptions(parsed), logger),
+    session,
     logger,
     goalPath: parsed.goalPath,
     stateDir: parsed.stateDir,

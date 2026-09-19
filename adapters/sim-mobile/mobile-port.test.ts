@@ -192,6 +192,23 @@ async function plantBundle(
   return dir;
 }
 
+/**
+ * A spelling that names a place outside *both* trees on either platform.
+ *
+ * It is derived from the application's own tree rather than written literally, and that is the whole
+ * reason the helper exists. `D:/elsewhere/cart` is absolute on win32 and **relative** on POSIX, so on
+ * ubuntu the port resolved it against the application's tree, found it inside, and answered it - a
+ * correct reading of a spelling that means something else on that platform. The property under test is
+ * "a path outside both directories is refused and recorded", and a spelling that leaves the world on
+ * one platform only cannot test it. Measured, one line each way: `isAbsolute("D:/elsewhere/cart")` is
+ * `true` under win32 semantics and `false` under posix semantics, and posix then resolves it to
+ * `<appTree>/D:/elsewhere/cart`, which is inside the tree the world is allowed to open.
+ *
+ * This is the same defect class as a test asserting a file's line ending: *the property is not the
+ * spelling, it is what the spelling means here*.
+ */
+const outsideBothTrees = (world: World): string => resolvePath(world.context, "..", "..", "elsewhere", "cart");
+
 const boot = (port: MobilePort) => port.exec({ argv: ["device", "boot"], client: "provisioner" });
 
 const install = (port: MobilePort, id: string, source: string, extra: readonly string[] = []) =>
@@ -627,14 +644,23 @@ describe("the boundary", () => {
   it("refuses a path outside both trees a command may open, and records the attempt", async () => {
     await withWorld(async (world) => {
       await world.port.prepare();
-      const call = await install(world.port, "cart", "D:/elsewhere/cart");
+      const outside = outsideBothTrees(world);
+      // Absolute *here*, asserted before anything is judged, so this test cannot pass on a spelling
+      // that never left the world - which is exactly what a drive letter is on ubuntu. A literal here
+      // made this criterion read `answered` on that platform, and nothing else in the file said so.
+      assert.equal(
+        isAbsolute(outside),
+        true,
+        `the spelling this test calls "outside" is not absolute here: ${outside}`,
+      );
+      const call = await install(world.port, "cart", outside);
       assert.equal(call.result, "refused");
       const reason = call.reason ?? "";
       assert.ok(reason.includes("outside both directories a command may open"), reason);
       assert.ok(reason.includes(resolvePath(world.context)), reason);
       assert.ok(reason.includes(resolvePath(world.root)), reason);
       const crossing = theOnly(world.port.escapes());
-      assert.equal(crossing.spelled, "D:/elsewhere/cart");
+      assert.equal(crossing.spelled, outside);
       assert.equal(crossing.client, "provisioner");
       // A refusal is a record and not a resource: nothing was copied.
       assert.equal((await world.port.read()).bundles.length, 0);
@@ -644,9 +670,10 @@ describe("the boundary", () => {
   it("records which client made the crossing", async () => {
     await withWorld(async (world) => {
       await world.port.prepare();
-      await install(world.port, "cart", "D:/elsewhere/cart");
+      const outside = outsideBothTrees(world);
+      await install(world.port, "cart", outside);
       await world.port.exec({
-        argv: ["bundle", "install", "--id", "cart", "D:/elsewhere/cart"],
+        argv: ["bundle", "install", "--id", "cart", outside],
         client: "criterion",
       });
       assert.deepEqual(
@@ -714,7 +741,7 @@ describe("resetting", () => {
   it("keeps the call record and the escape tally, because those are the run's own history", async () => {
     await withWorld(async (world) => {
       await withCart(world);
-      await install(world.port, "cart", "D:/elsewhere/cart");
+      await install(world.port, "cart", outsideBothTrees(world));
       const before = (await world.port.read()).calls.length;
       assert.ok(before >= 3, `the fixture did not record enough calls to be worth comparing: ${String(before)}`);
 
