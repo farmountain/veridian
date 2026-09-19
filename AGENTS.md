@@ -80,8 +80,8 @@ instructions file for this workspace — do not add a second one
 > reading carries `simulated` - and nothing is emulated: no emulator, no image and no booted system
 > anywhere in the loop. It adds no step kind: the application provisions with the `run` steps the
 > second world introduced, and three of its criteria use one.
-> `npx tsc --noEmit` is silent and `node --test` reports 2531 passing tests over 422 suites -
-> Veridian's own 2459 plus the 72 the VS Code Cockpit contributes, which the root runner discovers
+> `npx tsc --noEmit` is silent and `node --test` reports 2556 passing tests over 425 suites -
+> Veridian's own 2484 plus the 72 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Five distribution routes ship - a clone, an npm package, the Cockpit (as
 > a development install and as a `.vsix`), the extension marketplaces that `.vsix` is published to,
 > and a container image - and there is still **no
@@ -928,8 +928,8 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 2531 tests over 422 suites, ~7s. No directory argument.
-                           # 2531 = the root's own 2459 + the Cockpit's 72, because the runner walks
+node --test                # the whole suite. 2556 tests over 425 suites, ~9s. No directory argument.
+                           # 2556 = the root's own 2484 + the Cockpit's 72, because the runner walks
                            # the tree and reaches extension/vscode/src/*.test.ts. The inclusion is
                            # measured rather than assumed: a test title that exists only in the
                            # Cockpit appears twice in this run. Neither figure is
@@ -966,7 +966,7 @@ npm run package            # vsce package --no-dependencies
                            # The archive lands at veridian-cockpit-<version>.vsix - `vsce` takes the
                            # name and the version out of the manifest it packages, so the filename
                            # cannot claim a version the extension inside it does not have.
-                           # 12 files, 119.75 KB, at the extension root. Deliberately NOT in `gate`:
+                           # 12 files, 119.98 KB, at the extension root. Deliberately NOT in `gate`:
                            # a packaging tool's output is not part of the source tree's contract,
                            # and making the local gate depend on `vsce` would make every local run
                            # need it. CI runs it, and runs the check below against it.
@@ -1333,7 +1333,7 @@ npx tsc --noEmit    silent (exit 0)
 node --test         72 tests, 0 failing
 npm run build       out/, 6 files
 npm run smoke:out   15 checks, exit 0
-npm run package     veridian-cockpit-0.4.0.vsix, 12 files, 119.75 KB
+npm run package     veridian-cockpit-0.5.0.vsix, 12 files, 119.98 KB
 npm run smoke:vsix  35 checks, exit 0
 npm run gate        exit 0
 ```
@@ -2224,6 +2224,24 @@ port had none, which is why the defect reached a demo run.
   pass the count cannot see is the half that checks the program actually runs.* The four live prose
   sites were corrected in the same pass, as were the eleventh movement's - `AGENTS.md`'s status banner
   and its build block, `README.md`'s quickstart and its layout table.
+  **A thirteenth movement is the first caused by the *instrument itself***: the M1/M2/M3 subject
+  scoping and M4's split branches took the root run to **2556** tests over **425** suites and this
+  tree's own to **2484** (the Cockpit's **72** re-measured by running its own `node --test` rather than
+  assumed - 72 tests, `# suites` still **0** - so all 425 of the root run's suites are this tree's own
+  rather than the 353 a subtraction would have produced). It is the second movement attributed **in
+  full**, and this time the attribution was taken from the diff rather than assembled from the failure
+  messages: counting added `it(` and `describe(` lines across `git diff -U0 -- tests/` returns **25**
+  and **3**, decomposed as `tests/run-metrics.test.ts` (**24** it / **2** describe) and
+  `tests/execution-loop.test.ts` (**1** it / **1** describe) - 24 + 1 = 25 and 2 + 1 = 3, which is
+  exactly 2531 + 25 and 422 + 3. The decomposition was proved the way the seventh through twelfth were:
+  a title that exists only in the Cockpit *("the manifest and the Cockpit declare the same commands")*
+  appears **twice** in the root run's own output. The four live prose sites were corrected in the same
+  pass - `AGENTS.md`'s status banner and its build block, `README.md`'s quickstart and its layout
+  table - and the wall-clock figure beside them moved from `~7s` to `~9s` on the strength of the run's
+  own `# duration_ms 9256.6`, because a duration is the same kind of claim as the two counts beside it
+  and had been carried from a smaller suite for three movements. *A movement whose cause is a repair to
+  the thing that measures the suite is the one movement whose figures are most likely to be quoted
+  without being taken.*
 - **A document that names what a world *substitutes* is making a claim about a `*_SIMULATED_SURFACES`
   constant, and a claim nothing reads drifts.** `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` §5 recorded
   `sim-posix` as substituting *"Kali's attack network"*, and `POSIX_SIMULATED_SURFACES` says the
@@ -2929,6 +2947,7 @@ port had none, which is why the defect reached a demo run.
 | [`docs/DISTRIBUTION-AND-ENVIRONMENTS.md`](./docs/DISTRIBUTION-AND-ENVIRONMENTS.md) | What comes after the MVP: the npm, Docker and VS Code routes, the next adapters in the order they can be **proven**, the self-prompting resolution table that ordered them, and §5's reframing of what "blocked" actually means - every remaining row names the `sim-*` world that answers it, because a world may be simulated and a real-infrastructure absence is not a blocker. **Read before promising an adapter.** |
 | [`docs/GAP-CLOSURE-PLAN.md`](./docs/GAP-CLOSURE-PLAN.md) | The implementation plan for W2 - `sim-mobile`, which was the last unbuilt world and is now the twelfth. Twelve additive places each measured at a file and an anchor rather than recalled (the twelfth being `core/environment/load.ts`, which an earlier census missed), the six guards the change trips and the expected failure of each, and the falsification probe for every claim. **Read before building a thirteenth world**, because it is the checklist a world has to satisfy and the record of what one of the six guards does when a directory is not a world. |
 | [`docs/ISOLATION-AND-MCP-PLAN.md`](./docs/ISOLATION-AND-MCP-PLAN.md) | The plan for the two halves of W6, the one item of the seven that was designed rather than built. §3.1 defers the isolation substrate to a CI-proven phase, and its absence here is a **measurement**: `docker` is not on `PATH` and `node --permission` rejects `--allow-net` with `bad option`, exit 9, taken with a positive control. §3.2 and §4 build the MCP Level-3 surface as a **fourth consumer** beside `cli/` and `extension/vscode/` and never as the foundation, §3.3 answers `PLAN.md` §55's `❌ MCP server` by reading the three prohibition lists separately and showing two of them were already crossed in shipped code, and the fourteen tool rows across §23 and §45 collapse to nine spellings of eight capabilities under a register guard. **Read before building an MCP surface or an isolation substrate**, because every claim in it is measured at a file and an anchor, and the deliverable is a self-binding plan rather than code. |
+| [`docs/INSTRUMENT-AND-PROMPT-PLAN.md`](./docs/INSTRUMENT-AND-PROMPT-PLAN.md) | The two gap classes found by running `veridian metrics` over the 142-run history and reading the answer: the three ways the **instrument** reported something untrue about the runs on disk (W-A scopes M3's ground truth by subject, W-B splits M4's two conflated properties, W-C makes a `PASS` clause carry its reading), and whether the clarification ladder's self-prompting rung is reachable at each lifecycle point and its exit bounded (W-D). §1 records the measured decomposition behind M3's 117 accusations - twelve subjects, none of them `shopping-cart@local-web`, whose own scoped reading is **0** - and refutes an earlier hypothesis about `ded994` rather than dropping it. §5 states exactly what its repair does **not** claim. **Read before touching `core/metrics/` or adding a rung**, because its falsification table's last row is a probe that must leave the suite green. |
 | [`extension/vscode/README.md`](./extension/vscode/README.md) | The Cockpit's front door. `src/host/activate.ts` points here, so it has to exist and say what the extension is not (VS Code is not Veridian), how to install it for development, and - explicitly - what only a real VS Code test host could exercise and what no check in this tree can reach at all. |
 
 Add a one-line index entry here for each new doc instead of duplicating its content in this file.

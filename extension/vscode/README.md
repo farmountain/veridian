@@ -6,6 +6,10 @@ substitute for one - records which limits each world can actually enforce, and d
 software works. A world that cannot justify a verdict is reported `INCONCLUSIVE` rather than passed,
 so `PASS` is only ever earned. The coding agent stays external and never decides whether it succeeded.
 
+The same engine is behind the `veridian` CLI, a CI job and a Model Context Protocol surface, so this
+extension is one client of it rather than the only way in - and each of them reaches its verdict from
+the same bundle rather than from a view of its own.
+
 This paragraph is the extension's marketplace description: both storefronts take the short form from
 the `description` field of `package.json` and the long form from this file, so the two are written
 one above the other rather than kept in step by hand.
@@ -26,7 +30,7 @@ estimated:
 | Tests | `node --test` | 72 tests, 0 failing |
 | Build | `npm run build` | `out/` - 6 files |
 | Compiled artifact | `npm run smoke:out` | 15 checks, exit 0 |
-| Packaged archive | `npm run package` | `veridian-cockpit-0.4.0.vsix` - 12 files, 119.75 KB |
+| Packaged archive | `npm run package` | `veridian-cockpit-0.5.0.vsix` - 12 files, 119.98 KB |
 | Archive contents | `npm run smoke:vsix` | 35 checks, exit 0 |
 | All of the above but the archive | `npm run gate` | exit 0 |
 

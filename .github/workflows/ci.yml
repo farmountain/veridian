@@ -10,7 +10,7 @@
 #   gate   - does the source still hold? Runs on both platforms that matter.
 #   demo   - does the product still do the thing it exists to do? Needs a
 #            browser, so it is separate and does not slow the gate down.
-#   worlds - do the browserless worlds still demo green? None of the eleven
+#   worlds - do the browserless worlds still demo green? None of the twelve
 #            needs Playwright, and before this job existed no CI ran any of
 #            them: "passes on a developer's machine" is a claim about a machine.
 #   dist   - does the artifact we would publish actually work? Compiled
@@ -245,9 +245,9 @@ jobs:
       # criteria' worth of ladder evidence to be in this archive is looking for a file this job was
       # never asked to carry.
       #
-      # The name says "worlds" rather than "sim" because three of the eleven stand nothing in - `db` is
+      # The name says "worlds" rather than "sim" because three of the twelve stand nothing in - `db` is
       # a real SQLite file, `api` a real service and `local-process` a real program - and the job also
-      # runs Veridian's own contract, which is real too.
+      # runs Veridian's own two self-acceptance routes, which are real too.
       - name: upload every world's evidence bundle
         if: always()
         uses: actions/upload-artifact@v4

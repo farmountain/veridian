@@ -160,7 +160,7 @@ rather than asserted, in the note after the gate table below:
 | Decisions, headless | `node --test` | 72 tests, 0 failing |
 | Build | `npm run build` | `out/` - 6 files |
 | **Compiled artifact** | `npm run smoke:out` | 15 checks, exit 0 |
-| Package | `npm run package` | `veridian-cockpit-0.4.0.vsix` - 12 files, 119.75 KB |
+| Package | `npm run package` | `veridian-cockpit-0.5.0.vsix` - 12 files, 119.98 KB |
 | **Packaged archive** | `npm run smoke:vsix` | 35 checks, exit 0 |
 | All of the above | `npm run gate` | exit 0 |
 
@@ -210,7 +210,7 @@ opposite - that packaging needs `@vscode/vsce`, that the output had never been p
 machine, and that adding a package script nobody had run would be the same unverified claim this
 document refuses for a Dockerfile. That reasoning was right, and the fix was to run it rather than to
 keep declining: `@vscode/vsce` is now a dev dependency, `npm run package` produces
-`veridian-cockpit-<version>.vsix` (12 files, 119.75 KB) and `npm run smoke:vsix` reads it back as a zip - by
+`veridian-cockpit-<version>.vsix` (12 files, 119.98 KB) and `npm run smoke:vsix` reads it back as a zip - by
 hand, with `node:zlib`, because this tree has no runtime dependency and adding one to read an archive
 would be the tail wagging the dog. The archive is a **fourth** artifact that nothing else here can
 load, so the same discipline `smoke:dist` and `smoke:out` follow one runtime further out applies:
@@ -249,7 +249,7 @@ gate`, so a package whose own tests are red cannot leave the machine, where `pri
 - **A version is written in four files and reconciled by nothing.** The extension's `package.json`,
   this repository's root `package.json`, and each of their `package-lock.json` root entries carry the
   same figure by convention and no mechanism, so the marketplace's version and the CLI's reported
-  `veridianVersion` can drift apart silently. They are all `0.4.0` as this is written. **This entry
+  `veridianVersion` can drift apart silently. They are all `0.5.0` as this is written. **This entry
   used to claim the check was `npm run package`, and that was wrong about its own subject** - what
   `package` proves is narrower: the archive is named `veridian-cockpit-<manifest version>.vsix`
   because the `package` script passes no `--out`, so the *filename and the manifest it packaged*

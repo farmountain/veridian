@@ -4,7 +4,7 @@
 
 **The sandbox testing and validation layer for AI coding agents.**
 
-**v0.4.0** - twelve reproducible sandbox worlds, across five distribution routes.
+**v0.5.0** - twelve reproducible sandbox worlds, five distribution routes, and four ways to drive them.
 
 Coding agents are good at producing code and have an *environmental* problem: they cannot tell
 whether their code actually works. An agent saying "I believe this is fixed" is not a result.
@@ -52,8 +52,8 @@ and a `Dockerfile` that has never been built is a claim.
 git clone <this-repository-url> veridian
 cd veridian
 npm ci                    # runtime dependency: yaml. dev: typescript, @types/node.
-npm run gate              # tsc --noEmit, then the whole test suite. 2531 tests over 422 suites,
-                          # about seven seconds (this tree's own 2459 plus the Cockpit's 72, which
+npm run gate              # tsc --noEmit, then the whole test suite. 2556 tests over 425 suites,
+                          # about nine seconds (this tree's own 2484 plus the Cockpit's 72, which
                           # the runner discovers because it walks the tree; the extension has its own
                           # gate as well).
 npm run acceptance        # Veridian judged by Veridian: its own contract - goal, criteria, world -
@@ -483,41 +483,59 @@ M5 evidence completeness:  every required piece of evidence arrived
 
 They live in `core/metrics/` as pure functions over a reading of the bundles, **not** as acceptance
 criteria - no browser can observe "the same code gave the same result twice", so a web contract for
-them would be a lie. `--defects` is the ground truth M2 and M3 need; without it they report
-`INCONCLUSIVE` rather than a comfortable pass, because Veridian cannot derive what a defect was
-*intended* to break from what a run happened to observe.
+them would be a lie.
 
-A real output, over a history that mixes browser and browserless runs (elided: one line per differing
-criterion, per compared run). Every run in it is the canonical cart demo in `local-web` - **one
-subject**, which is what makes M1's `no` here an answer rather than the refusal described below:
+`--defects` is the ground truth M2 and M3 need; without it they report `INCONCLUSIVE` rather than a
+comfortable pass, because Veridian cannot derive what a defect was *intended* to break from what a run
+happened to observe.
+
+It is also **scoped**, and that is a repair rather than a refinement: M1, M2 and M3 name the
+**subject** they answered about - the goal the run judged and the adapter that judged it - because a
+criterion id is a name *inside one contract*. A run records a commit and whether the tree was dirty,
+but not the difference, and two runs of one contract at two commits are precisely what M1 exists to
+compare - so the revision cannot be the identity. What a criterion id belongs to is the contract and
+the world, the bundle's own `goal_id` and `environment.adapter`; two contracts that both number their
+criteria from `AC-001` and repair them in ascending order once produced identical signatures and were
+certified as "the same code run twice". A history that cannot be scoped to one subject is refused
+by name instead, and the report states the scope it could not establish - over the whole history on
+this machine the plain command prints `M1 result consistency: INCONCLUSIVE (142 runs over 14 subjects:
+...)`, and M2 and M3 say the same of their own three named defects. Before that repair the identical
+command printed `M3 false PASS: 117`; the 117 spanned twelve subjects, none of them
+`shopping-cart@local-web`, whose own reading was zero. The decomposition, and the experiment behind
+it, are in [`docs/INSTRUMENT-AND-PROMPT-PLAN.md`](./docs/INSTRUMENT-AND-PROMPT-PLAN.md) §1.
+
+A real output, over one subject. The population below is the cart demo's own seven runs, read through
+`--state-dir` from a directory holding only those - which is what makes M1's `no` an answer here
+rather than the refusal it prints over the whole history. The block keeps the two `verdict:` lines and
+elides the other fourteen, each of which named one differing criterion or one iteration only one of
+the two runs recorded:
 
 ```
-runs measured: 5 (+6 unreadable)
-  unreadable: run-...-071737-8b28df: result.json does not carry the per-iteration criteria M1 compares
-M1 result consistency: no (5 runs, baseline run-...-072554-d0b295)
-  run-...-073547-3e0c91 vs run-...-072554-d0b295: iteration 1 AC-001: INCONCLUSIVE vs FAIL
-  run-...-073547-3e0c91 vs run-...-072554-d0b295: verdict: INCONCLUSIVE vs PASS
-M2 defect detection: 3/3
-M3 false PASS: none
-M4 reset reproducibility: no (6 resets recorded)
-  run-...-072554-d0b295: 4 iterations need 3 resets, the environment recorded 0
-M5 evidence completeness: 56/56 criteria (100%)
+runs measured: 7
+M1 result consistency: no (7 runs, baseline run-20260915-225544-fdf9f8)
+  run-20260918-134157-7439f1 vs run-20260915-225544-fdf9f8: verdict: INCONCLUSIVE vs PASS
+  run-20260919-062259-f4fa97 vs run-20260915-225544-fdf9f8: verdict: INCONCLUSIVE vs PASS
+M2 defect detection: 3/3 (scoped to shopping-cart@local-web)
+M3 false PASS: none (scoped to shopping-cart@local-web)
+M4 reset reproducibility: yes (15 resets recorded)
+M5 evidence completeness: 88/88 criteria (100%)
 ```
 
-Two things to notice. A bundle that cannot be measured is **named** rather than skipped, because an
-unmeasurable history reported as clean would be a false pass at the level of the metrics. And M4
-above disagreed with the run it measured - correctly. That disagreement is what found a real defect:
+Three things to notice. A bundle that cannot be measured is **named** rather than skipped, because an
+unmeasurable history reported as clean would be a false pass at the level of the metrics. The two
+`INCONCLUSIVE` runs above are the same contract observed with `--browser none`, so every criterion is
+`INCONCLUSIVE` and the run stops after one iteration: they are not a reproducibility failure, and they
+are the whole of M1's `no` - the other five ran four iterations each and recorded fifteen resets
+between them, which is what makes M4's `yes` an answered reading rather than an absence of one. And
+M4 once disagreed with the run it measured - correctly. That disagreement is what found a real defect:
 the environment record was captured once before the loop ran, so it described the world the run
 *started* in and never showed the three resets it performed.
 
-A third thing, and it is a defect this metric had rather than a caveat it carries. M1 answers only
-about a population that is a reading of **one subject**. A run does not record what source it ran, so
-the goal it judged and the adapter that judged it - the bundle's own `goal_id` and
-`environment.adapter` - are all "the same code" can mean from disk, and a history spanning two of
-those prints `INCONCLUSIVE (N runs over M subjects: ...)` rather than comparing them. Criterion ids
-restart at `AC-001` in every contract, and every demo repairs in ascending criterion order, so the
-cart demo in a browser and the inventory demo in a database once produced identical signatures and
-were certified as "the same code run twice".
+Note also what is **not** printed. `M4 world validity at exit` appears only when there is something to
+say - a run that stopped on an invalid world, or one that carried on over it - and a history holding
+neither says nothing about it rather than printing a zero. Neither population above shows that line;
+the repository's own whole history does, where it reads `1 run(s) stopped on an invalid world, 0
+carried on`.
 
 ---
 
@@ -1116,7 +1134,7 @@ the demo says so and names `npm run build` rather than quietly judging a stale c
 *a skipped check does not fail, it silently reduces coverage while reporting a green suite.*
 
 **Its expectations move with the version, so a version bump moves them.** `vscode.identity` pins
-`veridian-cockpit 0.4.0`, which is the version in the manifest the demo stages. Bumping the extension
+`veridian-cockpit 0.5.0`, which is the version in the manifest the demo stages. Bumping the extension
 means editing that expectation in the same pass; if you do not, the run will judge the artifact it
 claims to judge only by accident, and `tests/vscode-cockpit-demo.test.ts` fails naming both versions
 rather than letting it through.
@@ -1288,8 +1306,8 @@ acceptance/             Veridian judged by Veridian: `veridian-mvp.yaml` (the go
                         `environment.yaml`. `npm run acceptance` runs it TWICE - a first run that
                         passes and a second that fails is the signature of a world a run inherited
                         rather than built
-tests/                  2531 tests over 422 suites in a root `node --test` run: this tree's own
-                        2459 plus the Cockpit's 72
+tests/                  2556 tests over 425 suites in a root `node --test` run: this tree's own
+                        2484 plus the Cockpit's 72
 
 dist/                   GENERATED by `npm run build`. Never edited, never committed.
 extension/vscode/out/   GENERATED by `npm run build` inside extension/vscode. Same rule.

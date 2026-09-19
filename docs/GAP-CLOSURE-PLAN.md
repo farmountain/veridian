@@ -123,18 +123,25 @@ npx tsc --noEmit; Write-Output "tsc exit=$LASTEXITCODE"
 node --test 2>&1 | Select-String -Pattern "^# (tests|suites|pass|fail)"
 ```
 
-Expected: `tsc exit=0` and `# tests 2370`, `# suites 391`, `# pass 2370`, `# fail 0`. **If either
-figure differs, stop** — a baseline that is already red cannot tell a new failure from an old one.
+Expected: `tsc exit=0` and `# fail 0`. **If either is not true, stop** — a baseline that is already red
+cannot tell a new failure from an old one. The two counts are what this step records rather than what it
+asserts: the reading taken when W2 began was `# tests 2370`, `# suites 391`, `# pass 2370`, with this
+tree's own contributing 2298, and the suite has moved many times since. So an executor compares their
+own reading against their own baseline and never against these literals - a figure that was correct
+when it was taken reads as a red baseline once the suite moves, which is a false alarm rather than a
+regression. `AGENTS.md`'s movement record carries the current figures.
 
 - [ ] **Step 2: Record the two superseded figures this change will move.**
 
 ```powershell
-Select-String -Path README.md,AGENTS.md -Pattern "2370|2298|391" | Select-Object -First 20
+Select-String -Path README.md,AGENTS.md -Pattern "tests over \d+ suites" | Select-Object -First 20
 ```
 
 Expected: the counts appear in `README.md`'s quickstart and in `AGENTS.md`'s status block. Task 11
-re-measures them by **running** the suite, never by arithmetic — `AGENTS.md` records five movements of
-this figure and the reason each had to be measured.
+re-measures them by **running** the suite, never by arithmetic — `AGENTS.md` records **thirteen**
+movements of this figure so far, and the reason each had to be measured rather than computed. The
+pattern matches the *shape* of the claim rather than the literals of the day, because the literals are
+exactly what this plan exists to move.
 
 ---
 
