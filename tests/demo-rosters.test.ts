@@ -110,7 +110,7 @@ function workflowRunIndex(body: string, name: string): number {
  *
  * Two shapes have to be read together because the file uses both, and the third list this file
  * exists to reconcile is the workflow's. A demo named literally (`npm run demo:no-browser`) is a
- * command; the eleven worlds are not written out at all - the job holds `for world in db k8s ...`
+ * command; the twelve worlds are not written out at all - the job holds `for world in db k8s ...`
  * and runs `npm run demo:$world` - so a check that scraped only literals would find one world per
  * *name*, and a check that scraped only the loop would miss the refusal.
  *
@@ -125,7 +125,7 @@ function demosInWorkflow(body: string): readonly string[] {
     if (match[1] !== undefined) names.add(match[1]);
   }
 
-  // The loop is the job's real roster and is required to be there: if it is gone the eleven worlds
+  // The loop is the job's real roster and is required to be there: if it is gone the twelve worlds
   // are run by nothing, which is the defect this whole check is about rather than a gap in parsing.
   const loop = /\bfor world in ([^;]+);/.exec(body);
   assert.ok(

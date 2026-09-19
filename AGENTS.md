@@ -80,8 +80,8 @@ instructions file for this workspace — do not add a second one
 > reading carries `simulated` - and nothing is emulated: no emulator, no image and no booted system
 > anywhere in the loop. It adds no step kind: the application provisions with the `run` steps the
 > second world introduced, and three of its criteria use one.
-> `npx tsc --noEmit` is silent and `node --test` reports 2472 passing tests over 412 suites -
-> Veridian's own 2400 plus the 72 the VS Code Cockpit contributes, which the root runner discovers
+> `npx tsc --noEmit` is silent and `node --test` reports 2531 passing tests over 422 suites -
+> Veridian's own 2459 plus the 72 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Five distribution routes ship - a clone, an npm package, the Cockpit (as
 > a development install and as a `.vsix`), the extension marketplaces that `.vsix` is published to,
 > and a container image - and there is still **no
@@ -268,10 +268,38 @@ Server: `http://127.0.0.1:3030` (override with `HIPCORTEX_URL`).
   reports `precondition blocked` and does **not** contain "unreachable", while a genuine `ECONNREFUSED`
   still does. *An error message may only name a cause the reporter observed*, and the same rule applies
   to a document describing how often a dependency fails.
+- **A tool-availability error is evidence about the client, never about the operator.** The host renders
+  an unavailable tool as *"Tool `mcp_hipcortex_open_intent` is currently disabled by the user, and cannot
+  be called"* - and **that attribution is the message's, not a fact anyone measured.** This rule exists
+  because the sentence was believed here: the phrase "by the user" was copied out of the error string and
+  reported to the operator as a claim about their own configuration, then **written into a memory record**
+  as durable fact, so it would have survived into every later session. The operator had disabled nothing.
+  Re-running both tools answered immediately - `open_intent` returned
+  `{"intent_id":"73765028-d043-4181-ba89-4974e10a8029","ok":true}` and `search_memory` returned five
+  records - **in the same session in which both were reported as disabled.** Three errors compounded, and
+  each is the reason this is a rule rather than a note: (a) *a string was read as a fact about a person* -
+  the reporter observed a message and reported a choice; (b) **two different failures were merged into one
+  story**, because the *first* `open_intent` rejection was not a disablement at all but a client-side
+  schema error, `must have required property 'target_entity'`, and folding it into "your configuration is
+  blocking me" gave one invented cause two pieces of apparent support; (c) *no retry preceded the
+  diagnosis*. So: **quote a tool error verbatim, name no cause, and re-run the call before writing
+  anything down** - and treat a claim about the *operator's* actions as the highest-burden claim available,
+  because they can falsify it instantly and are the only one who knows. This is the fourth instance of one
+  shape in this file (`--browser none` naming *"Playwright is not installed"*; `HttpMemory#post()` naming
+  *"unreachable"*; the `sim-os` substitute naming a path it had not looked at), and the sharpest, because
+  the rule was being enforced on other people's error strings in the same session it was broken on our
+  own. Held by `tests/memory-port.test.ts`'s sibling discipline: an assertion about a failure names the
+  failure the test actually produced.
 - Environment observations must go through the intent/receipt path
-  (`open_intent` → `accept_receipt`), never `add_memory`.
+  (`open_intent` → `accept_receipt`), never `add_memory`. The working arguments, measured here:
+  `open_intent` takes `{ actor, target_entity }` - **`target_entity` is required**, and omitting it is
+  the schema rejection quoted above, not an unreachability - and returns an `intent_id`;
+  `accept_receipt` takes `{ actor, intent_id, observation, sensor_path, ok }` and answers `{"ok": true}`.
+  A gate reading filed this way is a receipt, not a claim: the observation is the command, its exit code
+  and its counts.
 - If the server is unreachable, run `hipcortex start`, or say memory is unavailable — never
-  silently skip the write.
+  silently skip the write. *Unreachable* means `ECONNREFUSED`, which is the one cause
+  `tests/memory-port.test.ts` still allows that word to name.
 
 Full protocol: [`.github/skills/hipcortex-memory`](./.github/skills/hipcortex-memory/SKILL.md).
 
@@ -900,8 +928,8 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 2472 tests over 412 suites, ~7s. No directory argument.
-                           # 2472 = the root's own 2400 + the Cockpit's 72, because the runner walks
+node --test                # the whole suite. 2531 tests over 422 suites, ~7s. No directory argument.
+                           # 2531 = the root's own 2459 + the Cockpit's 72, because the runner walks
                            # the tree and reaches extension/vscode/src/*.test.ts. The inclusion is
                            # measured rather than assumed: a test title that exists only in the
                            # Cockpit appears twice in this run. Neither figure is
@@ -912,6 +940,8 @@ npm run gate               # typecheck then test. Run this before claiming anyth
 
 npm run build              # tsc -p tsconfig.build.json, then node scripts/copy-assets.mjs
 npm run smoke:dist         # drive the COMPILED CLI from a temp directory; asserts exit 2, not 3
+npm run smoke:mcp          # spawn the real MCP server as a child and drive it over a pipe;
+                           # 8 checks and exit 0. No build: the source tree is the program.
 ```
 
 The Cockpit has its own gate, and it is **three** commands rather than one, because the extension is
@@ -1152,7 +1182,7 @@ need compiling. `scripts/acceptance.mjs` is `.mjs` on the same ground as the fir
 through a child process, so it has to be runnable whatever state the tree's types are in.
 
 **CI runs the same gates, on both platforms, and now the artifacts too.**
-[`.github/workflows/ci.yml`](./.github/workflows/ci.yml) has six jobs. `gate` runs `npm run gate` on
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml) has seven jobs. `gate` runs `npm run gate` on
 `ubuntu-latest` and `windows-latest` (both resolving Node from `.nvmrc`). `demo` runs the canonical
 demo on ubuntu, asserts that `--browser none` really exits 2, and uploads `.veridian/` as an artifact.
 `browserless worlds` runs twelve of the fourteen declared demos and names the world that regressed,
@@ -1166,7 +1196,11 @@ not yet observed**: it has not run on a runner, which is exactly the state this 
 unexecuted check, so its first green run is part of the change rather than a follow-up.
 `distribution` runs `npm run smoke:dist` and then a
 full `npm pack` -> install into a clean directory -> run round trip, because that is the only check
-that reads `files` and `bin` the way a consumer does. `container image` builds the Dockerfile and
+that reads `files` and `bin` the way a consumer does. `MCP surface` runs `npm run smoke:mcp`, which
+spawns the real server as a child and drives it over a real pipe - the fourth artifact check, and the
+only one whose artifact is a running program rather than a file. It is a **job of its own** rather
+than a step inside `distribution`, because everything in that job needs `npm run build` and this
+check does not: the source tree *is* the program. `container image` builds the Dockerfile and
 requires the container to run the CLI **and** to resolve its own schemas from a browserless run, and
 `VS Code Cockpit` runs the extension's own gate and reads the packaged `.vsix` back - the root gate
 neither typechecks nor tests that tree, because the root tsconfig excludes `extension/**`.
@@ -1387,9 +1421,32 @@ goal file does not exist" - naming a file that was sitting right there, which se
 check the one thing that is not broken. `memoryIo` had always handled this; the real filesystem now
 matches it.
 - **Layering is enforced by hand because nothing else enforces it.** `core/*` must not import
-`adapters/*`, `validators/*` or `cli/*`. `validators/*` must not import `adapters/*` - the shared
-vocabulary lives in `core/environment/web-observation.ts` for exactly that reason. `cli/*` is the
-only layer allowed to import all three. `core/clarification` is the lowest layer of all.
+`adapters/*`, `validators/*`, `cli/*` or `mcp/*`. `validators/*` must not import `adapters/*` - the
+shared vocabulary lives in `core/environment/web-observation.ts` for exactly that reason. `cli/*` may
+import all of them, and so may `mcp/*`, which imports `core/*` only through its public entry points -
+measured rather than assumed, `mcp/server.ts` names `core/io.ts`, `core/evidence/index.ts`,
+`core/definition.ts` and `core/clarification/index.ts` and nothing inside them.
+`core/clarification` is the lowest layer of all. **This rule is stated in full in six places, and
+`mcp/` landing left five of them stale** - this entry, `README.md`'s layering paragraph, the layering
+block in `.github/instructions/typescript.instructions.md` and the one in
+`docs/IMPLEMENTATION-PLAN.md` each named three prohibitions for a four-layer tree, and
+`docs/ISOLATION-AND-MCP-PLAN.md`'s own §3 paragraph on where `mcp/` sits called `cli/*` "the only
+layer allowed to import all three". `docs/ISOLATION-AND-MCP-PLAN.md` §4.5 is the only statement that
+was right, and it was right because it was written by the same change that landed the layer: it
+predicted this drift in as many words (*"a new layer is exactly the change that makes a stale rule
+look current"*). That the same document carried both statements, 180 lines apart, is the sharpest
+form of the finding - a file can be right about a rule and cite the old version of it in the same
+breath. Nothing failed, because a rule enforced by hand has no guard over its own prose -
+`tests/mcp-demo.test.ts` holds the first clause by walking `core/` and requiring it to name the
+surface nowhere, which is the code and not the documents. All five were corrected in the same pass,
+and found by **grep** for the rule's spelling rather than by reading any of them - and **two of the
+five were reachable only by widening that grep**: `README.md` and `ISOLATION-AND-MCP-PLAN.md`'s §3
+paragraph state the rule through an *exclusive marker* ("the only layer") and contain the words "must
+not import" nowhere at all, so a pattern built from the phrase the searcher already has in mind finds
+only the copies that use that phrase. A seventh site, `core/environment/web-observation.ts`, states
+two of the clauses as the reason that file exists and names no consumer layer, so it is a citation
+and not a statement of the rule - *a count that includes both is a count that will be corrected
+again.*
 - **`tsconfig.json` is strict in ways that change how you write code:** `verbatimModuleSyntax`
 (every type-only import needs `import type`), `erasableSyntaxOnly` (no enums, no parameter
 properties, no namespaces), `noUncheckedIndexedAccess` (indexing yields `T | undefined`, so
@@ -2115,8 +2172,53 @@ port had none, which is why the defect reached a demo run.
   predictions were **right**, which is precisely the case this record exists to distrust: *an
   arithmetic total that happens to reconcile is the total nobody goes back and checks*, and the eighth
   movement is the entry above recording a figure whose movement was not measured at the moment it was
-  written. The decomposition was proved the way the seventh and eighth were.
-
+  written. The decomposition was proved the way the seventh and eighth were. **A tenth movement is the
+  first caused by a documentary guard rather than by a world, a ladder or an observation vocabulary**:
+  `tests/docs-roster.test.ts` contributes **4** tests over **1** suite, taking the root run to **2476**
+  tests over **413** suites and this tree's own to **2404** (the Cockpit's **72** re-measured by running
+  its own `node --test` rather than assumed, its `# suites` still **0**, so all 413 of the root run's
+  suites are this tree's own rather than the 341 a subtraction would have produced). The prediction was
+  2472 + 4 and 412 + 1, and both were **right** - which is the ninth movement's own warning, so both
+  figures were taken by running `node --test` on both trees and the decomposition proved the way the
+  seventh, eighth and ninth were: a title that exists only in the Cockpit *("the manifest and the
+  Cockpit declare the same commands")* appears **twice** in the root run's own output. The four live
+  prose sites were corrected in the same pass - `AGENTS.md`'s status banner and its build block,
+  `README.md`'s quickstart and its layout table - while every figure in the movements above was left
+  standing, because *a record of what was measured then is not made false by what is measured now*.
+  **An eleventh movement is the first caused by a *surface* rather than by a world, a ladder, an
+  observation vocabulary, a guard or a document**: `mcp/server.test.ts` contributes **45** tests over
+  **6** suites, taking the root run to **2521** tests over **419** suites and this tree's own to
+  **2449** (the Cockpit's **72** re-measured by running its own `node --test` rather than assumed, its
+  `# suites` still **0**, so all 419 of the root run's suites are this tree's own rather than the 347 a
+  subtraction would have produced). The prediction was 2476 + 45 and 413 + 6, and both were **right** -
+  the ninth movement's own warning again, so both figures were taken by running `node --test` on both
+  trees and the decomposition proved the way the seventh through tenth were: a title that exists only
+  in the Cockpit *("the manifest and the Cockpit declare the same commands")* appears **twice** in the
+  root run's own output. One further fact about this movement is worth keeping: the counts moved only
+  once the **two failures inside it were repaired in the product** - `get_failure` read an absent
+  `failure` key as a present one, and answered a failure report path for a run that recorded no failure
+  - so the movement is a measurement of a *working* suite rather than of a longer one.
+  The four live prose sites were corrected in the same pass - `AGENTS.md`'s status banner
+  and its build block, `README.md`'s quickstart and its layout table - while every figure in the
+  movements above was left standing, for the reason the tenth movement states.
+  **A twelfth movement is the first caused by a *guard* over that surface rather than by the surface
+  itself**: `tests/mcp-demo.test.ts` contributes **10** tests over **3** suites, taking the root run to
+  **2531** tests over **422** suites and this tree's own to **2459** (the Cockpit's **72** re-measured
+  by running its own `node --test` rather than assumed, its `# suites` still **0**, so all 422 of the
+  root run's suites are this tree's own rather than the 350 a subtraction would have produced). The
+  prediction was 2521 + 10 and 419 + 3, and both were **right** - the ninth movement's own warning for
+  the third time, so both figures were taken by running `node --test` on both trees and the
+  decomposition proved the way the seventh through eleventh were: a title that exists only in the
+  Cockpit *("the manifest and the Cockpit declare the same commands")* appears **twice** in the root
+  run's own output *and* **twice** in the Cockpit's own. What distinguishes this movement from every
+  one before it is the file that did **not** move the counts: `scripts/mcp-smoke.mjs` was written in
+  the same stretch and contributes nothing to either figure, because it is a **script outside the
+  discovery glob** - the same deliberate asymmetry `scripts/acceptance.mjs` already carries, and the
+  reason `npm run smoke:mcp` is declared in the manifest and executed by a job rather than by the
+  suite. *A count that moved is not the same claim as "the change was measured", and the half of this
+  pass the count cannot see is the half that checks the program actually runs.* The four live prose
+  sites were corrected in the same pass, as were the eleventh movement's - `AGENTS.md`'s status banner
+  and its build block, `README.md`'s quickstart and its layout table.
 - **A document that names what a world *substitutes* is making a claim about a `*_SIMULATED_SURFACES`
   constant, and a claim nothing reads drifts.** `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` §5 recorded
   `sim-posix` as substituting *"Kali's attack network"*, and `POSIX_SIMULATED_SURFACES` says the
@@ -2607,17 +2709,21 @@ port had none, which is why the defect reached a demo run.
   Moving the confine seam into `core/process.ts` did not touch `core/environment/types.ts`, and it
   falsified a bolded invariant inside that file's doc block: *"The three worlds that confine a child
   are exactly the three that answer this question with a measurement"*. True when written, because
-  only three worlds confined a child at all; after the migration **all eleven** hand the runner a file
-  allowance, so the left side of that equality denotes every row while the right side still holds of
-  three. The same premise was repeated in `tests/boundary-roster.test.ts` as an explanation (*"the
-  other eight act in process and hold no boundary to measure"*) and as an assertion title and
+  only three worlds confined a child at all; after the migration **all twelve** hand the runner a file
+  allowance (eleven when the migration landed - `sim-mobile` arrived after it and does the same, which
+  is why this figure had to be re-measured rather than carried), so the left side of that equality
+  denotes every row while the right side still holds of three. The same premise was repeated in
+  `tests/boundary-roster.test.ts` as an explanation (*"the
+  other eight act in process and hold no boundary to measure"*, which was the superseded spelling
+  while eleven worlds existed) and as an assertion title and
   message, and nothing failed: the assertion's **set** stayed correct, because the migration left the
   network arm alone, so what went stale was the **reason**. It was found by searching the tree for the
   claim rather than by reading the file the change touched, which is the only way it could have been
   found. The correction is narrower and is now what all four places say - the separation is **a front
   door, not a child**: the two worlds whose every request passes a guarded route answer `enforced`,
   `local-process` has no door and answers `unenforceable` because `--allow-net` does not exist on this
-  runtime, and the other eight answer `unsupported`. And the guard over that doc block was **measured
+  runtime, and the other nine answer `unsupported` - two `enforced` plus one `unenforceable` plus nine
+  `unsupported` is the twelve. And the guard over that doc block was **measured
   rather than assumed** to be useless against it: patching the false sentence back in leaves
   `tests/boundary-roster.test.ts` at **14 pass / 0 fail** (exit 0, line ending detected first, anchor
   asserted present, edit asserted to have changed the file, file restored byte for byte), because that
@@ -2729,6 +2835,33 @@ port had none, which is why the defect reached a demo run.
   the directory listing. *A readback that globs answers "which file is first" when the question was
   "which file did the build just write".*
 
+- **A guard over an index is the fifth time this repository has asked "does the document name the
+  code", and the first whose *falsification harness* was itself wrong.** `AGENTS.md` obliges a
+  one-line index entry per new document in as many words - *"Add a one-line index entry here for each
+  new doc"* - and nothing held it: `docs/` gained an eighth file (`ISOLATION-AND-MCP-PLAN.md`) while
+  the Documentation table still listed seven, and the drift was silent for exactly the reason the
+  `db.query` / `db.rowCount` / `web.visible` / observation-vocabulary entries already record - *a list
+  of names in a document is read by nothing that could disagree with it*. The nearest existing checks
+  each name one document for their own purpose and none enumerates the directory, so a new document
+  could arrive un-indexed in silence, which is what happened. `tests/docs-roster.test.ts` now reads the
+  directory and the table together, and the **scope** is the load-bearing part rather than a stylistic
+  choice: `AGENTS.md` names the first document in its table repeatedly below the table - in the status
+  banner, in the AVF-rename note, in two rosters - so a question asked of the whole file would pass
+  with the table two rows short: the vacuous pass `tests/observation-vocabulary.test.ts` discovered in
+  its own first draft, arriving here at the second guard to need the same correction.
+  **Then the probe that falsified the guard fired for the wrong reason, and what caught it was the
+  probe's own control.** Its guard-deletion needle was the document path spelled as a markdown link,
+  which matched **three** lines rather than the single table row, so the control printed `1 time(s)`
+  where an independent count taken then said **7** - and a probe that deletes every reference reports
+  `FIRED` while leaving the scope it claims to test entirely unexercised. The anomaly was turned into a
+  repair by *measuring* it rather than by re-running and hoping, the needle was re-aimed at a phrase
+  unique to the table row, and the control then read `5` - which reconciled exactly with `7 - 2`
+  occurrences on the deleted line - and was itself able to fail the probe through a threshold. *A probe's verdict has to be computed from the tests it broke,
+  and its control has to be reconciled against an independent count: a control that is only printed is
+  decoration.* This is the sixth time this repository has recorded a harness reporting something it did
+  not measure, after the CRLF anchor, the column-zero `not ok` scrape, the probe that restored the file
+  before running the suite, the substring needle, and the probe that read the wrong file's count.
+
 ## Documentation
 
 | Document | Contents |
@@ -2741,6 +2874,7 @@ port had none, which is why the defect reached a demo run.
 | [`docs/BOUNDARY-SPINE-DESIGN.md`](./docs/BOUNDARY-SPINE-DESIGN.md) | The design the boundary work was executed against: the eight gaps as they were found, the self-prompted questions each one resolved into, the `confinement.ts` seam and its two-stage probe, and the acceptance criteria the work was judged by. **Read before changing what a world reports about its own boundaries**, because the vocabulary it defines is now derived by `tests/boundary-roster.test.ts` rather than recalled. |
 | [`docs/DISTRIBUTION-AND-ENVIRONMENTS.md`](./docs/DISTRIBUTION-AND-ENVIRONMENTS.md) | What comes after the MVP: the npm, Docker and VS Code routes, the next adapters in the order they can be **proven**, the self-prompting resolution table that ordered them, and §5's reframing of what "blocked" actually means - every remaining row names the `sim-*` world that answers it, because a world may be simulated and a real-infrastructure absence is not a blocker. **Read before promising an adapter.** |
 | [`docs/GAP-CLOSURE-PLAN.md`](./docs/GAP-CLOSURE-PLAN.md) | The implementation plan for W2 - `sim-mobile`, which was the last unbuilt world and is now the twelfth. Twelve additive places each measured at a file and an anchor rather than recalled (the twelfth being `core/environment/load.ts`, which an earlier census missed), the six guards the change trips and the expected failure of each, and the falsification probe for every claim. **Read before building a thirteenth world**, because it is the checklist a world has to satisfy and the record of what one of the six guards does when a directory is not a world. |
+| [`docs/ISOLATION-AND-MCP-PLAN.md`](./docs/ISOLATION-AND-MCP-PLAN.md) | The plan for the two halves of W6, the one item of the seven that was designed rather than built. §3.1 defers the isolation substrate to a CI-proven phase, and its absence here is a **measurement**: `docker` is not on `PATH` and `node --permission` rejects `--allow-net` with `bad option`, exit 9, taken with a positive control. §3.2 and §4 build the MCP Level-3 surface as a **fourth consumer** beside `cli/` and `extension/vscode/` and never as the foundation, §3.3 answers `PLAN.md` §55's `❌ MCP server` by reading the three prohibition lists separately and showing two of them were already crossed in shipped code, and the fourteen tool rows across §23 and §45 collapse to nine spellings of eight capabilities under a register guard. **Read before building an MCP surface or an isolation substrate**, because every claim in it is measured at a file and an anchor, and the deliverable is a self-binding plan rather than code. |
 | [`extension/vscode/README.md`](./extension/vscode/README.md) | The Cockpit's front door. `src/host/activate.ts` points here, so it has to exist and say what the extension is not (VS Code is not Veridian), how to install it for development, and - explicitly - what only a real VS Code test host could exercise and what no check in this tree can reach at all. |
 
 Add a one-line index entry here for each new doc instead of duplicating its content in this file.

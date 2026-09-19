@@ -33,6 +33,7 @@
     "gate": "npm run typecheck && npm test",
     "build": "tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
     "smoke:dist": "node scripts/smoke-dist.mjs",
+    "smoke:mcp": "node scripts/mcp-smoke.mjs",
     "prepare": "npm run build",
     "prepublishOnly": "npm run gate",
     "veridian": "node cli/veridian.ts",

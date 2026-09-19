@@ -2,11 +2,12 @@
 /**
  * Veridian — the command line.
  *
- * This file is wiring, and nothing else. Every decision it appears to make has already been made in
- * `core/`: which rungs the clarification ladder tries, what a PASS requires, when an iteration may
- * continue, when a run stops. What is left here is the handful of things only a process can answer —
- * where stdin points, whether `git` is on the PATH, whether Playwright was ever installed — plus the
- * order in which those answers are assembled.
+ * This file is the command line, and nothing else. Every decision it appears to make has already been
+ * made in `core/`: which rungs the clarification ladder tries, what a PASS requires, when an iteration
+ * may continue, when a run stops. What is left here is what only a process can do — read a command
+ * line, print prose a terminal shows, and set an exit code — because the composition a run is made of
+ * now lives in `./validate.ts` and `./session.ts`. There are two front doors onto the same lifecycle,
+ * and a bin whose bottom line calls `main()` can never be imported by the second one.
  *
  * Three shapes are worth reading before the code:
  *
@@ -25,72 +26,20 @@
  * parsing prose.
  */
 
-import type {
-  ClarificationReport,
-  Logger,
-  UserPromptPort,
-} from "../core/clarification/index.ts";
-import {
-  ClarificationEngine,
-  NullSelfPromptPort,
-  createDeriver,
-  defaultDeriveRules,
-} from "../core/clarification/index.ts";
-import { detectorContextFor, resolveDefinition } from "../core/definition.ts";
+import type { ClarificationReport, Logger } from "../core/clarification/index.ts";
 import type { DefinitionOutcome } from "../core/definition.ts";
-import { assetsRoot } from "../core/assets.ts";
-import { EnvironmentManager } from "../core/environment/index.ts";
-import {
-  RunBundle,
-  bundleLayout,
-  captureReproducibility,
-} from "../core/evidence/index.ts";
 import type { LoopResult } from "../core/execution/index.ts";
-import { runValidationLoop } from "../core/execution/index.ts";
-import { dirOf } from "../core/goal/index.ts";
 import { nodeIo } from "../core/io.ts";
-import type { IoPort } from "../core/io.ts";
 import { formatMetrics, measureRunHistory } from "../core/metrics/index.ts";
-import { HttpMemory, MemoryInferrer, NullMemory } from "../core/memory/index.ts";
-import type { MemoryPort } from "../core/memory/index.ts";
-import { nodeProcessRunner } from "../core/process.ts";
-import type { ProcessRunner } from "../core/process.ts";
-import { createRunHandle, createRunId } from "../core/run/index.ts";
-import { loadSchemaSet } from "../core/schema/index.ts";
-import type { SchemaSet } from "../core/schema/registry.ts";
-import { ValidatorRegistry } from "../core/validation/index.ts";
-import {
-  PLAYWRIGHT_MISSING,
-  playwrightBrowser,
-} from "../adapters/local-web/index.ts";
+import { PLAYWRIGHT_MISSING } from "../adapters/local-web/index.ts";
 
 import type { CliArguments } from "./arguments.ts";
-import {
-  DEFAULT_MEMORY_URL,
-  USAGE,
-  UsageError,
-  applyBrowserChoice,
-  parseArguments,
-} from "./arguments.ts";
-import {
-  EXIT_CODES,
-  consoleLogger,
-  createCliPromptPort,
-  createSelfPromptPort,
-  exitCodeForVerdict,
-  selectRepairGate,
-  systemClock,
-} from "./support.ts";
-import {
-  adapterDescriptors,
-  describeWorlds,
-  findWorld,
-  registeredAdapters,
-} from "./worlds.ts";
-import { allValidators } from "./validators.ts";
-
-/** The actor name memory records are written under. */
-const MEMORY_ACTOR = "Veridian";
+import { DEFAULT_MEMORY_URL, USAGE, UsageError, parseArguments } from "./arguments.ts";
+// `MEMORY_ACTOR` is read here rather than in `./session.ts` because the only thing it appears in is
+// the starter `config.yaml` below - a document this command writes, not a session it opens.
+import { MEMORY_ACTOR, define, openSession, sessionOptions } from "./session.ts";
+import { EXIT_CODES, consoleLogger, exitCodeForVerdict } from "./support.ts";
+import { runValidation } from "./validate.ts";
 
 // ---------------------------------------------------------------------------------------------
 // Entry point
@@ -131,116 +80,6 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
 }
 
 // ---------------------------------------------------------------------------------------------
-// The session: everything shared by every subcommand
-// ---------------------------------------------------------------------------------------------
-
-interface Session {
-  readonly io: IoPort;
-  readonly schemas: SchemaSet;
-  readonly registry: ValidatorRegistry;
-  readonly clarifier: ClarificationEngine;
-  /** The same port the clarification ladder and the manual repair gate both ask through. */
-  readonly user: UserPromptPort;
-  /** How much material rung 4 can read, or the fact that the rung is unplugged. */
-  readonly selfPromptLabel: string;
-  readonly memory: MemoryPort;
-  readonly memoryLabel: string;
-}
-
-async function openSession(parsed: CliArguments, logger: Logger): Promise<Session> {
-  const io = nodeIo();
-
-  // Two ports on purpose, because there are two roots and only one of them is the operator's.
-  // `io` resolves the operator's files (`--goal my-app/goal.yaml`) against the working directory,
-  // which is what those paths mean. The schemas are not the operator's files: they shipped inside
-  // the package, so they are resolved against the module that ships them. Reading them through `io`
-  // worked only while the CLI was run from the repository root; installed, it asked the caller's
-  // directory for Veridian's own schema and reported it missing. See `core/assets.ts`.
-  const schemas = await loadSchemaSet(nodeIo({ root: assetsRoot() }));
-  const registry = new ValidatorRegistry(allValidators());
-
-  // One prompt port for the whole process. Two ports would be two answers to "is a human watching",
-  // and the one that agreed with the other would be the one nobody checked.
-  const user = createCliPromptPort();
-
-  // The material the run reads to answer its own gaps: the names it is already holding because it
-  // registered them. Deliberately not "everything on disk" — a self-prompt may corroborate a
-  // candidate the contract already offered, and a wider reading would be the run inventing one.
-  //
-  // `--no-self-prompt` replaces the port rather than narrowing the material, because a port holding
-  // no names would report `available: false` for a reason the operator did not choose. The null port
-  // is the ladder's own word for "there is no self to prompt", so the rung is *skipped* rather than
-  // declined, and the two are different: a declined round is work the run did and reported, a skipped
-  // rung is work it never attempted. The label is a fact about which of those happened, reported
-  // beside the memory and prompt facts for the same reason they are - an operator reading a
-  // transcript in which rung 4 never fired cannot otherwise tell it was unplugged.
-  const material = [...registry.names(), ...registeredAdapters()];
-  const selfPrompt = parsed.noSelfPrompt
-    ? { port: NullSelfPromptPort, label: "disabled (--no-self-prompt)" }
-    : {
-        port: createSelfPromptPort({ material, logger }),
-        label: `from ${String(material.length)} registered names`,
-      };
-
-  const memory = selectMemory(parsed, logger);
-
-  const clarifier = new ClarificationEngine({
-    derive: createDeriver(defaultDeriveRules(io)),
-    infer: new MemoryInferrer(memory.port),
-    selfPrompt: selfPrompt.port,
-    user,
-    clock: systemClock,
-    logger,
-  });
-
-  return {
-    io,
-    schemas,
-    registry,
-    clarifier,
-    user,
-    selfPromptLabel: selfPrompt.label,
-    memory: memory.port,
-    memoryLabel: memory.label,
-  };
-}
-
-/**
- * Memory is enabled by default and degrades loudly.
- *
- * `HttpMemory` never throws and never blocks a run — it flips its own `available` flag and logs once
- * — so the honest default is to *use* memory and let an absent server be a warning rather than a
- * prerequisite. Requiring a server would make an offline run impossible; silently skipping the write
- * would make the record a lie. `--no-memory` is for the third case, where an operator wants a run
- * that provably consulted nothing.
- */
-function selectMemory(parsed: CliArguments, logger: Logger): { port: MemoryPort; label: string } {
-  if (parsed.noMemory) {
-    return { port: new NullMemory(), label: "disabled (--no-memory)" };
-  }
-  const url = parsed.memoryUrl ?? process.env["HIPCORTEX_URL"] ?? DEFAULT_MEMORY_URL;
-  return {
-    port: new HttpMemory({ baseUrl: url, actor: MEMORY_ACTOR, logger }),
-    label: url,
-  };
-}
-
-/** Read the goal, close every gap the protocol can close, and report what it could not. */
-async function define(session: Session, parsed: CliArguments): Promise<DefinitionOutcome> {
-  return resolveDefinition(
-    session.io,
-    session.schemas,
-    {
-      goalPath: parsed.goalPath,
-      registry: session.registry,
-      registeredAdapters: registeredAdapters(),
-      adapterDescriptors: adapterDescriptors(),
-    },
-    session.clarifier,
-  );
-}
-
-// ---------------------------------------------------------------------------------------------
 // clarify
 // ---------------------------------------------------------------------------------------------
 
@@ -253,7 +92,7 @@ async function define(session: Session, parsed: CliArguments): Promise<Definitio
  * assumptions their verdicts rest on. So the transcript is a first-class output, not a debug flag.
  */
 async function runClarify(parsed: CliArguments, logger: Logger): Promise<number> {
-  const session = await openSession(parsed, logger);
+  const session = await openSession(sessionOptions(parsed), logger);
   logger.info("resolving the definition", {
     goal: parsed.goalPath,
     memory: session.memoryLabel,
@@ -261,7 +100,7 @@ async function runClarify(parsed: CliArguments, logger: Logger): Promise<number>
     prompt: session.user.available ? "terminal" : "unavailable",
   });
 
-  const outcome = await define(session, parsed);
+  const outcome = await define(session, parsed.goalPath);
   write(`\n${parsed.goalPath}\n`);
   printReports(namedReports(outcome));
 
@@ -281,196 +120,51 @@ async function runClarify(parsed: CliArguments, logger: Logger): Promise<number>
 // validate
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * Run the lifecycle and report it.
+ *
+ * The composition is `./validate.ts`'s, not this function's. What is left here is the pair of things
+ * only a command line can do: turn an outcome into prose a terminal shows, and turn a verdict into
+ * an exit code. Both go through `write`, which is precisely why the composition had to move out of
+ * this module - a bin whose bottom line calls `main()` cannot be imported by the MCP surface, and a
+ * second copy of the wiring would be a second answer to what a run is.
+ */
 async function runValidate(parsed: CliArguments, logger: Logger): Promise<number> {
-  const session = await openSession(parsed, logger);
-  logger.info("resolving the definition", {
-    goal: parsed.goalPath,
-    memory: session.memoryLabel,
-    selfPrompt: session.selfPromptLabel,
-    prompt: session.user.available ? "terminal" : "unavailable",
+  const outcome = await runValidation({
+    session: await openSession(sessionOptions(parsed), logger),
+    logger,
+    goalPath: parsed.goalPath,
+    stateDir: parsed.stateDir,
+    browser: parsed.browser,
+    headed: parsed.headed,
+    repair: parsed.repair,
+    noRepair: parsed.noRepair,
+    // Printed the moment the definition settles, which is before a world is built or a bundle is
+    // opened. A report printed after the run would be a transcript of a decision the reader has
+    // already watched being acted on.
+    onDefinition: (settled) => {
+      printReports(namedReports(settled));
+    },
+    // One notice, two renderings. The command line shows it as a line; the MCP surface shows it as a
+    // field. Whether there is one at all is `validate.ts`'s decision, and it is a decision about the
+    // plan - the only thing any of the three layers knows.
+    onNotice: (notice) => {
+      logger.warn(notice.topic, notice.fields);
+    },
   });
 
-  const outcome = await define(session, parsed);
-  printReports(namedReports(outcome));
-
   if (outcome.kind === "incomplete") {
-    printIncomplete(outcome);
+    printIncomplete(outcome.definition);
     return EXIT_CODES.inconclusive;
   }
 
-  const { plan, environment, goal } = outcome;
-  const registration = findWorld(environment.adapter);
-  if (registration === null) {
-    // A lookup against the same table the clarification ladder read, so this refusal is the second
-    // half of one answer rather than a second opinion: a document naming an unregistered adapter has
-    // already been reported as an unsettled blocking gap, and reaching here means the gap was
-    // answered with a name that still does not exist. The list is printed from the table, so it
-    // cannot drift from the worlds that do.
-    write(
-      `\nThis build cannot run the "${environment.adapter}" adapter. Registered worlds:\n` +
-        `${describeWorlds()}\n`,
-    );
+  if (outcome.kind === "unusable") {
+    write(`\n${outcome.refusal.title}\n${outcome.refusal.body}\n`);
     return EXIT_CODES.unusable;
   }
 
-  // ---- the run's identity -------------------------------------------------------------------
-  const runId = createRunId(systemClock);
-  const layout = bundleLayout(parsed.stateDir, runId);
-  const bundle = new RunBundle({
-    io: session.io,
-    layout,
-    clock: systemClock,
-    schemas: session.schemas,
-  });
-  await bundle.init();
-  // The definition is copied in before anything else runs, so a bundle is never a result whose
-  // inputs were edited afterwards.
-  await bundle.writeDefinition(outcome.goalSource.text, outcome.acceptanceSource.text);
-
-  // ---- the world ---------------------------------------------------------------------------
-  // The flag is applied to the plan before anything is built from it, so the adapter, the loop and
-  // the environment record all describe one world: the one that ran.
-  //
-  // A world with no address has no page, so `--browser playwright` cannot mean anything for it. It
-  // was accepted anyway, and the record then named a browser the run never launched - `chromium` in
-  // `reproducibility.browser` for a run whose only interaction was a SQL query. That is the same
-  // defect as the old `--browser none`, one layer out: a flag applied to an object built from the
-  // plan, describing a world the plan did not have. Refused here so the operator learns it now
-  // rather than from a bundle later. `--browser none` and `auto` remain meaningful and still work.
-  if (parsed.browser === "playwright" && environment.url === null) {
-    write(
-      `\nThe "${environment.adapter}" world has no address, so there is no page for a browser to ` +
-        "observe.\nDrop --browser playwright: nothing in this contract is a browser observation.\n",
-    );
-    return EXIT_CODES.unusable;
-  }
-
-  const runtimeEnvironment = applyBrowserChoice(environment, parsed.browser);
-  const wantsBrowser = runtimeEnvironment.browser.enabled;
-  const browser = wantsBrowser ? playwrightBrowser({ headless: !parsed.headed }) : null;
-
-  const adapter = registration.build({
-    environment: runtimeEnvironment,
-    io: session.io,
-    logger,
-    processes: nodeProcessRunner,
-    stateDir: parsed.stateDir,
-    browser,
-  });
-  const world = new EnvironmentManager({ adapter, clock: systemClock, logger });
-
-  const run = createRunHandle({
-    clock: systemClock,
-    runId,
-    goalId: goal.id,
-    maxIterations: goal.limits.maxIterations,
-  });
-
-  const repair = selectRepairGate({
-    command: parsed.repair,
-    noRepair: parsed.noRepair,
-    user: session.user,
-    runner: nodeProcessRunner,
-    cwd: session.io.cwd,
-    logger,
-  });
-
-  // ---- what made this run reproducible -----------------------------------------------------
-  const git = await observeGit(nodeProcessRunner, session.io.cwd);
-  const reproducibility = await captureReproducibility({
-    clock: systemClock,
-    veridianVersion: await readVersion(session.io, "package.json"),
-    gitCommit: git.commit,
-    gitDirty: git.dirty,
-    playwright: browser === null ? null : await firstVersion(session.io, [
-      "node_modules/playwright/package.json",
-      "node_modules/playwright-core/package.json",
-    ]),
-    // The adapter launches Chromium and nothing else, so the engine is observed rather than guessed.
-    browser: browser === null ? null : "chromium",
-    networkPolicy: goal.limits.networkPolicy,
-  });
-
-  logger.info("running", {
-    run: runId,
-    criteria: String(plan.criteria.length),
-    repair: repair.reason,
-    browser: wantsBrowser ? (parsed.headed ? "chromium (headed)" : "chromium") : "none",
-    selfPrompt: session.selfPromptLabel,
-    memory: session.memoryLabel,
-  });
-
-  // A declared boundary is not an enforced one, and here the operator is who chose the world that
-  // cannot hold it: `--browser none` removes the only component able to refuse a request, so a goal
-  // that says `deny` is measured in a world where `deny` is a word in a file. Said out loud because
-  // the alternative is a fact found only by whoever reads `environment.json` afterwards, which is not
-  // the person who made the choice.
-  //
-  // Deliberately narrow. Only the network half is disclosed here, and only for the case the CLI
-  // observed: it built this world, so it knows whether a guard exists in it. The adapter's standing
-  // capabilities - `filesystemWrite` among them - are the adapter's claim about itself, and the full
-  // policy-by-enforcement pairing is written to the bundle by the layer that owns both halves.
-  // Repeating a capability here would be a second opinion that goes stale the moment an adapter grows
-  // one, and warning about `filesystemWrite` on every run would make the signal deafening on the
-  // default goal.
-  //
-  // The condition is "a browser was *removed*", not "there is no browser". It used to be the second,
-  // and the difference is a sentence that names a cause the CLI did not observe: `network !== "allow"`
-  // with no browser is also the ordinary state of every world that never had one - a database file, a
-  // cluster, a simulated provider account - and there `npm run demo:db --browser none` printed *"the
-  // run was planned without a browser, so nothing can refuse a request on its behalf"* about a world
-  // whose document has no `url` for a browser to open, where the operator planned no such thing and
-  // the reason given describes a component that could never have existed. A component can only be
-  // removed from a world that was going to have it, so the document's own `browser.enabled` is what
-  // decides - and a world whose adapter refuses crossings itself, without a browser, is then left to
-  // report its own enforcement through `boundaries()`, which is where that fact lives.
-  if (environment.browser.enabled && !wantsBrowser && runtimeEnvironment.boundary.network !== "allow") {
-    logger.warn("boundary", {
-      declared: `networkPolicy: ${runtimeEnvironment.boundary.network}`,
-      enforcement: "unsupported",
-      reason: "the run was planned without a browser, so nothing can refuse a request on its behalf",
-    });
-  }
-
-  // ---- the loop ----------------------------------------------------------------------------
-  // Everything above is preparation. From here on the run is governed by `core/execution/loop.ts`,
-  // which owns the state machine, the bounded exits and the verdict. The detector context is rebuilt
-  // through the same constructor `resolveDefinition` used, against the environment path — because the
-  // runtime questions are about *that* application, and `appDir` is what lets the detectors see it.
-  const result = await runValidationLoop({
-    io: session.io,
-    schemas: session.schemas,
-    clock: systemClock,
-    logger,
-    world,
-    registry: session.registry,
-    plan,
-    environment: runtimeEnvironment,
-    limits: goal.limits,
-    clarifier: session.clarifier,
-    detectorContext: detectorContextFor(
-      {
-        registry: session.registry,
-        registeredAdapters: registeredAdapters(),
-        adapterDescriptors: adapterDescriptors(),
-      },
-      outcome.environmentPath,
-      dirOf(outcome.environmentPath),
-    ),
-    repairGate: repair.gate,
-    bundle,
-    run,
-    reproducibility,
-    definitionReports: [
-      outcome.reports.goal,
-      outcome.reports.acceptance,
-      outcome.reports.environment,
-    ],
-    memory: session.memory,
-  });
-
-  printResult(result);
-  return exitCodeForVerdict(result.verdict);
+  printResult(outcome.result);
+  return exitCodeForVerdict(outcome.result.verdict);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -704,67 +398,6 @@ function printResult(result: LoopResult): void {
 function mentionsPlaywrightMissing(result: LoopResult): boolean {
   const haystack = [result.failure?.message ?? "", ...result.reasons].join("\n");
   return haystack.includes(PLAYWRIGHT_MISSING);
-}
-
-// ---------------------------------------------------------------------------------------------
-// Observations about the local machine
-// ---------------------------------------------------------------------------------------------
-
-/**
- * Ask git what it can see. Every answer may be absent.
- *
- * The reproducibility record's whole purpose is to distinguish "this did not run at that commit" from
- * "nobody knows what this ran on". A repository that is not initialised, a `git` that is not
- * installed, and a detached head are three different facts and all three end up as `null` here — a
- * value the record already reads as *unobserved*. Guessing a commit would destroy the distinction the
- * field exists for.
- */
-async function observeGit(
-  runner: ProcessRunner,
-  cwd: string,
-): Promise<{ commit: string | null; dirty: boolean | null }> {
-  const commit = await runGit(runner, cwd, ["rev-parse", "HEAD"]);
-  if (commit === null) return { commit: null, dirty: null };
-  const status = await runGit(runner, cwd, ["status", "--porcelain"]);
-  return { commit, dirty: status === null ? null : status.trim().length > 0 };
-}
-
-async function runGit(
-  runner: ProcessRunner,
-  cwd: string,
-  args: readonly string[],
-): Promise<string | null> {
-  try {
-    const handle = runner.run({ command: "git", args, cwd });
-    const result = await handle.exited;
-    if (result.code !== 0) return null;
-    const text = result.stdout.trim();
-    return text.length === 0 ? null : text;
-  } catch {
-    return null;
-  }
-}
-
-/** The `version` field of a JSON file, or `"unknown"` when it cannot be read. */
-async function readVersion(io: IoPort, path: string): Promise<string> {
-  const version = await firstVersion(io, [path]);
-  return version ?? "unknown";
-}
-
-/** The first readable `version` field among `paths`, or `null`. */
-async function firstVersion(io: IoPort, paths: readonly string[]): Promise<string | null> {
-  for (const path of paths) {
-    const text = await io.readTextFile(path).catch(() => null);
-    if (text === null) continue;
-    try {
-      const parsed: unknown = JSON.parse(text);
-      const version = (parsed as { version?: unknown }).version;
-      if (typeof version === "string" && version.length > 0) return version;
-    } catch {
-      // Not JSON, or not a manifest. Keep looking rather than reporting a version that was never read.
-    }
-  }
-  return null;
 }
 
 // ---------------------------------------------------------------------------------------------

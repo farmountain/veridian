@@ -6,7 +6,7 @@
 # emits dist/ for the npm package and for the container image, because Node 22
 # refuses to strip types under node_modules.
 #
-# Six jobs, because they answer different questions:
+# Seven jobs, because they answer different questions:
 #   gate   - does the source still hold? Runs on both platforms that matter.
 #   demo   - does the product still do the thing it exists to do? Needs a
 #            browser, so it is separate and does not slow the gate down.
@@ -16,6 +16,9 @@
 #   dist   - does the artifact we would publish actually work? Compiled
 #            JavaScript is touched by no unit test, and npm reads `files` and
 #            `bin` in ways the source tree never exercises.
+#   mcp    - does the MCP surface actually run? Its whole interface is a child
+#            process reading stdin and writing stdout, so the suite can prove
+#            the dispatcher and not the program. No build: the source is it.
 #   image  - does the container build and run? Docker is not installed on the
 #            maintainer's machine, so CI is the only place this can be proven,
 #            and a Dockerfile that has never been built is a claim.
@@ -275,6 +278,24 @@ jobs:
           npm init -y >/dev/null
           npm install "$RUNNER_TEMP"/veridian-*.tgz
           ./node_modules/.bin/veridian help
+
+  mcp:
+    name: MCP surface
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # The fourth artifact check, and the only one whose artifact is a running
+      # program rather than a file. `mcp/server.test.ts` holds the surface's
+      # decisions against an injected context, which is the half a `node --test`
+      # file can be; what no fake can prove is that the *program* works, so this
+      # spawns the real server as a child and drives it over a real pipe. It
+      # needs no build, because the source tree is the program.
+      - run: npm run smoke:mcp
 
   image:
     name: container image

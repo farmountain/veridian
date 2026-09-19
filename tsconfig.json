@@ -27,6 +27,7 @@
     "adapters/**/*.ts",
     "validators/**/*.ts",
     "cli/**/*.ts",
+    "mcp/**/*.ts",
     "examples/**/*.ts",
     "tests/**/*.ts"
   ]

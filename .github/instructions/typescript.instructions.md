@@ -1,6 +1,6 @@
 ---
 name: "TypeScript Conventions"
-description: "Use when writing, modifying, reviewing, or refactoring TypeScript source in Veridian Core, the adapters, the validators or the CLI. Covers the constraints the compiler enforces, the layering nothing enforces, the import and comment conventions the tree already follows, and the rule that no formatter or linter may be introduced."
+description: "Use when writing, modifying, reviewing, or refactoring TypeScript source in Veridian Core, the adapters, the validators, the CLI or the MCP surface. Covers the constraints the compiler enforces, the layering nothing enforces, the import and comment conventions the tree already follows, and the rule that no formatter or linter may be introduced."
 applyTo:
   - "**/*.ts"
 ---
@@ -42,14 +42,20 @@ Also on: `strict`, `noImplicitOverride`, `noImplicitReturns`, `noFallthroughCase
 architecture quietly.
 
 ```
-core/*        must NOT import adapters/*, validators/* or cli/*
+core/*        must NOT import adapters/*, validators/*, cli/* or mcp/*
 validators/*  must NOT import adapters/*        # shared vocabulary -> core/environment/web-observation.ts
-cli/*         is the ONLY layer that may import all three
+cli/*         may import all of them, and so may mcp/*
+mcp/*         imports core/* only through its public entry points
 core/clarification      is the lowest layer of all
 ```
 
 `core/*` must also hold no dependency on a browser, a running process, or anything else that only
 exists at run time. Veridian Core decides what a valid run *is*; the adapters witness it.
+
+The first clause is held as an executable rule: `tests/mcp-demo.test.ts` walks `core/` and requires it
+to name the MCP surface nowhere, which is the half a test can read. The rest is enforced by nothing, so
+it is yours - and a new layer is exactly the change that makes a stale version of this block look
+current, in every document that states it rather than only in this one.
 
 **Every string the program can print is ASCII.** This machine's console code page renders an em dash
 as `鈥?`, so a message using one arrives as noise. This covers criterion messages, failure reasons,

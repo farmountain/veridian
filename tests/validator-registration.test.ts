@@ -119,24 +119,71 @@ describe("the validator families on disk are the families this build registers",
 
   it("keeps the family list in one place, which is a file the CLI reads", async () => {
     // The entry point cannot be imported by a test - `cli/veridian.ts` calls `main()` at module
-    // scope - so this claim about its *wiring* can only be read. It is worth reading, because the
-    // defect it prevents is a second list: an entry point that builds its registry from a handful of
-    // families inlined beside the imports would typecheck, pass every other guard, and judge some
+    // scope - so a claim about the *wiring* can only be read. It is worth reading, because the
+    // defect it prevents is a second list: a caller that built its registry from a handful of
+    // families inlined beside its imports would typecheck, pass every other guard, and judge some
     // criteria as `unresolvable_entity` for a reason no test would ever name.
-    const entry = await repo.readTextFile("cli/veridian.ts");
-    assert.ok(entry !== null, "cli/veridian.ts could not be read");
-
-    assert.match(
-      entry,
-      /new ValidatorRegistry\(allValidators\(\)\)/,
-      "cli/veridian.ts no longer builds its registry from `allValidators()`, so what a run can judge " +
-        "with is decided in a second place that tests/validator-registration.test.ts does not read",
+    //
+    // This assertion used to read `cli/veridian.ts`, and it failed the moment the composition moved
+    // to `cli/session.ts`. That is the guard working rather than the guard breaking: it named the file
+    // it had been told to read, and the registry is no longer built there. Naming one file was the
+    // mechanism's weakness and not its purpose, so the walk is over `cli/` and the register's own file
+    // is *derived* from the code that declares it. The replacement is strictly stronger than what it
+    // replaced: a second construction site, or a second file inlining a few families, is now caught
+    // wherever it lands rather than only in the entry point.
+    const modules = (await repo.readDir("cli")).filter((name) => name.endsWith(".ts")).sort();
+    assert.ok(
+      modules.length >= 5,
+      `cli/ holds ${modules.length} modules, which is too few to be the tree this guard was written for`,
     );
-    assert.doesNotMatch(
-      entry,
-      /\.\.\.\w*[Vv]alidators\(\)/,
-      "cli/veridian.ts spreads validator families itself - the register belongs in cli/validators.ts, " +
-        "where it can be held against the directories on disk",
+
+    const sources = new Map<string, string>();
+    for (const name of modules) {
+      const text = await repo.readTextFile(`cli/${name}`);
+      assert.ok(text !== null, `cli/${name} was listed by readDir and could not be read`);
+      sources.set(name, text);
+    }
+
+    // The register is the file that declares `allValidators`, derived rather than recalled.
+    const register = [...sources].filter(([, text]) => /export function allValidators\(/.test(text));
+    assert.equal(
+      register.length,
+      1,
+      `the roster of validator families is declared in ${register.length} files under cli/ ` +
+        `(${register.map(([name]) => name).join(", ") || "none"}) - "what can a run judge with" has ` +
+        "exactly one answer",
+    );
+    const registerFile = register[0]?.[0] ?? "";
+
+    // One construction site, and it is built from the register rather than from families picked here.
+    const builders = [...sources]
+      .filter(([, text]) => /new ValidatorRegistry\(/.test(text))
+      .map(([name]) => name);
+    assert.equal(
+      builders.length,
+      1,
+      `the validator registry is constructed in ${builders.length} places under cli/ ` +
+        `(${builders.join(", ") || "none"}) - a second construction site is a second answer to ` +
+        '"what can a run judge with", and a criterion judged by the wrong one reports ' +
+        "`unresolvable_entity` at DEFINE",
+    );
+    const builder = builders[0] ?? "";
+    assert.match(
+      sources.get(builder) ?? "",
+      /new ValidatorRegistry\(allValidators\(\)\)/,
+      `cli/${builder} constructs a \`ValidatorRegistry\` from something other than \`allValidators()\`, ` +
+        "so what a run can judge with is decided in a second place that this guard does not read",
+    );
+
+    // And no module other than the register spreads validator families itself.
+    const spreaders = [...sources]
+      .filter(([name, text]) => name !== registerFile && /\.\.\.\w*[Vv]alidators\(\)/.test(text))
+      .map(([name]) => name);
+    assert.deepEqual(
+      spreaders,
+      [],
+      `these modules under cli/ spread validator families themselves (${spreaders.join(", ")}): the ` +
+        `register belongs in cli/${registerFile}, where it is held against the directories on disk`,
     );
   });
 });

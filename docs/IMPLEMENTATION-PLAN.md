@@ -377,10 +377,13 @@ for the rung a gap reached. **A reader who wants the current answer should read 
 than this paragraph**, which is the same rule §1's table follows with its Status column: the decision
 recorded in place, and the tree beside it.
 
-**Layering rule, enforced by imports:** `core/*` may not import `adapters/*`, `validators/*`, or
-`cli/*`. The Core defines the interfaces; adapters and validators implement them; the CLI wires
-them. This is the mechanical guarantee of *"VS Code ≠ Veridian"* extended to every surface: **the
-Core cannot depend on any particular client, so any client can be added later.**
+**Layering rule, enforced by imports:** `core/*` may not import `adapters/*`, `validators/*`,
+`cli/*` or `mcp/*`. The Core defines the interfaces; adapters and validators implement them; the CLI
+and the MCP surface wire them. This is the mechanical guarantee of *"VS Code ≠ Veridian"* extended to
+every surface: **the Core cannot depend on any particular client, so any client can be added later.**
+That sentence was written when `cli/` was the only consumer and it was vindicated by the fourth one
+landing without a `core/` change - which is the reason the list above is a list of *prohibitions*
+rather than of clients, and the reason `mcp/*` belongs in it.
 
 ---
 
