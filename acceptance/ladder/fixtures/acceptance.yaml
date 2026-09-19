@@ -49,8 +49,8 @@ criteria:
   # may never invent one, and "three names, one of which is probably right" is the case it refuses.
   #
   # A misspelled *namespace* is the shape that works, because it shares no prefix with anything: the
-  # registry the detector reads holds eleven families - `api cloud container data db k8s os posix
-  # process vscode web` - and not one of them begins with `s`, and no registered validator name
+  # registry the detector reads holds twelve families - `api cloud container data db k8s mobile os
+  # posix process vscode web` - and not one of them begins with `s`, and no registered validator name
   # carries the token `sandbox`. The only signal left is the token `argv`, which exactly one
   # registered name carries - so this spelling offers exactly one candidate, and the ladder confirms
   # the single name the misspelling named.

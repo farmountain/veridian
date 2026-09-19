@@ -197,9 +197,21 @@ export async function runValidationLoop(options: LoopOptions): Promise<LoopResul
     allCriteria.push(...criteria);
     allExecutions.push(...runtime.executions);
 
+    // Validity is a READING here, not a literal, and the reading is the one `envRecord()` already
+    // wrote into the bundle a few lines above. It is `true` on every path that reaches this call,
+    // because the loop has enforced it twice over: `EnvironmentManager.prepare()` returns `ok: false`
+    // when its health check fails and the loop aborts on that before its first iteration, and
+    // `EnvironmentManager.reset()` returns `ok: false` when the check fails after a reset and the
+    // loop aborts on that before its next one - so a reset that returns `ok` is a reset that
+    // re-passed its own health check. Both abort paths already pass `environmentValid: false`.
+    //
+    // Which means this change alters no verdict anywhere; it is here because `PLAN.md` §18 names this
+    // as one of the clauses a `PASS` must rest on, so the field has to carry the reading it came from
+    // rather than restate the answer. If a world ever gains a way to become invalid *without*
+    // aborting, this is the place that value is produced, and it is already a reading.
     const outcome = rollup({
       criteria,
-      environmentValid: true,
+      environmentValid: prepared.ok,
       safetyViolation: safetyState(options),
       ...informationState(),
     });

@@ -13,22 +13,26 @@ export type {
   DetectionReport,
   EvidenceReport,
   FalsePass,
+  FalsePassReport,
   IterationSnapshot,
   MetricOptions,
   MetricVerdict,
   ResetReport,
   RunSnapshot,
   SuccessMetrics,
+  WorldValidityReport,
 } from "./metrics.ts";
 export {
   defectDetection,
   evidenceCompleteness,
   falsePasses,
   formatMetrics,
+  metricViolations,
   parseRunSnapshot,
   resetReproducibility,
   resultConsistency,
   successMetrics,
+  worldValidityAtExit,
 } from "./metrics.ts";
 export type { HistoryMetrics, RunHistory } from "./history.ts";
 export { listRuns, measureRunHistory, readRunHistory } from "./history.ts";

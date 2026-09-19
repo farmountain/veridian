@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { buildValidationPlan } from "../core/acceptance/plan.ts";
 import type { AcceptanceContract } from "../core/acceptance/types.ts";
@@ -41,6 +43,9 @@ import { fixedClock, silentLogger } from "./helpers/clock.ts";
  *  - **The runtime protocol never asks a human.** A prompt mid-run would let a verdict depend on who
  *    was watching, and `questionsAsked` is the only place that would show up.
  *  - **A world that throws is not a passing world.** Classification, not swallowing.
+ *  - **The `environmentValid` a verdict rests on is a reading, not a literal.** No assertion in this
+ *    file can hold that one - both spellings are `true` on every path that reaches the call - so the
+ *    last `describe` reads the source instead, and says why that is the only mechanism available.
  */
 
 // ---------------------------------------------------------------------------------------------
@@ -658,6 +663,57 @@ describe("indeterminacy is recorded, never rounded up to success", () => {
     assert.equal(result.verdict, "FAIL");
     assert.equal(world.observations, 1);
     assert.match(result.reasons.join(" "), /repair gate failed/);
+  });
+});
+
+describe("the validity a verdict rests on is a reading, not a literal", () => {
+  // `PLAN.md` section 18 makes `environmentValid` one of the clauses a `PASS` rests on, and the
+  // per-iteration `rollup` call used to pass the literal `true` instead. Restoring that literal
+  // changes no verdict anywhere: the loop has already enforced validity twice over before the call is
+  // reached - `prepare()` returns `ok: false` on a failed health check and the loop aborts on that
+  // before its first iteration, and `reset()` returns `ok: false` on a failed post-reset check and the
+  // loop aborts on that before its next one - so both spellings are `true` on every reaching path.
+  //
+  // Which means no behavioural assertion can hold the repair, and one that failed when the literal
+  // was restored would refute the entailment rather than prove it. The claim is about the source, so
+  // it is read from the source - the same mechanism `tests/step-kinds.test.ts` and
+  // `tests/boundary-roster.test.ts` use for a fact the engine owns and nothing else can check.
+  //
+  // Falsified rather than trusted: restoring `environmentValid: true` fails the second, third and
+  // fifth assertions, and deleting the entailment comment fails the fourth. Every file was restored
+  // byte for byte afterwards.
+
+  const SOURCE = readFileSync(fileURLToPath(new URL("../core/execution/loop.ts", import.meta.url)), "utf8");
+
+  it("carries prepared.ok into the verdict rather than restating the answer", () => {
+    // The control that stops the next assertion passing vacuously: this is `loop.ts`, and it is the
+    // file that spells `environmentValid:` at all.
+    assert.match(SOURCE, /export async function runValidationLoop/, "this must have read the loop");
+    assert.match(
+      SOURCE,
+      /environmentValid: false/,
+      "the abort branches spell this field as a literal, so a `true` found anywhere is the defect and not a pattern that never occurs",
+    );
+
+    assert.match(SOURCE, /environmentValid: prepared\.ok/, "the verdict must carry the reading it came from");
+    assert.doesNotMatch(SOURCE, /environmentValid: true/, "a literal `true` is a claim pretending to be a record");
+
+    // The entailment, in the file rather than only in this comment: without it a reader cannot tell
+    // whether `prepared.ok` is load-bearing or decorative, which is the whole reason it is written at
+    // the site.
+    assert.match(
+      SOURCE,
+      /re-passed its own health check/,
+      "the file must name the guarantee that makes the reading true on every path",
+    );
+
+    // One reading, two readers: the bundle's record and the verdict's clause must be the same
+    // expression, or the record describes a world the verdict did not judge.
+    assert.match(
+      SOURCE,
+      /prepared\.ok, world\.boundaries\(\)/,
+      "the environment record must carry the same reading the verdict does",
+    );
   });
 });
 

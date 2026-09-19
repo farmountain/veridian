@@ -30,7 +30,7 @@ import type { ClarificationReport, Logger } from "../core/clarification/index.ts
 import type { DefinitionOutcome } from "../core/definition.ts";
 import type { LoopResult } from "../core/execution/index.ts";
 import { nodeIo } from "../core/io.ts";
-import { formatMetrics, measureRunHistory } from "../core/metrics/index.ts";
+import { formatMetrics, measureRunHistory, metricViolations } from "../core/metrics/index.ts";
 import { PLAYWRIGHT_MISSING } from "../adapters/local-web/index.ts";
 
 import type { CliArguments } from "./arguments.ts";
@@ -270,18 +270,11 @@ async function runMetrics(parsed: CliArguments, logger: Logger): Promise<number>
     return EXIT_CODES.inconclusive;
   }
 
-  // M1 reports `measured: false` when it had nothing to compare - one run, or a history spanning two
-  // subjects - and it says `consistent: false` in both cases *because* nothing was compared. Only an
-  // answered `no` is a violation. Reading this as `runs > 1 && !consistent`, which is what it was,
-  // worked for the single run by accident and accused a mixed history of a disagreement it had
-  // refused to look for.
-  const violated =
-    (metrics.consistency.measured && !metrics.consistency.consistent) ||
-    metrics.falsePasses.length > 0 ||
-    !metrics.reset.reproducible ||
-    metrics.evidence.violations.length > 0;
-
-  if (violated) {
+  // Whether any metric was violated is `metricViolations`' question, and it is answered in
+  // `core/metrics/metrics.ts` rather than here: the predicate that decides this command's exit code
+  // was a chain in this function, which no test could reach, so the reasoning behind each clause is
+  // written at the function that now holds them all.
+  if (metricViolations(metrics)) {
     write("\nmetrics: at least one metric was violated. See the lines above.\n");
     return EXIT_CODES.fail;
   }

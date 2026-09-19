@@ -316,8 +316,29 @@ function compareTo(baseline: RunSnapshot, run: RunSnapshot): readonly Consistenc
 // M2 - defect detection, M3 - no false PASS
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * M2's report.
+ *
+ * An object rather than the bare `{ detected, missed }` pair it used to be, for the reason
+ * `FalsePassReport` below is one: **a bare pair cannot say "I did not look"**, and `missed: []` reads
+ * as a clean sweep whether the sweep happened or not. M2 and M3 are asked the same question of the
+ * same caller-supplied list, so they refuse it for the same reason and say so in the same words.
+ */
 export interface DetectionReport {
+  readonly runs: number;
+  /** The criteria the caller named as ground truth, echoed so this report can be read on its own. */
   readonly expected: readonly string[];
+  /**
+   * Whether the ground truth was compared against anything.
+   *
+   * When `false`, `detected` and `missed` are both empty and mean nothing: this metric did not decline
+   * to find a defect, it declined to ask. Read it rather than inferring the answer from the lengths.
+   */
+  readonly measured: boolean;
+  /** The subject the ground truth was scoped to, or `null` when it could not be scoped. */
+  readonly subject: string | null;
+  /** Every subject the population spans. More than one is *why* the comparison was refused. */
+  readonly subjects: readonly string[];
   readonly detected: readonly string[];
   readonly missed: readonly string[];
 }
@@ -336,50 +357,126 @@ const observedFailing = (run: RunSnapshot, criterionId: string): boolean =>
  * caller passes the criteria that a defect was known to affect, and a criterion counts as detected
  * only when some run *observed* it failing. A criterion that never failed in any run is reported as
  * missed even if the runs all passed, which is what makes this a measurement and not a restatement.
+ *
+ * It is scoped by subject for the same reason M3 is, and this metric is where the omission was found
+ * rather than where it was first made. A criterion id is a name *inside one contract*, so `AC-001`
+ * failing under `inventory-db` is not evidence that `shopping-cart`'s `AC-001` was ever detected -
+ * and `runs.some(...)` over a history that holds both counted it as one. Over this repository's own
+ * 142-run history M2 printed `3/3` while M3, reading the same list, refused to scope it: one ground
+ * truth answering two ways, which is the shape that made M3 report 117 false passes for a while.
+ *
+ * The failure direction is the opposite one, and that is worth saying because it is what nearly let
+ * it stay: M3 *accused* healthy runs and was spotted immediately, while M2 *credited* a detection no
+ * run established and read as a clean bill. A metric can be wrong by being too kind.
  */
-export function defectDetection(runs: readonly RunSnapshot[], expected: readonly string[]): DetectionReport {
-  const detected = expected.filter((criterionId) => runs.some((run) => observedFailing(run, criterionId)));
+export function defectDetection(
+  runs: readonly RunSnapshot[],
+  expected: readonly string[] = [],
+  expectedSubject: string | null = null,
+): DetectionReport {
+  const subjects = [...new Set(runs.map(subjectOf))];
+  const subject = expectedSubject ?? (subjects.length === 1 ? (subjects[0] ?? null) : null);
+  const measured = expected.length > 0 && subject !== null && subjects.includes(subject);
+  const named = measured ? runs.filter((run) => subjectOf(run) === subject) : [];
+  const detected = measured
+    ? expected.filter((criterionId) => named.some((run) => observedFailing(run, criterionId)))
+    : [];
   return {
+    runs: runs.length,
     expected: [...expected],
+    measured,
+    subject,
+    subjects,
     detected,
-    missed: expected.filter((criterionId) => !detected.includes(criterionId)),
+    missed: measured ? expected.filter((criterionId) => !detected.includes(criterionId)) : [],
   };
 }
 
 export interface FalsePass {
   readonly runId: string;
+  /** The subject this run was a reading of, spelled `<goal-id>@<adapter>`. */
+  readonly subject: string;
   readonly detail: string;
+}
+
+/**
+ * M3's report.
+ *
+ * An object rather than a bare array, for the reason `ConsistencyReport` is one: **a bare array
+ * cannot say "I did not look"**. A criterion id is a name *inside one contract* - `AC-001` is the
+ * first criterion of every demo in this repository - so ground truth about `AC-001` is ground truth
+ * about one **subject**, and applying it to a history spanning several compares a criterion against a
+ * claim nobody made about it. This metric did exactly that and reported 117 false passes over a
+ * history whose real number is zero.
+ */
+export interface FalsePassReport {
+  readonly runs: number;
+  /** The criteria the caller named as ground truth, echoed so this report can be read on its own. */
+  readonly expected: readonly string[];
+  /**
+   * Whether the ground-truth half was compared against anything.
+   *
+   * `false` does **not** mean M3 found nothing: the bundle-only half was still read and the findings
+   * it produced are still in `findings`. What is missing is the other half, and `none` would be a
+   * claim about a comparison that never happened.
+   */
+  readonly measured: boolean;
+  /** The subject the ground truth was scoped to, or `null` when it could not be scoped. */
+  readonly subject: string | null;
+  /** Every subject the population spans. More than one is *why* the comparison was refused. */
+  readonly subjects: readonly string[];
+  readonly findings: readonly FalsePass[];
 }
 
 /**
  * M3: a run reported `PASS` and should not have.
  *
- * Two ways this happens, and both are read from the bundle alone. A `PASS` criterion whose required
- * evidence is missing is the one the engine already refuses, so seeing it here would mean the engine
- * was bypassed; and a `PASS` for a criterion the caller knows a defect affected, in a run where that
- * criterion was never observed failing, is a false PASS in the only sense that matters - the run
- * blessed code that was known to be broken.
+ * Two ways this happens, and they are scoped differently on purpose.
+ *
+ * A `PASS` criterion whose required evidence is missing is read from the bundle alone and is reported
+ * for **any** run: the engine already refuses that combination, so seeing it would mean the engine
+ * was bypassed, and no ground truth is needed to say so. Declining to look for it because the ground
+ * truth could not be scoped would hide a finding nothing was ambiguous about.
+ *
+ * A `PASS` for a criterion the caller knows a defect affected is reported only against runs of the
+ * subject that ground truth is about - the caller's when they name one, and otherwise the
+ * population's own, and only when the population holds exactly one. When it can be neither, nothing
+ * is compared, and the report says so through `measured` rather than reporting the unearned
+ * conclusion that a history spanning fourteen contracts has no false passes in it.
  */
-export function falsePasses(runs: readonly RunSnapshot[], expected: readonly string[] = []): readonly FalsePass[] {
-  const out: FalsePass[] = [];
+export function falsePasses(
+  runs: readonly RunSnapshot[],
+  expected: readonly string[] = [],
+  expectedSubject: string | null = null,
+): FalsePassReport {
+  const subjects = [...new Set(runs.map(subjectOf))];
+  const subject = expectedSubject ?? (subjects.length === 1 ? (subjects[0] ?? null) : null);
+  const measured = expected.length > 0 && subject !== null && subjects.includes(subject);
+
+  const findings: FalsePass[] = [];
   for (const run of runs) {
     if (run.verdict !== "PASS") continue;
     const unproven = run.criteria.filter((criterion) => criterion.missingEvidence.length > 0);
     if (unproven.length > 0) {
-      out.push({
+      findings.push({
         runId: run.runId,
+        subject: subjectOf(run),
         detail: `PASS with required evidence missing for ${unproven.map((criterion) => criterion.criterionId).join(", ")}`,
       });
     }
+    // Ground truth, and only against a run that shares its subject: the same criterion id under
+    // another goal or another adapter is a different claim wearing the same spelling.
+    if (!measured || subjectOf(run) !== subject) continue;
     const blessed = expected.filter((criterionId) => !observedFailing(run, criterionId));
     if (blessed.length > 0) {
-      out.push({
+      findings.push({
         runId: run.runId,
+        subject: subjectOf(run),
         detail: `PASS while ${blessed.join(", ")} never failed, though a defect was known to affect it`,
       });
     }
   }
-  return out;
+  return { runs: runs.length, expected: [...expected], measured, subject, subjects, findings };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -400,6 +497,12 @@ export interface ResetReport {
  * later one may inherit it. The count is taken from the environment's own recorded transitions, not
  * from an assumption that a reset was asked for - a validator that inherits contaminated state is the
  * defect this metric exists to catch, and "we called reset" is not evidence that it happened.
+ *
+ * This answers the reset question and nothing else. It used to carry a second branch - a run that
+ * ended with an invalid world was pushed into the same `violations` list - and that branch reported a
+ * run that correctly **aborted** because its reset failed as a reset that could not be reproduced.
+ * The two properties are reported separately now (`worldValidityAtExit`), because they have two
+ * different repairs and one flag for both cannot say which one fired.
  */
 export function resetReproducibility(runs: readonly RunSnapshot[]): ResetReport {
   const violations: { runId: string; detail: string }[] = [];
@@ -412,9 +515,6 @@ export function resetReproducibility(runs: readonly RunSnapshot[]): ResetReport 
         detail: `${String(last)} iterations need ${String(needed)} resets, the environment recorded ${String(run.resets)}`,
       });
     }
-    if (run.iterations.length > 1 && !run.environmentValid) {
-      violations.push({ runId: run.runId, detail: "re-observed after a reset while the environment was not valid" });
-    }
   }
   return {
     runs: runs.length,
@@ -422,6 +522,58 @@ export function resetReproducibility(runs: readonly RunSnapshot[]): ResetReport 
     resets: runs.reduce((total, run) => total + run.resets, 0),
     violations,
   };
+}
+
+export interface WorldValidityReport {
+  readonly runs: number;
+  /**
+   * Runs that ended with an invalid world **and** stopped because of it.
+   *
+   * Not a violation, and this is the whole reason the report exists: the environment check refused to
+   * stand behind a result it could not vouch for, which is the check doing its job. Measured over the
+   * 142-run history this metric was repaired against, the old conflated flag fired **once** and this
+   * is what it was.
+   */
+  readonly stopped: number;
+  /**
+   * Runs that reached a terminal verdict over an invalid world without stopping for it.
+   *
+   * The property the old second branch was written to catch, and the only part of it worth accusing
+   * anything of. The current loop cannot produce one - both of its invalid-world paths call `rollup`
+   * with `environmentValid: false` and leave the state machine at `ABORTED` - and that is not a
+   * reason to stop looking, because this function reads *bundles*: a reading can also have been
+   * written by an older engine, and a metric that assumed the present code is the only thing that
+   * ever wrote one would be reading a promise rather than a record.
+   */
+  readonly carriedOn: readonly { readonly runId: string; readonly detail: string }[];
+}
+
+/**
+ * The world was still valid when the run ended.
+ *
+ * Reported apart from `resetReproducibility` because "the world was rebuilt between observations" and
+ * "the world was valid at exit" are two questions with two different repairs, and one `reproducible`
+ * flag for both could not say which had been answered.
+ *
+ * The two causes are told apart by reading the run's own terminal `state`, not by inferring from the
+ * boolean: a run handed an invalid world *and* stopped on it is the abort, and a run that reached a
+ * verdict over one is the defect.
+ */
+export function worldValidityAtExit(runs: readonly RunSnapshot[]): WorldValidityReport {
+  const carriedOn: { runId: string; detail: string }[] = [];
+  let stopped = 0;
+  for (const run of runs) {
+    if (run.environmentValid) continue;
+    if (run.state === "ABORTED" || run.state === "ERROR") {
+      stopped += 1;
+      continue;
+    }
+    carriedOn.push({
+      runId: run.runId,
+      detail: `reached ${run.verdict} in state ${run.state} over a world the bundle records as invalid`,
+    });
+  }
+  return { runs: runs.length, stopped, carriedOn };
 }
 
 export interface EvidenceReport {
@@ -455,14 +607,25 @@ export interface SuccessMetrics {
   readonly unreadable: readonly string[];
   readonly consistency: ConsistencyReport;
   readonly detection: DetectionReport;
-  readonly falsePasses: readonly FalsePass[];
+  readonly falsePasses: FalsePassReport;
   readonly reset: ResetReport;
+  readonly worldValidity: WorldValidityReport;
   readonly evidence: EvidenceReport;
 }
 
 export interface MetricOptions {
   /** Criteria a known defect was expected to break. M2 and M3 are unmeasurable without it. */
   readonly expectedDefects?: readonly string[];
+  /**
+   * The subject those criteria belong to, spelled `<goal-id>@<adapter>`.
+   *
+   * A criterion id is a name inside one contract, so ground truth without a subject is ground truth
+   * about nothing in particular - and a metric that applied it to every run anyway reported 117 false
+   * passes over a history that holds none. Absent, **both** M2 and M3 fall back to the population's
+   * own subject, and only when that is a single one: they are handed the same list, so a subject that
+   * scoped one and not the other would leave the pair disagreeing about one question.
+   */
+  readonly expectedSubject?: string | null;
   /** Bundles that could not be read. Reported, never dropped: an unreadable run is not a passing one. */
   readonly unreadable?: readonly string[];
 }
@@ -473,12 +636,40 @@ export function successMetrics(runs: readonly RunSnapshot[], options: MetricOpti
     runs: runs.length,
     unreadable: [...(options.unreadable ?? [])],
     consistency: resultConsistency(runs),
-    detection: defectDetection(runs, expected),
-    falsePasses: falsePasses(runs, expected),
+    detection: defectDetection(runs, expected, options.expectedSubject ?? null),
+    falsePasses: falsePasses(runs, expected, options.expectedSubject ?? null),
     reset: resetReproducibility(runs),
+    worldValidity: worldValidityAtExit(runs),
     evidence: evidenceCompleteness(runs),
   };
 }
+
+/**
+ * The sentence a ground-truth metric prints when its ground truth could not be scoped to a subject.
+ *
+ * Written once because M2 and M3 are handed the same list and must refuse it for the same reason.
+ * They did not, once: over this repository's own history M3 said `INCONCLUSIVE` while M2 said `3/3`,
+ * each having derived its own answer to "does this ground truth apply here". Two implementations of
+ * one rule disagree the first time a population arrives that only one of them was written for, and a
+ * *message* about that rule is an implementation of it too.
+ *
+ * The two branches are two different refusals and say so: nothing constrained the ground truth (a
+ * history spanning several subjects), or something did and the population does not hold it (a subject
+ * named on the command line that no bundle is a reading of).
+ */
+const unscopedRefusal = (
+  label: string,
+  report: {
+    readonly expected: readonly string[];
+    readonly subject: string | null;
+    readonly subjects: readonly string[];
+  },
+): string => {
+  const held = report.subjects.length === 0 ? "no runs at all" : report.subjects.join(", ");
+  return report.subject === null
+    ? `${label}: INCONCLUSIVE (${String(report.expected.length)} named defect(s) over ${String(report.subjects.length)} subjects: ${held} - a criterion id is a name inside one contract, so a named defect from one subject is not a claim about another)`
+    : `${label}: INCONCLUSIVE (the named defects are scoped to ${report.subject}, which this history does not hold: ${held})`;
+};
 
 /**
  * The report as console lines.
@@ -488,17 +679,33 @@ export function successMetrics(runs: readonly RunSnapshot[], options: MetricOpti
  * at all without ground truth, and printing `PASS` for a metric that had nothing to compare would be
  * the same lie this module refuses at the level of the runs.
  *
- * M3 is measured only *in part* without ground truth, and says so rather than reporting the half it
- * could check as the whole answer. A `PASS` whose required evidence is missing is visible from the
- * bundle alone and is still reported; a `PASS` that blessed a known defect is not, because nothing
- * named the defect. Without that half, `none` would be a claim about a comparison that never
- * happened - so the line says `INCONCLUSIVE` and names what was left out, while any false pass it
- * *did* find is still printed.
+ * M2 has three states rather than two, and the third is the one it spent a while missing. With no
+ * ground truth it is `INCONCLUSIVE` - there was nothing to compare. With ground truth it cannot scope
+ * it is `INCONCLUSIVE` again, naming the subject it scoped to when the caller named one and the
+ * population otherwise, because `3/3` over fourteen subjects is a detection no single run
+ * established. Only when the ground truth is about the population does it print a score, and it
+ * names the subject there too - so a reader can tell a count earned against one contract from one
+ * that stands for a history this never compared.
+ *
+ * M3 has four states, not two, and each is a different claim. It reports findings when it has any -
+ * the bundle-only half is visible without ground truth and is still read. It says `INCONCLUSIVE` when
+ * no ground truth was named, because then `none` would be a claim about a comparison that never
+ * happened. It says `INCONCLUSIVE` again when ground truth *was* named but could not be scoped: a
+ * criterion id is a name inside one contract, so ground truth for one subject applied to a history
+ * spanning several compares each of them against a claim nobody made about it - which is exactly what
+ * this metric did, reporting 117 false passes over a history that holds none. Only in the fourth
+ * state - one subject, ground truth for it - does it say `none`, and it names the subject it scoped
+ * to so a reader cannot mistake a scoped `none` for a whole-history one.
  *
  * M1 is the same distinction one state further along. It answers `yes` or `no` only when the
  * population is a reading of exactly one subject; a single run has nothing to compare, and a
  * population spanning two subjects is not a consistency question at all, because a criterion id is a
  * name *inside one contract*. Both print `INCONCLUSIVE` with the reason, and neither is a violation.
+ *
+ * M4 prints one line for the reset property and a second, only when there is something to say, for
+ * the world's validity at exit - because a run that stopped on an invalid world and a run that
+ * re-observed one are two different findings, and the flag that used to hold both reported a correct
+ * abort as a reproducibility failure.
  */
 export function formatMetrics(metrics: SuccessMetrics): readonly string[] {
   const lines: string[] = [];
@@ -521,21 +728,39 @@ export function formatMetrics(metrics: SuccessMetrics): readonly string[] {
   lines.push(
     m2.expected.length === 0
       ? "M2 defect detection: INCONCLUSIVE (no known defects were named to detect)"
-      : `M2 defect detection: ${String(m2.detected.length)}/${String(m2.expected.length)}${m2.missed.length > 0 ? ` (missed ${m2.missed.join(", ")})` : ""}`,
+      : !m2.measured
+        ? unscopedRefusal("M2 defect detection", m2)
+        : `M2 defect detection: ${String(m2.detected.length)}/${String(m2.expected.length)} (scoped to ${m2.subject ?? "?"})${m2.missed.length > 0 ? ` (missed ${m2.missed.join(", ")})` : ""}`,
   );
 
   const m3 = metrics.falsePasses;
-  lines.push(
-    m3.length > 0
-      ? `M3 false PASS: ${String(m3.length)}${m3.map((entry) => `\n  ${entry.runId}: ${entry.detail}`).join("")}`
-      : metrics.detection.expected.length === 0
-        ? "M3 false PASS: INCONCLUSIVE (no known defects were named, so a pass that blessed one could not be told from an earned pass)"
-        : "M3 false PASS: none",
-  );
+  if (m3.findings.length > 0) {
+    lines.push(
+      `M3 false PASS: ${String(m3.findings.length)}${m3.findings
+        .map((entry) => `\n  ${entry.runId} (${entry.subject}): ${entry.detail}`)
+        .join("")}`,
+    );
+  } else if (m3.expected.length === 0) {
+    lines.push(
+      "M3 false PASS: INCONCLUSIVE (no known defects were named, so a pass that blessed one could not be told from an earned pass)",
+    );
+  } else if (!m3.measured) {
+    lines.push(unscopedRefusal("M3 false PASS", m3));
+  } else {
+    lines.push(`M3 false PASS: none (scoped to ${m3.subject ?? "?"})`);
+  }
 
   const m4 = metrics.reset;
   lines.push(`M4 reset reproducibility: ${yes(m4.reproducible)} (${String(m4.resets)} resets recorded)`);
   for (const violation of m4.violations) lines.push(`  ${violation.runId}: ${violation.detail}`);
+
+  const world = metrics.worldValidity;
+  if (world.stopped > 0 || world.carriedOn.length > 0) {
+    lines.push(
+      `M4 world validity at exit: ${String(world.stopped)} run(s) stopped on an invalid world, ${String(world.carriedOn.length)} carried on`,
+    );
+    for (const entry of world.carriedOn) lines.push(`  ${entry.runId}: ${entry.detail}`);
+  }
 
   const m5 = metrics.evidence;
   lines.push(
@@ -545,4 +770,43 @@ export function formatMetrics(metrics: SuccessMetrics): readonly string[] {
     lines.push(`  ${violation.runId} ${violation.criterionId}: missing ${violation.missing.join(", ")}`);
   }
   return lines;
+}
+
+/**
+ * Whether any metric was actually violated, which is the question the `metrics` command's exit code
+ * answers.
+ *
+ * It lives here rather than at the call site because the decision is about these reports, and because
+ * it was previously an `||` chain inside `cli/veridian.ts` that no test in the tree could reach:
+ * `runMetrics` is module-private, so the predicate deciding the process's exit code - over the whole
+ * history, for every user of the command - had no coverage at all.
+ *
+ * Only an **answered** `no` is a violation, and for M1 that answer is `measured`. M1 reports
+ * `consistent: false` both when two runs disagreed and when it had nothing to compare - one run, or a
+ * history spanning two subjects - and it says so through `measured`. Reading it as
+ * `runs > 1 && !consistent`, which is what it was, worked for the single run by accident and accused
+ * a mixed history of a disagreement it had refused to look for.
+ *
+ * M3 is the same distinction pointing the other way, and its clause is therefore **not** guarded the
+ * same way. `FalsePassReport.measured` describes the half of M3 that needed ground truth to be
+ * scoped; it does not describe the findings, and a `measured: false` report can still hold answered
+ * ones, because the missing-evidence half is decided from the bundle alone. `formatMetrics` prints
+ * whatever findings exist, whatever `measured` says - so a predicate reading
+ * `falsePasses.measured && findings.length > 0` would print `M3 false PASS: 1` and then report that
+ * the history is clean. A finding is the answered thing; `measured` separates `none` from `I did not
+ * look`, and neither of those two is a violation.
+ *
+ * `worldValidity` is deliberately absent. On this history its one finding is a run that *correctly*
+ * aborted because the world could not be rebuilt, which is the product working; promoting it would
+ * require a case where a run continued in an invalid world, and there is none. M2 is absent for a
+ * different reason stated at `runMetrics`: without `--defects` it is unmeasurable, and an
+ * unmeasurable metric must not be allowed to fail - or to pass - a command.
+ */
+export function metricViolations(metrics: SuccessMetrics): boolean {
+  return (
+    (metrics.consistency.measured && !metrics.consistency.consistent) ||
+    metrics.falsePasses.findings.length > 0 ||
+    !metrics.reset.reproducible ||
+    metrics.evidence.violations.length > 0
+  );
 }
