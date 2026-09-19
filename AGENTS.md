@@ -1191,9 +1191,14 @@ worlds` until the name stopped describing its own membership, and `demo:api`, `d
 `demo:data` and `demo:cockpit` were declared, shipped, documented and run by nothing.
 **It also carries the one command the `for world` loop cannot**: `npm run acceptance`, the
 self-acceptance contract, which is not a `demo:*` script and would otherwise be a command the manifest
-declares and no job executes - the four-name defect again, one script over. That step is **added and
-not yet observed**: it has not run on a runner, which is exactly the state this file calls an
-unexecuted check, so its first green run is part of the change rather than a follow-up.
+declares and no job executes - the four-name defect again, one script over. That step is **now
+observed, and how it was observed is the reason this paragraph is worth reading**: its first
+execution on a runner (`35422604027`) printed `run 1: exit 1 - FAIL  (MAX_ITERATIONS, 1
+iteration(s))` and the same for run 2, because the `cli/` extraction that landed in the same commit
+had silently dropped a behaviour this contract was the only thing in the tree to assert. It was
+repaired in `fadff22`, and its first green run is `35422903806`, where both invocations printed
+`run N: exit 0 - PASS  (COMPLETED, 1 iteration(s))`. *An unexecuted check is not a formality that was
+deferred; it is a defect that has not been observed yet - and this one took a single run to find.*
 `distribution` runs `npm run smoke:dist` and then a
 full `npm pack` -> install into a clean directory -> run round trip, because that is the only check
 that reads `files` and `bin` the way a consumer does. `MCP surface` runs `npm run smoke:mcp`, which
@@ -2861,6 +2866,55 @@ port had none, which is why the defect reached a demo run.
   decoration.* This is the sixth time this repository has recorded a harness reporting something it did
   not measure, after the CRLF anchor, the column-zero `not ok` scrape, the probe that restored the file
   before running the suite, the substring needle, and the probe that read the wrong file's count.
+
+- **An extraction can be faithful for a composition and lossy for an observation, and only an
+  assertion that runs will say which.** `cli/` was split into `./validate.ts` and `./session.ts` as a
+  pure move, and it moved the composition correctly while dropping one `logger.info` call. `main` had
+  emitted `resolving the definition` on **both** fronts - inside `runClarify` and inside `runValidate` -
+  and afterwards `cli/validate.ts` logged `running` and nothing else, so the second line was gone. The
+  whole suite stayed green, **2531 tests before and after**, because no test in `node --test` reaches
+  that path's log stream at all: the only thing that reads it is `acceptance/acceptance.yaml` AC-006, a
+  `process.stderr` expectation inside a contract the suite never runs. The contract caught it on its
+  **first** execution on a runner, `run 1: exit 1 - FAIL  (MAX_ITERATIONS, 1 iteration(s))`. The repair
+  restores the line in `runValidate` rather than deleting the expectation, and the reason is measured
+  rather than sentimental - the blast radius was checked and is exactly **one** expectation, since the
+  other `process.stderr` uses in that contract are two prose lines in a grammar comment, an
+  `equals: ""` and a `contains` on an unaffected path - so AC-006 is the only criterion that can catch
+  this regression. *A log line an operator watches is a behaviour, and a behaviour needs an assertion
+  somewhere that runs.* The generalisation mirrors an older rule in this file: that one says two
+  implementations of one rule disagree the first time a world arrives that only one of them was written
+  for - and here **one implementation was split into two, and the split lost a behaviour only one of the
+  halves carried.**
+
+- **A test that hard-codes an absolute path asserts the developer's platform, and this is the fourth
+  time this file has recorded that shape.** `adapters/sim-mobile/mobile-port.test.ts` handed a world the
+  literal `D:/elsewhere/cart` to be refused as a path outside both trees. Under `node:path`'s `win32`
+  semantics that string **is** absolute, so the world refused it and the test passed; under `posix`
+  semantics it is **relative**, so `posix.resolve` folded it into the world's own context root, the world
+  resolved it happily, and four assertions failed - on `ubuntu-latest` only, which is why the local
+  Windows gate could not see it. Measured rather than reasoned: `posix.isAbsolute("D:/elsewhere/cart")`
+  is `false`, `posix.resolve("/a/b/app", "D:/elsewhere/cart")` is `"/a/b/app/D:/elsewhere/cart"`, and
+  `win32.isAbsolute` of the same string is `true`. The fixture now derives its spelling from the world's
+  own geometry, `resolvePath(world.context, "..", "..", "elsewhere", "cart")`, which lies outside both
+  trees on either platform and is refused on both. The half worth keeping is *which* side was repaired:
+  `mobile-port.ts`'s boundary predicate is correct and was left byte for byte alone, because **the
+  fixture was the defect** - and a repair aimed at the predicate would have widened a boundary in order
+  to make a test pass, which is the one direction a boundary repair must never go. Falsified rather than
+  trusted: two probes fired naming the tests they broke, both files were restored byte for byte, and the
+  suite reports 49 tests / 14 suites / 0 failures. *The four instances are one class, and the class is
+  not "CRLF" or "paths" - it is that a test can only ever assert a property of the machine it runs on, so
+  a claim about the program has to be expressed in terms the platform cannot change.*
+
+- **A suspected drift is not a drift, and the count is what tells the two apart.** Writing an entry about
+  the movement of the suite counts, this agent noticed that the CI paragraph above says the workflow "has
+  seven jobs" while the jobs table of a real run lists **eight** rows - and took that as a fifth instance
+  of a number that had drifted. Measuring it refuted the suspicion: the workflow's `jobs:` keys are
+  `gate`, `demo`, `worlds`, `dist`, `mcp`, `image` and `cockpit` - seven - and the eighth row exists
+  because `gate` is a matrix over two platforms, so a run *displays* two legs of one job. Both figures are
+  right and they count different things, and the correction that was about to be written would have been
+  a false one. *The rule that a number must be re-measured rather than recalled cuts both ways: it keeps a
+  document from carrying a stale count, and it equally stops a reader from "fixing" a count that was never
+  wrong - and the only way to tell those apart is to take the measurement.*
 
 ## Documentation
 

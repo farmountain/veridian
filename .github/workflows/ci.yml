@@ -170,13 +170,21 @@ jobs:
       # declared, shipped and runnable while no pipeline executed it, which is this repository's
       # oldest shape.
       #
-      # It has not run on a runner yet. That is a real caveat and not a formality: the workflow that
-      # had never executed found two ubuntu-only defects on its first run (`resolveSibling` dropping
-      # a POSIX root, and a test building a repo root from `url.pathname` with the leading separator
-      # stripped). The contract avoids both shapes by construction - its `process.argv` needle
-      # compares the vector the *criterion* wrote rather than a resolved path, and its file targets
-      # are world-relative and split on `/` - but "avoids by construction" is a reading of the code,
-      # and this step's first green run is what turns it into a measurement.
+      # It has now run on a runner, and it was green on its first attempt - run `35422903806`, both
+      # invocations `exit 0 - PASS  (COMPLETED, 1 iteration(s))`. That matters because "avoids by
+      # construction" was a reading of the code rather than a measurement when it was written, and
+      # the forecast it made was that this contract avoids the two ubuntu-only shapes the workflow's
+      # own first run found (`resolveSibling` dropping a POSIX root, and a test building a repo root
+      # from `url.pathname` with the leading separator stripped): its `process.argv` needle compares
+      # the vector the *criterion* wrote rather than a resolved path, and its file targets are
+      # world-relative and split on `/`. The forecast held.
+      #
+      # The self-acceptance step **above** did not, and the contrast is the useful part of this note:
+      # the contract route failed on its first runner execution with `run 1: exit 1 - FAIL
+      # (MAX_ITERATIONS, 1 iteration(s))`, for a cause with nothing to do with the platform - a `cli/`
+      # extraction had dropped a log line its AC-006 asserted. Two self-acceptance routes, one green
+      # first time and one red, and the one that went red was red because something asserted a
+      # *behaviour* rather than a shape.
       - name: Veridian must resolve its own ambiguities, twice in a row
         run: npm run acceptance:ladder
       # Twelve of the fourteen declared demos, and until this job existed **none of them was run by
