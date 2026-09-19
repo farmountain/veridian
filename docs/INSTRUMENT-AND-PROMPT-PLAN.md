@@ -331,31 +331,108 @@ resolve a gap without asking anyone.
 derived=2281   defaulted=454   self_prompted=0
 ```
 
-Rung 4 has never fired on this history. That is a finding about **reachability**, not a missing
-feature, and the honest response is to say so rather than to manufacture a seam that exercises it.
+Rung 4 has never fired on **that** population, and the sentence needs its contrast or it reads as
+the claim section 7 exists to disclaim. The rung does fire, and the measurement is
+`acceptance/ladder/acceptance.yaml`: AC-002 asserts the token `'"self_prompted"'` appears in a real
+run's own record, AC-004 names the resolution it belongs to -
+`validation:/criteria/1/expect/0/validator`, a gap created by a fixture criterion naming
+`sandbox.argv`, a validator that is not registered and whose family prefix has no sibling to be
+inferred from - and `npm run acceptance:ladder` was measured `PASS (COMPLETED, 1 iteration(s))`
+over 4/4 criteria. So the zero is a fact about **which contracts were run**: every demo contract
+names registered validators, so every demo gap terminates at `derived` or `defaulted`, which is
+exactly what the rung order intends. The rung is reachable; the 142-run history is a population
+that never needed it. That distinction is the whole of this workstream, and it is why the finding
+is recorded rather than repaired.
 
-**Workstream.** For every lifecycle point where an unknown can arise - goal definition, acceptance
-criteria, validation planning, test planning, environment requirements, and the run loop's own
-runtime questions - record in this document, as a measurement at a file and an anchor:
+**The six points, measured.** For each lifecycle point section 6 names, the four questions are
+answered below at a file and an anchor.
 
-1. **whether a detector exists there at all**;
-2. **whether rung 4 is reachable there** - which is answered by whether the point supplies a
-   self-prompt port, because a rung with no port is a rung that returns `null` and defers;
-3. **what the exit is** - the per-gap cap, the per-run cap and the wall-clock ceiling, and which
-   of those is the one that actually terminates the attempt;
-4. **what the fallback is** when the point declines - a decline must be a recorded reason, not a
-   silence.
+| Lifecycle point | detector | rung-4 reachable via | exit | fallback on decline |
+| --- | --- | --- | --- | --- |
+| Goal definition | `detectGoalAmbiguities`, `core/clarification/detect.ts:350` | `core/definition.ts:144`, on the shared clarifier | the three bounds, `core/clarification/engine.ts:280`, `:281`, `:288` | ASK if blocking and a user port exists, else DEFER naming a `DEFER_REASONS` member |
+| Acceptance criteria | `detectAcceptanceAmbiguities`, `detect.ts:450` | `core/definition.ts:173` - one call carries this family and the next | same | same |
+| Validation planning | `detectValidationAmbiguities`, `detect.ts:609` | `core/definition.ts:173` - the same call, and the site the ladder fixture's rung-4 resolution lives at | same | same |
+| Test planning | **none** | **none** | n/a | n/a - **a gap, with its reason stated below** |
+| Environment requirements | `detectEnvironmentAmbiguities`, `detect.ts:735` | `core/definition.ts:204` | same | same |
+| The run loop's own runtime questions | `detectExecutionAmbiguities`, `detect.ts:1034`; `detectEvidenceAmbiguities`, `:1078`; `detectIterationAmbiguities`, `:1148` | `core/execution/loop.ts:444` for execution and evidence, `:489` for iteration | same | same |
 
-**The exit must be checked at the placement, not merely present.** The per-run round budget is
-spent *before* a round is granted, which is what makes the worst case a bound that was already
-reached rather than one that is one over. Any guard written for this must include a case where the
-cap is **already zero**, because a guard built only from positive caps cannot see the placement of
-the check - the difference between before and after the increment only appears at the degenerate
-input.
+**Rung 4 is reachable, and it is reachable *uniformly* rather than per point.** Every resolve site
+above is handed the engine built at exactly one place - `cli/session.ts:111` - and that host always
+passes a port: `createSelfPromptPort({ material })` by default, or `NullSelfPromptPort` under
+`--no-self-prompt`. There is therefore no resolve site that is portless, and reachability is a
+property of the host rather than of the point. The MCP surface reaches the same host through
+`openSessionFor` (`mcp/server.ts:487`), which calls `openSession` (`:488`) and is itself called at
+`:522` and `:645`, with `SURFACE_SESSION_OPTIONS.noSelfPrompt === false` (`:418`) - so the two front
+doors supply the same port for the same reason rather than by two rules that could disagree.
 
-**No new host is invented.** Where a point has no port, the finding is recorded as a gap with its
-reason, in the shape `ISOLATION-AND-MCP-PLAN.md` already uses for the deferred isolation
-substrate: an absence that is a measurement rather than a promise.
+**The exit is checked at the placement, and the guard includes a cap already at zero.**
+`#selfPromptFor` (`engine.ts:272`) spends a round at exactly one statement - `:294`,
+`this.#selfPromptRounds += 1` - and all three bounds sit above it: the per-gap cap as the loop
+condition at `:280`, the per-run cap as a guard at `:281`, and the wall-clock ceiling as a guard at
+`:288`. So no bound can be passed, because none is compared after the spend. Two of the three
+terminate different attempts: the per-gap cap, not the per-run cap, is what ends the fixture's
+`validation` gap, and the per-run cap is what ends a run whose contract holds many gaps. The
+placement is held by `tests/clarification-ladder.test.ts` in two subtests - *"reaches the per-gap
+bound rather than passing it, and defers"* (a cap of 2 yields `attempts === 2`, not 3) and *"spends
+no round at all when the per-run cap is already reached"* (`maxSelfPromptRoundsPerRun: 0` yields
+`attempts === 0` and `selfPromptRounds === 0`). The second is the degenerate case section 6
+requires, and that file's own doc block records why it is the load-bearing one: with a positive cap
+the two placements differ only in a boundary the per-gap cap already covers, so a test built from a
+positive cap passes with the check moved below the increment.
+
+**That last sentence was falsified rather than trusted, which is the difference between a guard
+that exists and a guard that holds.** Moving the per-run check below the increment - and widening
+`>=` to `>` so that positive caps behave identically, leaving *only* the degenerate input to differ
+- took `tests/clarification-ladder.test.ts` to `pass=4 fail=1 exit=1`, with the failing titles
+naming exactly one subtest: *spends no round at all when the per-run cap is already reached*. No
+other subtest in the file moved, which is what makes the cap-of-zero case the one that holds the
+placement rather than merely one of two that happen to agree. The probe detected the file's line
+ending before editing it (`engine.ts="\r\n"`), asserted the anchor was present and that the patch
+changed the file, computed its verdict from the failing test titles rather than a substring, and
+restored the file byte for byte (`sha256` prefix `FA7D1572D2BD08E0` before and after).
+
+**A decline is recorded rather than silent, and a skipped rung is a different reading.** `:193`-`:194`
+is the whole of the difference, and the two lines sit together: `:193` is the guard,
+`if (this.#selfPrompt?.available)`, and `:194` is the push of `self_prompted` into the rung list -
+the local `rungs` array that every record carries as `rungsAttempted`. Only *then* does `:195`
+attempt the round. So a declined, throwing or low-confidence answer is recorded as a rung that was
+attempted, and the gap then falls to rung 5 (blocking, with a user port) or rung 6, whose
+`#deferReason` at `:221` returns a member of `DEFER_REASONS`. A port that is not available at all
+takes the other branch: the rung is **never pushed**, which is the distinction the switch's own
+reasoning names at `cli/session.ts:94-98` - *a declined round is work the run did and reported, a
+skipped rung is work it never attempted*.
+
+**That rule is written in four places, and only two of them carry both halves.** `README.md:409-414`
+restates the distinction for an operator - *"a skipped rung is work the run never attempted; a
+declined round is work it did and reported"* - while `README.md:444` and `cli/arguments.ts:139` state
+the skip alone (*never put a gap to the run itself*), because a one-line flag help has room for what
+the flag turns off and not for what a declined round is. Naming the split is worth the sentence: this
+repository has already watched one rule stated in several places drift, and the copy that drifts is
+the one answering the narrower question.
+
+Both halves are asserted beside the rule: the per-gap subtest requires `rungsAttempted` to be
+`["self_prompted", "deferred"]`, and `#safe` (`engine.ts:436`, which wraps the port's own `prompt` at
+`:296` and returns `U | null`) makes a throwing port equivalent to one that found nothing, so a
+misbehaving port cannot take the run down.
+
+**Test planning is a gap, and its reason is not a missing port.** This document is the only file in
+the tree that contains the phrase - measured across every `.ts`, `.md`, `.json`, `.yaml`, `.yml` and
+`.mjs` file outside `node_modules/`, `dist/`, `out/` and `.veridian/` - and it is absent from
+`PLAN.md`, `IMPLEMENTATION-PLAN.md`, `core/`, the schema set and every detector. The ladder's
+vocabulary has no member for it either: `AMBIGUITY_ORIGINS` holds seven origins - `goal`,
+`acceptance`, `environment`, `validation`, `execution`, `evidence`, `iteration`, in the register's own
+order - and none is `test`. So the honest record is not *"the point exists and supplies no port"* but
+*"the point does not exist in this product"*, and the difference matters because the first would
+promise a seam somebody should build. Deciding how an application ought to be tested is the agent's
+work, and the second governing principle is what forbids Veridian from doing it: **do not build the
+intelligence that creates the software - build the world that determines whether it works.** Veridian
+validates against explicit acceptance criteria; it does not plan the tests that produced them.
+
+**No new host is invented, and none was needed.** The measurement above runs the real CLI, through
+its real `openSession`, against a fixture whose sparsity is authored rather than incidental -
+`acceptance/ladder/fixtures/goal.yaml` says in its own header that *a sparse document here is not a
+broken one: it is the measurement instrument*. Nothing was stood in, no seam was manufactured to
+reach the rung, and the only new artifact this workstream produced is this table.
 
 ---
 
@@ -365,8 +442,16 @@ substrate: an absence that is a measurement rather than a promise.
   subjects. Its `INCONCLUSIVE` is a correct answer to a question this history cannot pose.
 - **It does not claim a run engine defect was fixed.** §1.2's refuted hypothesis is recorded so
   the next reader does not re-derive it; nothing in `core/execution/` changes behaviour.
-- **It does not claim the self-prompting rung is broken.** It is unimplemented *at the points that
-  would reach it*, which is a different claim, and §6 measures which points those are.
+- **It does not claim the self-prompting rung is broken, and §6's measurement went further than
+  this bullet first allowed.** The original sentence here said the rung was *"unimplemented at the
+  points that would reach it"* and left §6 to name them. The measurement refutes that: the rung is
+  **implemented and reachable at five of the six points**, because every resolve site shares one
+  host that always installs a port, and it was measured firing (`npm run acceptance:ladder`, 4/4,
+  `PASS`). The sixth point, test planning, is not a point with a missing port but a point that does
+  not exist in this product at all. So the rung's production count of `0` is a fact about the
+  contracts that were run rather than about the code. Corrected in place rather than dropped,
+  because a non-claim that outlives its measurement is the same defect as a count that outlives its
+  count.
 - **It does not guess a command, a path or a count.** Every figure above was read off a run, a
   bundle or a file, and each is dated by the section that measured it. A figure whose movement is
   not measured is only ever restated, which is why the suite counts in `AGENTS.md` are re-measured
