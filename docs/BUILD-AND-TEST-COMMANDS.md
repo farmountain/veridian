@@ -308,9 +308,13 @@ all distinct from a zero exit code: `node scripts/probe-isolation.ts`, which exi
 allowed an escape **and** the substrate refused it **and** the permitted write still worked; and the
 same two suites, read for `# skipped 0` rather than for a zero exit. The shape it is defending against
 is the `upload the evidence bundle` step that uploaded nothing for every green build - a check that was
-executed and did not measure what its name says. Its first run has not happened: the branch is pushed
-but no pull request is open, and this workflow triggers on `main` or on a pull request, so triggering
-it is a `workflow_dispatch` rather than a push.
+executed and did not measure what its name says. **It has since run twice, and the first run is the half
+worth keeping:** run `35958111544` failed in step 6 on `not ok 2 - translates a Windows path's
+separators`, because a Windows behaviour was asserted on every platform - and because a failed step
+skips its successors, the world-level step never executed either. Run `35958249177` is green with
+`# pass 19` and `# pass 18`, both `# skipped 0`, against `podman 4.9.3` on `ubuntu-latest` - a
+different runtime and version from this machine's `5.7.1`, which is what makes the port's
+runtime-agnosticism a measurement.
 
 **Both of those last two jobs have now run, and that is why they can be cited.** They were added and
 pushed in one commit, which means they existed for a short window as exactly the thing this file

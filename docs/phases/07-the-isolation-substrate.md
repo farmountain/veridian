@@ -148,11 +148,40 @@ found it was itself wrong first.
   - **And the negative control is a test rather than a paragraph:** before the first spawn the world
     reports `substrate: null` and `network: unenforceable` however its document is written, so a
     document that *asked* for a substrate cannot be read back as one that had it.
-- **Written, never executed.** The `isolation` job exists in `.github/workflows/ci.yml` and requires
-  `# skipped 0` from both suites it runs, so a runner that lacks a runtime fails loudly rather than
-  passing on skips. It has not run: the branch carrying it is unpushed. This is the criterion this phase
-  is *not* finished on, and calling it met would be the exact defect the item exists to prevent -- the
-  last two such jobs both found real defects on their first runner execution.
+- **Met, on the job's second run, and the first run is the more useful half of the record.** The
+  `isolation` job exists in `.github/workflows/ci.yml` and requires `# skipped 0` from both suites it
+  runs, so a runner that lacks a runtime fails loudly rather than passing on skips.
+  - **Its first execution found a real defect** - run `35958111544`, job `isolation substrate`,
+    `failure`. Step 5 (the probe) passed, step 6 (the seam's suites) failed on
+    ```
+    not ok 2 - translates a Windows path's separators, because a container has only forward slashes
+    # fail 1
+    # skipped 0
+    ```
+    The assertion was a Windows behaviour asserted on every platform: on POSIX a backslash is an
+    ordinary filename character, so `/host/sandbox\a\b.txt` names a file *beside* the mount rather
+    than under it and the translation correctly answers `null`. The **port was right and the test
+    overreached**, and the corrected test now holds a rule on both branches rather than skipping on
+    one - *the translation converts what the composing host would have used as a separator*. The
+    third step never ran, because a failed step skips its successors: **one platform-dependent
+    assertion cost the world-level reading its first execution**, which is the compounding a CI job
+    is for.
+  - **The second execution is green** - run `35958249177`, job `isolation substrate`, all three steps
+    `success`, with the readings taken on `ubuntu-latest`:
+    ```
+    substrate available: true (podman 4.9.3)
+      inside:  written /tmp/veridian-isolation-run-30VzfU   <- on the host, unisolated
+      outside: written
+      inside:  written /veridian/rw0                        <- inside the substrate
+      outside: EROFS
+      the host sees the permitted write: true
+    # pass 19  # fail 0  # skipped 0      the seam's own suites
+    # pass 18  # fail 0  # skipped 0      the world's own suite
+    ```
+    A different runtime and version from this machine's (`podman 4.9.3` against `5.7.1`), which is the
+    reading that makes the port's runtime-agnosticism a measurement rather than a claim: it tries
+    `podman` then `docker`, reads a **server** version, and resolves the runtime to an executable so
+    the vector never passes through a shell.
 
 ## Falsification probe
 
