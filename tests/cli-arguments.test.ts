@@ -71,6 +71,8 @@ function environmentPlan(browserEnabled: boolean): EnvironmentPlan {
     reset: { strategy: "snapshot-restore", command: null },
     browser: { enabled: browserEnabled, viewport: null, locale: null, timezoneId: null },
     boundary: { network: "deny", allow: [], filesystemWrite: "deny" },
+    imported: null,
+    adopted: null,
   };
 }
 

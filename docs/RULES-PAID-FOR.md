@@ -1747,3 +1747,46 @@ reads a variable.*
   named together with the version it gave back, and the flag list is non-empty exactly when the boundary
   was measured to hold. *A test that passes on one platform because its branch is unreachable has not
   been tested, and the platform that can reach it is the instrument that finds the difference.*
+- **One field cannot spell the difference between "declared nothing" and "declared and not staged",
+  and it is the second state a run reports.** Phase 08's import was first modelled as a single
+  `import` field on `EnvironmentPlan`: a plan either came from an interchange document or it did not.
+  The model is circular and the circle was invisible until the acceptance criterion was written out.
+  Verification *compares* an identity, so the plan must exist before the comparison - yet a plan may
+  not be presented as a world when a declaration reached it and no verification did. With one field
+  those two states have the same value, `null`, so AC-8's clause *an import is staged at `prepare()`
+  or not at all* stopped being falsifiable: there was no state a reader could construct that was
+  *declared and unstaged*. Split into `imported` (the declaration the operator's document makes) and
+  `adopted` (the verification the program completed), and the state becomes reachable, refusable, and
+  testable - which is the whole of the criterion. The pair is checked in **one direction only**: a
+  record with no matching declaration is refused by name, while a declaration with no record is
+  allowed, because that is the state the verifier builds a plan in on its way to producing the record.
+  *When a criterion's clause sounds unfalsifiable, the field model is the first thing to check - a
+  state the model cannot represent is a state no test can construct.*
+
+- **A guard written as a regex over a module's whole source cannot pass when the module's own prose
+  uses the word it forbids.** The claim "`core/metrics/import.ts` reaches no adapter" was first
+  written as a pattern over the module's text, and it could never be true: the module's doc block
+  explains *why* it reaches for no adapter, so the word appears, and the assertion would have failed
+  for a file that satisfied it. It would have been "fixed" by loosening the pattern, which is the
+  move that turns a guard into decoration. The replacement reads the module's **actual `import`
+  statements** and filters those paths, which is the question that was meant. *A guard over a source
+  file's text is a guard over everything the file says - including the sentences that explain the rule
+  - so read the file's imports, exports or AST rather than its words.*
+
+- **A guard that holds where a decision *lives* is not a guard that holds what the decision *does*,
+  and only the second is the acceptance criterion.** Phase 08's suite was written with a roster over
+  `core/environment/manager.ts`: it asserted the pair `plan.imported !== null && plan.adopted === null`
+  appears in the source, and that its position in `prepare()`'s own slice is above the `"creating"`
+  step. Both assertions were true, both were precise, and neither measured AC-8 - which is about what
+  a **run produces**, not about where a refusal is typed. The suite's own doc block claimed
+  *`EnvironmentManager.prepare` refuses it, so every criterion is `INCONCLUSIVE`* while nothing called
+  `prepare()`. The missing half was added: build the declared-and-unstaged plan, run `prepare()` against
+  an adapter double, and read `ok === false`, `failure.kind === "ENVIRONMENT_FAILURE"`, a message
+  naming the document, and `calls === []` - the last being what makes the staging *staging* rather than
+  *reporting*, because nothing was created and so there is no window in which an unadopted world could
+  be observed and judged. The negative control is a second subtest in which a *verified* world prepares
+  and `create` is called. Falsified: disabling the refusal with `if (false && ...)` took the suite from
+  `18 pass / 0 fail` to `17 pass / 1 fail`, failing on exactly `refuses a declared-and-unstaged import
+  before the world is created at all`, and the line was restored and the restore asserted by reading it
+  back. *A source-text guard is cheap, survives refactors that change behaviour, and answers a different
+  question - so write it, and then write the half that runs the thing.*

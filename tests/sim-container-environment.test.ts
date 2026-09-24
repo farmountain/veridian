@@ -114,6 +114,8 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => {
     reset: { strategy: "restart", command: null },
     browser: { enabled: false, viewport: { width: 1280, height: 720 }, locale: null, timezoneId: null },
     boundary: { network: "deny", allow: [], filesystemWrite: "sandbox" },
+    imported: null,
+    adopted: null,
     ...overrides,
   };
 };

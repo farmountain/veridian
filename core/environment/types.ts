@@ -490,6 +490,39 @@ export interface BrowserPolicy {
 }
 
 /**
+ * What an environment document declared about the document it is a twin of.
+ *
+ * The declaration, not the verification: it says *where to look*, and it is read by `load.ts` in the
+ * same pass as every other block. Verification needs to read that file, which needs an `IoPort`, so
+ * it happens one layer out, where the interchange document and the export predicate are both in
+ * scope. The plan carries the **record** that came back rather than the declaration.
+ */
+export interface ImportDeclaration {
+  /** The interchange document's path, resolved against the environment file. */
+  readonly from: string;
+}
+
+/**
+ * What verifying an import established: the world was adopted, and the bytes it was adopted as.
+ *
+ * `identity` is the identity block as **canonical JSON**, stored rather than re-derived, because the
+ * one thing a reader of this record will want to do is compare it with the block the document
+ * carried - and a value that had to be recomputed would be recomputed by a second implementation of
+ * the rendering rule, which is the disagreement this tree refuses everywhere else.
+ */
+export interface ImportRecord {
+  readonly from: string;
+  /** The subject the document grouped its runs under. */
+  readonly subject: string;
+  /** `kind/name`, as `worldLabel` spells a world. */
+  readonly world: string;
+  /** The identity block as canonical JSON - the bytes export -> import -> export must preserve. */
+  readonly identity: string;
+  /** How many runs the document carried, so a reader can tell an adopted history from a stub. */
+  readonly runs: number;
+}
+
+/**
  * A resolved environment definition: every field decided.
  *
  * Nothing is optional here, and that is the point. `EnvironmentDefinitionShape` is allowed to have
@@ -497,6 +530,31 @@ export interface BrowserPolicy {
  * into at three in the morning inside a retry loop.
  */
 export interface EnvironmentPlan {
+  /**
+   * The interchange document this world's own document declared, or `null` when it declared none.
+   *
+   * The **declaration**: parsed, validated and resolved against the environment file in the same
+   * pass as every other block, and nothing more. Whether that document names *this* world is a
+   * different question with a different answer, and it is {@link adopted} that carries it.
+   */
+  readonly imported: ImportDeclaration | null;
+  /**
+   * What verifying the declared document established, or `null` when nothing was verified.
+   *
+   * `null` beside a non-null `imported` is a world that declared an adoption and was not staged:
+   * the two facts are genuinely different, and collapsing them into one field is what would make
+   * that state unspellable - and therefore unreportable, and therefore free to reach a `prepare()`.
+   * {@link EnvironmentManager.prepare} refuses exactly that pair, which is what makes *an import is
+   * staged at `prepare()`* a property of the code rather than a convention a caller keeps.
+   *
+   * It records a **verification, not a materialisation**. The import does not build anything - the
+   * adapter does, from this same plan - and what it establishes is that the world about to be
+   * created *is* the world the document names, by comparing the two identities through the same
+   * predicate the export uses. Refusing here rather than at the first criterion is the whole point:
+   * a marker applied to a world that turned out to be a different one would be a false `PASS`
+   * wearing an audit trail.
+   */
+  readonly adopted: ImportRecord | null;
   readonly adapter: string;
   /** Application directory as written, relative to the environment file. */
   readonly app: string;

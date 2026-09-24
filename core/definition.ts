@@ -21,10 +21,17 @@ import {
   finalizeEnvironment,
   loadEnvironmentDocument,
   type EnvironmentPlan,
+  type ImportRecord,
 } from "./environment/index.ts";
-import { dirOf, finalizeGoal, loadGoalDocument, resolveSibling } from "./goal/index.ts";
+import { dirOf, finalizeGoal, loadGoalDocument, resolveSibling, DefinitionError } from "./goal/index.ts";
 import type { Goal, SourceRef } from "./goal/types.ts";
 import type { ReadonlyIoPort } from "./io.ts";
+import {
+  importWorld,
+  isImportRefusal,
+  readImportDocument,
+  type ImportRefusal,
+} from "./metrics/index.ts";
 import type { SchemaSet } from "./schema/registry.ts";
 import type { ValidatorRegistry } from "./validation/registry.ts";
 
@@ -234,12 +241,54 @@ export async function resolveDefinition(
   // The goal's limits are handed to the environment because a boundary the world cannot see is a
   // boundary the world cannot hold. `plan.boundary` is derived from `goal.limits` here and nowhere
   // else, so the declaration has exactly one reader between the document and the adapter.
-  const environment = finalizeEnvironment(
+  //
+  // An import is verified here because this is the only pass that holds all three things it needs:
+  // the document's bytes, this machine's `IoPort`, and the plan the world will actually become. The
+  // plan is built **first** and the document compared against it rather than the other way round,
+  // because the comparison is between two identities and the plan's is derived - so there has to be
+  // a plan before there is anything to compare.
+  //
+  // That first build is deliberately thrown away, and the shape it has is the reason the loader's
+  // declaration rule is one-directional: it carries an `imported` and an `adopted` of `null`, which
+  // is a world that declared an adoption and was not staged. `EnvironmentManager.prepare` refuses
+  // exactly that pair, so this build could never become a world even if it escaped - and what
+  // travels is the second build, the one that carries the verification.
+  const declared = finalizeEnvironment(
     environmentOutcome.artifact,
     schemas,
     environmentDocument.source,
     goal.limits,
   );
+
+  let environment = declared;
+  if (declared.imported !== null) {
+    const document = await readImportDocument(io, declared.imported);
+    const adopted: ImportRefusal | ImportRecord = isImportRefusal(document)
+      ? document
+      : importWorld(document, declared.imported, declared);
+    // Thrown rather than returned as an `incomplete`, and the class is the point: an import that
+    // names a different world is a document that is *wrong*, not one that is under-specified. There
+    // is no question the clarification ladder could ask that would make a `cloud:acct-cart` document
+    // describe a `posix:debian` world - the answer would be "write a different document" - and
+    // reporting it as an unresolved ambiguity would invite a caller to treat it as one.
+    //
+    // So it is refused in exactly the voice `load.ts` refuses a hand-written plan in: same error
+    // class, same `$.import.from` path, same absence of a stack anyone has to read. The phase's own
+    // acceptance criterion - *refused by name, by the same code that refuses a hand-written plan* -
+    // is that sentence made structural.
+    if (isImportRefusal(adopted)) {
+      throw new DefinitionError(environmentDocument.source.path, [
+        { path: adopted.path, keyword: "import", message: adopted.message },
+      ]);
+    }
+    environment = finalizeEnvironment(
+      environmentOutcome.artifact,
+      schemas,
+      environmentDocument.source,
+      goal.limits,
+      adopted,
+    );
+  }
 
   return {
     kind: "resolved",
@@ -257,8 +306,7 @@ export async function resolveDefinition(
       acceptance: acceptanceOutcome.report,
       environment: environmentOutcome.report,
     },
-  };
-}
+  };}
 
 const emptyReport = (): ClarificationReport => ({
   records: [],

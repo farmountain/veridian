@@ -1,5 +1,5 @@
 import type { ClarificationReport } from "../clarification/types.ts";
-import type { BoundaryCrossing, BoundaryEnforcement, EnvironmentPlan, HealthReport, EvidenceArtifact } from "../environment/types.ts";
+import type { BoundaryCrossing, BoundaryEnforcement, EnvironmentPlan, HealthReport, EvidenceArtifact, ImportRecord } from "../environment/types.ts";
 import type { Failure } from "../failure.ts";
 import type { RunState } from "../run/types.ts";
 import type { CriterionResult, CriterionStatus } from "../validation/types.ts";
@@ -114,6 +114,17 @@ export interface EnvironmentRecord {
    * `core/evidence/world-identity.ts`.
    */
   readonly world: WorldIdentity | null;
+  /**
+   * The interchange document this world was adopted from, or `null` when the run built its own.
+   *
+   * Always written, for the reason `substrate` is: an omitted key invites a reader to infer *this
+   * world was built here* from its absence, and the only way to tell a world that was built here from
+   * one that was handed over is for the bundle to say which. Both worlds run the same adapter against
+   * the same kind of plan, so nothing else in this record distinguishes them - and a reader deciding
+   * whether a verdict is traceable to another machine's document has nothing to read if this is a
+   * missing key rather than a `null`.
+   */
+  readonly imported: ImportRecord | null;
   readonly command: string;
   readonly args: readonly string[];
   readonly health: EnvironmentPlan["health"];

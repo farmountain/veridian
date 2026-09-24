@@ -108,6 +108,19 @@ export const EXPORT_RULES: Readonly<Record<string, ExportRule>> = Object.freeze(
       "rather than copied: a `database` world is *named* after its file, and `detail` can hold a " +
       "root, an images directory or the application's command line",
   },
+  imported: {
+    decision: "rendered",
+    resource: false,
+    reason:
+      "the adoption record is walked rather than copied, and it is ruled rather than left to the " +
+      "unruled default for a reason worth stating: an unruled key is refused with the reason 'a " +
+      "field added after this table was written', which would classify a deliberate field as an " +
+      "oversight and break the chain of custody at one hop. The record's `from` is a path on this " +
+      "machine, so it renders as `app_path` does; its `subject`, `world`, `identity` and `runs` are " +
+      "the world's own and travel unchanged, which is what lets a reader of an interchange document " +
+      "tell a world that was built from one that was handed over. `resource` is false because an " +
+      "adoption is a fact about where a world came from rather than about the resources it is",
+  },
   command: {
     decision: "refused",
     resource: false,
@@ -377,6 +390,28 @@ const renderReset = (value: unknown, record: ExportRecord): unknown => {
   return out;
 };
 
+/**
+ * The adoption record, exported - everything but the path the document was found at.
+ *
+ * `from` is a path on this machine and renders as `app_path` does. The other four fields are the
+ * world's own: `world` and `identity` are the identity block and its canonical bytes, `subject` is
+ * the grouping the document already carries, and `runs` is a count. A `null` record is not a refusal
+ * - it says this world was built here, which is a reading rather than a missing one.
+ */
+const renderImport = (value: unknown, record: ExportRecord): unknown => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return value;
+  const block = { ...(value as Record<string, unknown>) };
+  if (typeof block["from"] === "string") {
+    block["from"] = renderPathAt(
+      block["from"],
+      "imported.from",
+      "the declaration is kept, the operator's prefix is not",
+      record,
+    );
+  }
+  return block;
+};
+
 /** The renderer a `rendered` key gets. A key with no entry here is copied through unchanged. */
 const RENDERERS: Readonly<Record<string, (value: unknown, record: ExportRecord) => unknown>> = {
   app_path: (value, record) =>
@@ -386,6 +421,7 @@ const RENDERERS: Readonly<Record<string, (value: unknown, record: ExportRecord) 
   world: renderWorldIdentity,
   boundary: renderBoundary,
   reset: renderReset,
+  imported: renderImport,
 };
 
 /**

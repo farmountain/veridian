@@ -36,6 +36,8 @@ const plan = (overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan => ({
   reset: { strategy: "restart", command: null },
   browser: { enabled: true, viewport: null, locale: null, timezoneId: null },
   boundary: { network: "deny", allow: [], filesystemWrite: "deny" },
+  imported: null,
+  adopted: null,
   ...overrides,
 });
 

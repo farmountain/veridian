@@ -24,7 +24,7 @@ five files above.
 | 05 | [The Cockpit twin surface](./05-the-cockpit-twin-surface.md) | A thin client over the join, with no validation logic | built | 02, 03, 04 |
 | 06 | [Network enforcement](./06-network-enforcement.md) | The one boundary dimension enforced nowhere becomes enforced somewhere | built | 01 |
 | 07 | [The isolation substrate](./07-the-isolation-substrate.md) | A real substrate behind the seam that already exists | built | 06 |
-| 08 | [Import into a prepared world](./08-import-into-a-prepared-world.md) | An imported world enters through `prepare()` or not at all | next | 04, 07 |
+| 08 | [Import into a prepared world](./08-import-into-a-prepared-world.md) | An imported world enters through `prepare()` or not at all | **built** | 04, 07 |
 | 09 | [Documentation currency](./09-documentation-currency.md) | The documentation guards run as a programme rather than one at a time, and what they report is repaired | built | 01 |
 | 10 | [Veridian judged by Veridian](./10-veridian-judged-by-veridian.md) | The CLI judged as a product by `local-process`, and a run judged as a witness by `acceptance:ladder` | **built** | 01 |
 | 11 | [The distribution and environments ledger](./11-the-distribution-and-environments-ledger.md) | Every row of the world table true of the tree, and every "blocked" row naming the world that answers it | **built** | 01, 09 |
@@ -40,7 +40,6 @@ that was actually run. So the remaining work in this repository is not there, an
 
 | Still open | Why, and the address that answers it |
 |------------|--------------------------------------|
-| **08 -- import into a prepared world** (`next`) | 07 has landed, so the gate is cleared and this is the first thing to pick up: *an imported world enters through `prepare()` or not at all*, because this repository has paid for an inherited world three times. |
 | **12 -- the receipt half of its memory criterion** (`blocked here`) | Three of its four criteria are met. The fourth asks that every environment observation be a receipt rather than a claim, and it is measured false in that phase's own record rather than waved past. The operation itself was measured working over HTTP (`/intent/open` -> 200 with an `intent_id`, `accept_receipt` -> `{"ok": true}`); what the criterion quantifies over is a history already filed with `add_memory`, and that cannot be rewritten. |
 | **The `isolation` CI job's execution** | Settlement has landed twice: run `35958111544` job `isolation substrate` **failed** on a platform-dependent assertion, and run `35958249177` is **green** with `# skipped 0` on both suites. Phase 07 is closed; what remains is keeping it true. |
 | **Phase A2's re-run** | Not a phase: an obligation `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` carries. Its Docker image is observed in CI job `container image`, 16s, success -- on run `35423126548`, the last **pushed** commit. The route is therefore observed for a commit and not for this tree, and re-taking it is a push and a re-run rather than a design. |

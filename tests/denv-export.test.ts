@@ -63,6 +63,8 @@ const plan: EnvironmentPlan = {
   reset: { strategy: "restart", command: null },
   browser: { enabled: true, viewport: null, locale: null, timezoneId: null },
   boundary: { network: "deny", allow: [], filesystemWrite: "sandbox" },
+  imported: null,
+  adopted: null,
 };
 
 const boundary: BoundaryReport = { network: "enforced", filesystemWrite: "enforced", crossings: [] };

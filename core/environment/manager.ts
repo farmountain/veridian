@@ -167,6 +167,38 @@ export class EnvironmentManager {
     this.#transitions = [];
     this.#baselineSnapshotId = null;
 
+    // **The import is staged here and nowhere else.** A plan that declared an adoption and did not
+    // get one is refused before a container, a process or a socket exists, so there is no window in
+    // which a world that was never adopted could be observed, judged and reported. The pair
+    // `imported`/`adopted` is why this can be checked at all: collapsing them into one field would
+    // make "declared and not staged" indistinguishable from "declared nothing", and the run would
+    // proceed as an ordinary one - which is the false `PASS` this whole seam exists to prevent, one
+    // layer out from where it usually appears.
+    if (plan.imported !== null && plan.adopted === null) {
+      return this.#refuse(
+        "ENVIRONMENT_FAILURE",
+        `this world declares an import from ${plan.imported.from} and was not adopted from it. An ` +
+          "import is verified before a plan exists and carried onto the plan; a plan that reached " +
+          "the environment without one would report a world this run built and say nothing about " +
+          "the document it was supposed to be a twin of.",
+      );
+    }
+    if (plan.adopted !== null) {
+      // `defined → defined`, and the repetition is the honest shape rather than an oversight: the
+      // environment state does *not* change when a world is adopted, and inventing an `adopting`
+      // state to make the history read more like a sequence would widen a vocabulary four guards
+      // read in order to describe one event that changes nothing. What a reader needs is the
+      // ordering - the adoption is recorded before `creating`, so `environment.json` shows it
+      // happening before anything was created in the world - and a transition carries that without
+      // claiming a state the world was never in.
+      this.#to(
+        "defined",
+        `adopting ${plan.adopted.world} from ${plan.adopted.from}, subject ` +
+          `${plan.adopted.subject}, ${String(plan.adopted.runs)} run(s), ` +
+          `identity ${plan.adopted.identity}`,
+      );
+    }
+
     const created = await this.#step("creating", "created", "create the environment", () =>
       this.#adapter.create(),
     );

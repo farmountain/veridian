@@ -51,3 +51,5 @@ export {
 } from "./denv.ts";
 export type { EsiDocument, EsiExport, EsiRefusal, EsiRendering, EsiRun, EsiWorld } from "./esi.ts";
 export { ESI_VERSION, esiForSubject, listEsi, parseEsi } from "./esi.ts";
+export type { ImportRefusal } from "./import.ts";
+export { importWorld, isImportRefusal, readImportDocument } from "./import.ts";

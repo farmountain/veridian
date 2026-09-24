@@ -8,12 +8,19 @@
  *
  * Three properties are the whole of the design, and each one is a refusal of something easier:
  *
- *  - **Export only, and no reader that resolves a world.** There is deliberately no import path here.
- *    An import half is a code path that would resolve a world on *this* machine and call the result
- *    the world's, which is the false `PASS` this product exists to make impossible. The import half is
- *    stage 08 of the phase program, it is gated on an isolation substrate that does not exist on this
- *    machine yet, and until then the honest statement is that this document can be *read* and not
- *    *adopted*. `parseEsi` parses bytes; it does not build a world.
+ *  - **Export only, and no reader that resolves a world.** There is deliberately no import path here,
+ *    and there never will be one in this file. An import half is a code path that would resolve a
+ *    world on *this* machine and call the result the world's, which is the false `PASS` this product
+ *    exists to make impossible. `parseEsi` parses bytes; it does not build a world.
+ *
+ *    Phase 08 built the import, and this file is still the half that cannot resolve anything - which
+ *    is why the import is **one file over** rather than a fifth export here. `import.ts` reads a
+ *    document, compares the identity it names with the identity the operator's own plan derives, and
+ *    refuses when they differ; the world is then built by the adapter that would have built it anyway.
+ *    So the sentence this block used to end with - *this document can be read and not adopted* - is
+ *    now a sentence about this file rather than about the program: `esi.ts` reads, `import.ts`
+ *    verifies, and the adapter builds. `tests/world-import.test.ts` holds the roster that keeps it
+ *    that way.
  *  - **Byte-stable.** Exporting the same input twice produces the same string, and the same input with
  *    its keys inserted in a different order produces the same string too. The second half is what
  *    makes the first mean anything: `JSON.stringify` preserves insertion order, so a writer that
@@ -218,8 +225,8 @@ export async function listEsi(io: IoPort, stateDir: string): Promise<readonly Es
  *
  * It is deliberately a **parse and not an import**: it answers "what does this document say", and it
  * cannot answer "make me a world", because a reader that could would be resolving a world on this
- * machine and calling it the document's. The import half is phase 08 and it is gated on the isolation
- * substrate.
+ * machine and calling it the document's. The import half is `import.ts`, it compares rather than
+ * constructs, and it is reached from here only by a caller holding both a parsed document and a plan.
  *
  * A malformed document returns `null` rather than throwing, on the same reasoning the ELI uses for a
  * bundle that cannot name its world: "these bytes are not an ESI" is one fact, and a thrown parse

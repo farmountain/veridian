@@ -45,6 +45,8 @@ export {
   type HealthPolicy,
   type HealthProbe,
   type HealthReport,
+  type ImportDeclaration,
+  type ImportRecord,
   type MobilePlan,
   type Observation,
   type ObservationRequest,

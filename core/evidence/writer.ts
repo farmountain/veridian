@@ -160,6 +160,7 @@ export function serializeEnvironment(record: EnvironmentRecord): Record<string, 
             name: record.world.name,
             detail: record.world.detail === null ? null : { ...record.world.detail },
           },
+    imported: record.imported === null ? null : { ...record.imported },
     command: record.command,
     args: [...record.args],
     env: record.env,
@@ -219,6 +220,15 @@ export function evidenceCompleteness(
   const declared = environment?.world ?? null;
   if (declared !== null && (bundleEnvironment?.["world"] ?? null) === null) {
     missing.push(`world:${worldLabel(declared)}`);
+  }
+  // The adoption is the third question, and it is the world question one document further out: a run
+  // that adopted a world is only traceable if the bundle carries the record, because the record is
+  // the only thing that names the document it came from. A missing `imported` beside a record that
+  // holds one is an incompleteness for the reason the missing world is - the reader cannot tell an
+  // adopted run from a built one, and every other field of the two bundles is identical.
+  const adoption = environment?.imported ?? null;
+  if (adoption !== null && (bundleEnvironment?.["imported"] ?? null) === null) {
+    missing.push(`imported:${adoption.world}`);
   }
   return { missing, complete: missing.length === 0 };
 }
@@ -594,6 +604,7 @@ export function environmentRecord(
     url: plan.url,
     databasePath: plan.databasePath,
     world: worldIdentity(plan),
+    imported: plan.adopted === null ? null : { ...plan.adopted },
     command: plan.start.command,
     args: plan.start.args,
     health: plan.health,

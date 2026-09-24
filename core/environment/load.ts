@@ -17,6 +17,8 @@ import {
   type DataPlan,
   type EnvironmentPlan,
   type HealthPolicy,
+  type ImportDeclaration,
+  type ImportRecord,
   type MobilePlan,
   type OsPlan,
   type PosixPlan,
@@ -606,6 +608,41 @@ function readProcessIsolation(raw: unknown): { readonly denyNetwork: boolean } |
 }
 
 /**
+ * The interchange document this world is a twin of, or `null` when it is nobody's twin.
+ *
+ * Present-but-incomplete is refused rather than defaulted, for the reason this file refuses it in
+ * eleven blocks before this one - and here the reason has a particular edge, because the default that
+ * would otherwise be chosen is *no import*, which is the answer that makes the run look ordinary. An
+ * operator who wrote `import:` and a `from` that the document swallowed would get a run that built a
+ * world, judged criteria in it, and reported nothing about a document it was supposed to be
+ * traceable to. *A declaration nobody can read is not an absent declaration.*
+ *
+ * `from` is resolved against the environment file, on the same rule `app` and `databasePath` are:
+ * the directory of the document is the only directory a relative path in it is relative to.
+ */
+function readImport(raw: unknown, source: SourceRef): ImportDeclaration | null {
+  if (raw === undefined || raw === null) return null;
+  if (!isPlainObject(raw)) {
+    throw defect(
+      "$.import",
+      "import must be an object naming the interchange document's path, or null when this world " +
+        "was built here rather than adopted",
+    );
+  }
+  const from = asString(raw["from"]).trim();
+  if (from === "") {
+    throw defect(
+      "$.import.from",
+      "the import declaration names no document. `import: null` is how a document says this world " +
+        "was built here; an import without a source says it was adopted from somewhere and leaves " +
+        "the reader to guess where, so the run would carry an adoption nothing can be checked " +
+        "against.",
+    );
+  }
+  return { from: resolveSibling(source, from) };
+}
+
+/**
  * The program this world starts, or `null` when it starts none.
  *
  * A declaration present without a command is refused rather than treated as absent. The two are
@@ -801,14 +838,39 @@ function readBoundary(limits: GoalLimits): BoundaryPolicy {
  * Called after the ambiguity protocol, so a throw here means a blocking gap survived resolution or a
  * defect the partial loader could not see. Both must abort: an environment that is half-decided is
  * the one input that can turn "we could not test it" into "it passed".
+ *
+ * `adopted` is the record a caller produced by verifying the document's own `$.import.from`. It is
+ * an argument rather than something this function reads, because reading it needs an `IoPort` and
+ * this function is synchronous and pure - and because the verification has to compare the *plan* it
+ * is adopting into, which does not exist until this function has returned. The two cross-field rules
+ * below are what keep the pair honest: a document that declares an import and arrives with no record
+ * is refused, and a record that describes a different source from the one the document names is
+ * refused.
  */
 export function finalizeEnvironment(
   raw: Readonly<Record<string, unknown>>,
   schemas: SchemaSet,
   source: SourceRef,
   limits: GoalLimits,
+  adopted: ImportRecord | null = null,
 ): EnvironmentPlan {
   schemas.get(SCHEMA_URIS.environment).assert(raw);
+
+  const imported = readImport(raw["import"], source);
+  // One-directional on purpose. A record with no declaration is meaningless and is refused; a
+  // declaration with no record is the state `core/metrics/import.ts` *builds a plan in* before it
+  // has anything to compare the document against, so refusing it here would make the comparison
+  // impossible. That state is caught one step later and by the only place that can catch it: a plan
+  // carrying a declaration and no verification is refused by `EnvironmentManager.prepare`, which is
+  // what "an import is staged at `prepare()`" means.
+  if (adopted !== null && (imported === null || imported.from !== adopted.from)) {
+    throw defect(
+      "$.import.from",
+      `an adoption record for ${adopted.from} reached the loader, but this document declares ` +
+        `${imported === null ? "no import at all" : `an import from ${imported.from}`}. An ` +
+        "adoption is only meaningful beside the declaration it came from.",
+    );
+  }
 
   const app = asString(raw["app"]).replace(/\\/g, "/").replace(/\/+$/, "");
   const start = isPlainObject(raw["start"]) ? raw["start"] : {};
@@ -879,5 +941,10 @@ export function finalizeEnvironment(
     reset: { strategy: strategy as ResetStrategy, command: resetCommand },
     browser: readBrowser(raw["browser"], url !== ""),
     boundary: readBoundary(limits),
+    // The declaration and the verification, each written from its own source. `adopted` travels
+    // rather than being recomputed, because a value recomputed from the document would be a second
+    // implementation of the comparison this plan's own verification already made.
+    imported,
+    adopted: adopted === null ? null : { ...adopted },
   };
 }

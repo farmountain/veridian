@@ -182,9 +182,12 @@ describe("the ESI can be read back, and what it says survives the round trip", (
     // under `core/**` names the MCP surface: a claim about what a file does not contain is held by
     // enumerating what it does.
     //
-    // Adding an `importEsi` fails here on purpose. Importing a document built on another machine is
-    // phase 08 and it is gated on the isolation substrate, because a reader that could adopt a world
-    // would be resolving one on *this* machine and calling it the document's.
+    // Adding an `importEsi` fails here on purpose, and phase 08 is the phase that tested whether that
+    // instruction was real. The import now exists, and it was added **as a new module** rather than
+    // as a fifth export here - so this assertion still holds, unchanged, and it holds for the reason
+    // it was written: a reader that could adopt a world would be resolving one on *this* machine and
+    // calling it the document's. `tests/world-import.test.ts` names the module that does the
+    // verifying and holds its three exports in the same shape.
     const source = (await nodeIo().readTextFile("core/metrics/esi.ts")) ?? "";
     assert.ok(source.length > 0, "control: the file was read, or the roster below compares nothing");
 
