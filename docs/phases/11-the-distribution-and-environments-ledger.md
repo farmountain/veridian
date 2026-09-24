@@ -4,7 +4,7 @@
 |---|---|
 | **Status** | **built** -- all fourteen of `docs/DISTRIBUTION-AND-ENVIRONMENTS.md`'s phase headings are built and each names a command that was run, and `tests/simulated-surfaces.test.ts` holds the world table and each declared surface in both directions |
 | **Depends on** | 01, 09 |
-| **Source** | `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` (173,104 bytes / 1,853 lines -- the bulkiest plan in the tree; re-measured after this pass wrote into it, because this pass's own edits are what moved the figure) |
+| **Source** | `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` -- the bulkiest plan in the tree. The size is given with its **unit** and its **state**, because the first version of this row was not: **171,249 bytes / 1,853 lines at `d3a7ab1`**, line endings normalised. It previously read `173,104 bytes / 1,853 lines`. The line count is identical and the byte figure is 1,855 higher, against a document with 1,853 line terminators - so the byte count is the **CRLF** reading and the two figures agree to within two bytes once each terminator is counted twice. A byte count in that basis is a reading of a **Windows checkout** rather than of the document, which is why `tests/phases-roster.test.ts` normalises line endings before comparing sizes. The two residual bytes are not accounted for here and are stated rather than rounded away. |
 | **Touches** | that document, plus whatever code it turns out to be wrong about |
 | **Acceptance** | every row of the world table is true of the tree, and every "blocked" row names the world that answers it |
 
@@ -72,7 +72,7 @@ both sides now: a declared world must print exactly the declared set, and a worl
 3. **Split any remaining multi-world row before touching either status.** The `local-api` row is the
    precedent, not the exception.
 4. **Fold the still-open rows into the rolling backlog** this program's index holds, so that "what is
-   next" has one address rather than fourteen headings and a section in a 158 kB file.
+   next" has one address rather than fourteen headings and a section spread through the ledger.
 5. **Correct anything S1 through S3 asserts that the tree has since falsified** -- and count what the
    document *claims* against what the tree *does*, because the two failures this document has already
    had were both a claim about a world that the world contradicted.

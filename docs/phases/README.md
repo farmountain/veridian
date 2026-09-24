@@ -36,7 +36,7 @@ five files above.
 **`docs/DISTRIBUTION-AND-ENVIRONMENTS.md`'s fourteen phase headings have no `still open` member**, and
 that is what phase 11 established rather than assumed: all fourteen are built and each names the command
 that was actually run. So the remaining work in this repository is not there, and a reader looking for
-"what is next" should read this list rather than fourteen headings in a 158 kB plan:
+"what is next" should read this list rather than assembling it from fourteen headings in the ledger:
 
 | Still open | Why, and the address that answers it |
 |------------|--------------------------------------|

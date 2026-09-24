@@ -51,12 +51,22 @@ machine was probed for the isolation mechanism each adapter would need:
 
 ```
 docker                   NOT INSTALLED
+podman                   present, answers a server version 5.7.1
 kubectl                  NOT INSTALLED
 vagrant / qemu           NOT INSTALLED
 sqlite3 / psql           NOT on PATH      (the CLI - see below)
 wsl                      present (podman-machine-default)
 node / git / code        present
 ```
+
+**`podman` was missing from that roster, and the omission was load-bearing.** The probe was written
+to find the isolation mechanism an adapter would need, and it looked for `docker` - which is genuinely
+absent on this machine - without looking for the runtime that answers in its place.
+`core/environment/isolation.ts` tries `podman` **before** `docker`, and on this machine it answers
+`5.7.1` with the mechanism `run --read-only --network --volume --workdir`; the measurement, in CI as
+well as here, is in `docs/phases/07-the-isolation-substrate.md`. A probe printed as a roster is read
+as exhaustive, so a missing member is not a gap a reader can see - and this one was cited, because
+§5's blocked table rested on the same absence in a row that read *no runtime here*.
 
 **The interpretation that used to stand here was wrong, and it was wrong about this project's own
 subject.** It read the probe as a list of blockers: no `qemu`, therefore no Linux world; no cluster,
@@ -910,7 +920,7 @@ statement - each names the world it blocks, and the simulated row that answers i
 |---------|-----|-------------|
 | a real Linux / Windows / macOS / Kali guest | No VM substrate on this machine. Booting a guest nobody can boot is the unverifiable claim this document refuses. | `sim-posix`, `sim-os` - both **built**, see §7 |
 | a real Kubernetes cluster | Same, plus no `kubectl`. | `sim-k8s` - **built**, see §7 |
-| a real container runtime as a *world* | No runtime here. Phase A2's Dockerfile is a *distribution* route and needs none; an adapter that starts and resets containers does. | `sim-container` - **built**, see §7 |
+| a real container runtime as a *world* | **This row's reason was wrong, and it is kept rather than deleted because the error is the instructive part: a runtime *does* answer here.** `core/environment/isolation.ts` resolves `podman` at `5.7.1` on this machine and `4.9.3` in CI, and `docs/phases/07-the-isolation-substrate.md` is the measurement. What phase 07 landed is a **confinement seam a world adopts** - one world, `local-process`, took it - and an environment whose own lifecycle *is* containers it starts and resets is a different deliverable that none of the twelve adapters is. So the blocker is no longer the runtime; what is absent is the deliverable. Phase A2's Dockerfile is a *distribution* route and needs no runtime either way. | `sim-container` - **built**, see §7 |
 | a real cloud account | Not a runtime question: an unattended run against a metered, credentialed account is a cost model rather than a test. | `sim-cloud` - **built**, see §7 |
 | a real VS Code extension host as a *world* | Installed VS Code is not a sandbox substrate, and the extension host is a fourth runtime with its own loader - so a check that needs one cannot be a check in this tree. | `sim-vscode` - **built**, see §7 |
 
@@ -924,6 +934,15 @@ simulation be worth* - which is what the three conditions above answer, and why 
 and why each remaining row names the `sim-*` world that answers it. The prohibition that survives the
 correction is the one that matters: **never let a simulated world be recorded as a real one, and never
 report a verdict a simulation cannot justify.**
+
+**One correction arrived after that one, and it is a different kind.** The first was a wrong *framing*:
+the table asked whether the real infrastructure was installed, when the question is what can be
+simulated here. The second is a wrong *fact* underneath a row that survived the re-framing - *a real
+container runtime as a world* explained itself with **no runtime here**, and `podman` answers here. It
+is the runtime `core/environment/isolation.ts` resolves, and the seam phase 07 built is why this
+document's §2 probe now lists it. *Re-framing a row does not re-measure the reason it gives*, and the
+reason is the part a reader acts on: it is what decides whether a row is still blocked. A row whose
+conclusion is right and whose reason has rotted reads exactly like a row that is still true.
 
 **A `sim-*` row is not a stub, and the difference is mechanical rather than rhetorical.** A stub
 returns an empty observation, so every criterion over it resolves to `INCONCLUSIVE` and the run

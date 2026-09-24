@@ -1832,3 +1832,61 @@ reads a variable.*
   argues a plan into existence is not the document that reports whether the plan succeeded* - and the
   tell is a date in the header, because a document that names the moment it measured has already said
   which tense it is in.
+- **Re-framing a row does not re-measure the reason it gives, and the reason is the part a reader acts
+  on.** `docs/DISTRIBUTION-AND-ENVIRONMENTS.md`'s §5 blocked table had already been corrected once, and
+  the correction was recorded in the document as its own lesson: it *used to be an inventory of what is
+  not installed here*, and that was the wrong question. The re-framing fixed the question. What it did
+  not do was re-read the **reasons**, and one row survived carrying one that was false - *a real
+  container runtime as a world* explained itself with **no runtime here**, while `podman` answers here
+  at `5.7.1`, which is the runtime `core/environment/isolation.ts` tries *first* and the substrate
+  phase 07 built its confinement seam on. Measured rather than argued: `isolationCapability()` returns
+  `available: true, substrate: podman, version: 5.7.1, mechanism: run --read-only --network --volume
+  --workdir`, and the CI job asserts the same thing at `4.9.3`. The row's **conclusion** was right - no
+  adapter's lifecycle is containers it starts and resets - so nothing failed, and this is precisely why
+  the defective shape is worth naming: *a row whose conclusion is right and whose reason has rotted
+  reads exactly like a row that is still true.* The reason is what a reader uses to decide whether the
+  row is still blocked, so a rotted reason makes a correct row undecidable. Its sibling was in the same
+  document's §2, where the probe printed as a roster - `docker NOT INSTALLED`, `kubectl NOT INSTALLED`,
+  `vagrant / qemu NOT INSTALLED` - and **omitted `podman`**, which is the one member of that family that
+  is present. A roster is read as exhaustive, so a missing member is not a gap a reader can see; and
+  that omission was load-bearing, because the blocked row rested on the same absence. Phase 11's own
+  checklist had the item all along - *correct anything §1 through §3 asserts that the tree has since
+  falsified, and count what the document claims against what the tree does* - which is where this work
+  belonged and why it is recorded here rather than filed as new scope.
+- **A count whose unit is unstated cannot be checked, and a size that moves with the checkout is a reading
+  of the checkout rather than of the document.** Phase 11's `Source` row stated
+  `docs/DISTRIBUTION-AND-ENVIRONMENTS.md`'s size as `173,104 bytes / 1,853 lines`. Measured at the commit
+  the figure was taken at (`d3a7ab1`, *close phase 11*), the document is **171,249 bytes / 1,853 lines**
+  with line endings normalised. The **line count matches exactly** and the byte figure is larger by
+  **1,855** against a document with 1,853 line terminators - so the two agree to **within two bytes**
+  once each terminator is counted twice, and `173,104` is the **CRLF** count: true of a Windows checkout
+  and false of the document. (The two residual bytes are not accounted for here. They are stated rather
+  than rounded away because this entry is about a figure whose error was two bytes wide in the *other*
+  direction - the unit - and a rule that silently absorbs its own residual is the rule it warns about.)
+  `tests/phases-roster.test.ts` normalises line endings before comparing sizes for exactly this reason
+  and says why in its own comment - *a figure that moves with `core.autocrlf` is a reading of the
+  checkout rather than of the document*. So the figure had not
+  drifted. It invites that reading, because a number that looks merely old is assumed to have been right
+  once, and **this one was right in a different unit** - which means re-measuring it in the same basis
+  would have produced a fresher wrong number and closed the question. *"Re-measure" is not sufficient
+  advice on its own: a figure needs a unit and a state, or the next pass reproduces the error with more
+  confidence than the first.* The repair anchors both - `171,249 bytes / 1,853 lines at d3a7ab1`, line
+  endings normalised - which cannot rot, because the state it describes is named and fixed.
+- **A count with no reader should be deleted rather than corrected - and the first draft of this entry had
+  that defect, because it counted its own evidence.** Two prose sites stated that same document's size as
+  *158 kB*: the phase index's pointer to "what is next", and phase 11's own checklist item about folding
+  the backlog into one address. That document was **171,640 bytes** at `HEAD`, so the figure had drifted
+  by about 14 kB with nothing able to notice, because **no guard reads this document's size**. This is the
+  same class as the byte total that cost a whole-tree gate failure one pass earlier, and it is the
+  harsher half of it: there, three places stated one number and a guard sat in the third; here, nothing
+  did. A count with a reader is re-measured and kept - which is what the five-document total in the phase
+  index does, and why that one is *not* deleted, because the guard is the reader. A count whose only
+  reader is a human who will not re-check it is not a fact in the document; it is decoration, and
+  correcting it schedules the same defect for the next pass. Both sentences now make their point without
+  a number, since *fourteen headings* already says what the file's shape is. **And that draft is why the
+  entry above this one exists at all:** the site it missed turned out to carry a *different* defect - a
+  wrong unit rather than a drifted figure - so the omission did not just cost an edit, it cost a rule.
+  The pattern that found the first two sites required a space after the filename, and that row writes its
+  figure after a `(`. A search is a measurement, and an unstated search is a count with no reader, one
+  level up. *When a finding is a count, the rule that records it is a count too* - and the author of a
+  rule is the least likely person to notice that the rule has the defect it is about.
