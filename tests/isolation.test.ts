@@ -90,23 +90,42 @@ describe("the isolation port's path translation", () => {
     assert.equal(containerPathOf(mounts, "/host/sandbox/a/b.txt"), `${CONTAINER_ROOT}/rw0/a/b.txt`);
   });
 
-  it("translates a Windows path's separators, because a container has only forward slashes", () => {
-    // The defect this holds was measured rather than imagined: a probe that substituted a container
-    // root into a program by splitting on the host root left the trailing `\` in place, so the child
-    // wrote a file whose *name* contained a backslash and the host never saw the write. Everything
-    // above this line read `written` while the boundary appeared to have eaten it.
-    const translated = containerPathOf(mounts, "/host/sandbox\\a\\b.txt");
-    assert.equal(
-      translated,
-      `${CONTAINER_ROOT}/rw0/a/b.txt`,
-      "a backslash is a path separator on the host that composed the request and an ordinary filename " +
-        "character in the container that runs it - so the translation has to convert it, or the two " +
-        "sides disagree about which file was meant while both report success",
-    );
-    assert.ok(
-      !String(translated).includes("\\"),
-      "no backslash may survive into a container path",
-    );
+  it("converts the separators the host that composed the request would have used, and only those", () => {
+    // The defect this holds was measured on Windows: a probe that substituted a container root into a
+    // program by splitting on the host root left the trailing `\` in place, so the child wrote a file
+    // whose **name** contained a backslash and the host never saw the write. Everything read `written`
+    // while the boundary appeared to have eaten it.
+    //
+    // **On a POSIX host the same input is a different request**, and this test asserted only the
+    // Windows answer until the isolation CI job ran it on `ubuntu-latest` and went red - which is the
+    // job's first execution finding its first defect, exactly as the phase predicted. On POSIX, `\` is
+    // an ordinary filename character, so `/host/sandbox\a\b.txt` is a file *beside* the mount rather
+    // than under it, and the answer is `null`: the path is under no allowance. Both answers are
+    // correct, and the rule is one sentence - **the translation converts what the composing host would
+    // have used as a separator, because that is what the two sides disagree about**.
+    const input = "/host/sandbox\\a\\b.txt";
+    const translated = containerPathOf(mounts, input);
+    if (process.platform === "win32") {
+      assert.equal(
+        translated,
+        `${CONTAINER_ROOT}/rw0/a/b.txt`,
+        "a backslash is a path separator on the host that composed the request and an ordinary " +
+          "filename character in the container that runs it, so the translation has to convert it - or " +
+          "the two sides disagree about which file was meant while both report success",
+      );
+      assert.ok(
+        !String(translated).includes("\\"),
+        "no backslash may survive into a container path",
+      );
+    } else {
+      assert.equal(
+        translated,
+        null,
+        "on this host a backslash is not a separator, so the string names a file beside the mount " +
+          "rather than inside it - and reporting a container path for it would tell the child about a " +
+          "file the mount does not carry",
+      );
+    }
   });
 
   it("refuses to translate a path that is under no mount", () => {
