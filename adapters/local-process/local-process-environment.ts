@@ -63,7 +63,7 @@
  * evidence about a copy nobody repairs.
  */
 
-import { relative } from "node:path";
+import { delimiter, relative } from "node:path";
 
 import { decodeStep } from "../../core/acceptance/plan.ts";
 import type { StepKind } from "../../core/acceptance/steps.ts";
@@ -142,9 +142,10 @@ export const PROCESS_ENV = {
   host: "VERIDIAN_PROCESS_HOST",
   root: "VERIDIAN_PROCESS_ROOT",
   app: "VERIDIAN_PROCESS_APP",
+  observe: "VERIDIAN_PROCESS_OBSERVE",
 } as const;
 
-/** The three names, in the order a reader would meet them. Derived, so it cannot omit a member. */
+/** The four names, in the order a reader would meet them. Derived, so it cannot omit a member. */
 export const PROCESS_ENV_NAMES: readonly string[] = Object.values(PROCESS_ENV);
 
 /** How long one `run` step may take. Exported so a test can assert the bound rather than re-type it. */
@@ -531,7 +532,27 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
     }
 
     const args = argv.slice(1);
-    this.#logger.debug("process.run", { criterionId, command, args, cwd: this.#plan.appPath });
+    // A `run` step is confined by the same allowance as the application, and this line is the fix to a
+    // gap that had no example to expose it until one asked a `run` step to stop at a boundary. See
+    // `#allowance` for the measurement that made extending it safe and for what it cost to discover.
+    //
+    // `allowChildProcess` is set here and not for the application, on the measurement recorded there: a
+    // confined child cannot start children of its own, and a provisioning step that legitimately does
+    // is a program this world has always run. Refusing it would be a *new* boundary rather than this
+    // one, and no document here claims it.
+    const confinement = { ...this.#allowance(block), allowChildProcess: true };
+    this.#logger.debug("process.run", {
+      criterionId,
+      command,
+      args,
+      cwd: this.#plan.appPath,
+      // The allowance is logged beside the command it applies to, on the same reasoning `#spawn`
+      // records it beside the child it starts: two events could otherwise disagree about whether this
+      // world confined the program it ran.
+      readRoots: confinement.readRoots,
+      writeRoots: confinement.writeRoots,
+      allowChildProcess: confinement.allowChildProcess,
+    });
     const result = await runToCompletion(
       this.#processes,
       {
@@ -539,6 +560,7 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
         args,
         cwd: this.#plan.appPath,
         env: this.#env(block),
+        confinement: { ...this.#allowance(block), allowChildProcess: true },
         onStdout: (chunk) => this.#logger.debug("run.stdout", { chunk: chunk.trimEnd() }),
         onStderr: (chunk) => this.#logger.warn("run.stderr", { chunk: chunk.trimEnd() }),
       },
@@ -813,6 +835,153 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
   }
 
   /**
+   * The observed directories as paths **this machine** opens them by.
+   *
+   * The same accession {@link #hostRoot} performs, applied member by member, and for exactly the same
+   * reason: the loader resolved each entry against the application directory, which leaves it relative
+   * to the io root, and handing that spelling to a program that then resolves it against its own
+   * working directory produces a path that cannot exist. The sandbox paid for that defect once
+   * (`app/examples/local-process/app/sandbox`), and a second field read the other way would be the
+   * same defect in a new place.
+   *
+   * One reader, used by both the allowance and the environment - so the directories the runtime permits
+   * and the directories the program is told it may read cannot disagree. A second resolution at the
+   * other call site is how two lists of the same thing start to differ.
+   */
+  #observeRoots(block: ProcessPlan): readonly string[] {
+    return block.observe.map((entry) => this.#io.resolve(entry));
+  }
+
+  /**
+   * The allowance **every** child of this world is started under, from one definition.
+   *
+   * ## Why this became a method, and the gap that made it one
+   *
+   * Until this existed, `#spawn` built the allowance inline and `#run` built none at all - so the
+   * long-lived application was confined and **every `run` step was not**. That is worth stating plainly
+   * because of what it meant: `run` is the step kind by which six worlds provision, and a provisioning
+   * step that could write wherever the operator can is a world whose `PASS` means less than the
+   * sentence beside it claimed. Nothing had noticed, because no example had ever asked a `run` step to
+   * do something the boundary would have refused.
+   *
+   * The first thing to ask a `run` step to *stop* at found it. `workspace-audit`'s whole premise is
+   * that an audit of a real tree cannot write into it, and its audit runs as a `run` step - so the
+   * reading came back `breached`, which is the correct answer to a question the world was not asking.
+   * That is the discipline this repository keeps paying for: **a claim in a document is not a
+   * measurement of the code, and the way to find out is to ask the code a question only the claim
+   * makes interesting.**
+   *
+   * Two things were measured before the allowance was extended, because both could have made it
+   * unsafe rather than merely unbuilt:
+   *
+   *   - `--allow-fs-read=<dir>` does **not** imply permission to write in it. A child given a
+   *     directory as a read root and not as a write root was answered `ERR_ACCESS_DENIED` on write,
+   *     which is the whole premise `process.observe` rests on.
+   *   - A confined child **cannot** start children of its own unless `--allow-child-process` is given -
+   *     `node:internal/child_process` and exit 1, with `--permission` alone. So `allowChildProcess` is
+   *     set on `run` steps deliberately: turning it off would have been a *new* boundary, one no
+   *     document here claims, and it would have broken the one program in the tree that legitimately
+   *     starts children. With the flag, the outside write is still `ERR_ACCESS_DENIED`.
+   *
+   * The application is left without `allowChildProcess`, unchanged: it has never needed to start
+   * children, and widening what it may do is not what fixing this gap is for.
+   *
+   * One definition rather than two call sites composing the same list, so the directories the runtime
+   * permits and the directories a reader is told about cannot drift - which is the failure a second
+   * copy of an allowance always eventually is.
+   */
+  #allowance(block: ProcessPlan): {
+    readonly readRoots: readonly string[];
+    readonly writeRoots: readonly string[];
+  } {
+    const hostRoot = this.#hostRoot(block);
+    // `readRoots` names three kinds of directory because they are three - the program file is opened
+    // from the application directory, everything a criterion reads is opened from the sandbox, and the
+    // observation surface is whatever the operator declared. A read allowance naming only the sandbox
+    // would refuse to load the program it was asked to confine. The observation surface is added to
+    // the read allowance and to nothing else, which is the whole mechanism of read-only: the same
+    // runner that refuses a write outside the sandbox refuses a write into an observed tree, so the
+    // guarantee is held by the runtime rather than by a comment. The order is the plan's, so a bundle's
+    // own record of `observe` and the allowance applied here cannot disagree about which were named.
+    return {
+      readRoots: this.#withoutNested([
+        this.#plan.appPath,
+        hostRoot,
+        ...this.#observeRoots(block),
+      ]),
+      writeRoots: [hostRoot],
+    };
+  }
+
+  /**
+   * The read allowance with every member that is already inside another member removed.
+   *
+   * ## Why the longest list is not the widest allowance
+   *
+   * `--allow-fs-read=A --allow-fs-read=A/B` is **not** the union of the two, on Node 22.18 on Windows.
+   * Under that pair, every operation on `A` itself - `stat`, `lstat`, `readdir`, `access` - answers
+   * `ERR_ACCESS_DENIED`, while `realpath` on `A` and any read of a *descendant* of `A` still succeed.
+   * Measured four ways, because the first reading looked like a mistake:
+   *
+   *   `A` alone                          stat/readdir/access on `A`  **OK**
+   *   `A` plus a disjoint `B`            stat/readdir/access on `A`  **OK**
+   *   `A` plus `A/B` (the pair here)     stat/readdir/access on `A`  **ERR_ACCESS_DENIED**
+   *   `A/B` alone                        stat/readdir/access on `A/B` **OK**
+   *
+   * So it is *nesting* that breaks the ancestor rather than multiplicity, and the failure is confined
+   * to the ancestor's own directory operations - which is precisely the shape a program cannot work
+   * around, because there is no other way to list a directory than to ask the directory.
+   *
+   * ## What this had been costing, and why nothing noticed
+   *
+   * This world has always passed a nested pair: the sandbox lives inside the application directory, so
+   * `stat(appPath)` and `readdir(appPath)` have been denied in **every** run of every world since the
+   * allowance was introduced. It was invisible because no program had ever listed the directory it was
+   * started from, and a program that only opens files inside it never touches the broken half.
+   *
+   * `workspace-audit` is the first subject whose *whole purpose* is to describe a directory tree, and it
+   * is pointed at a tree that contains the application directory - so the ancestor it must list is
+   * exactly the one the nesting breaks. Asking a new question of an old allowance is how a latent
+   * defect stops being latent, which is the same shape as the `run`-step gap fixed above.
+   *
+   * ## Why removing a member is safe rather than a widening
+   *
+   * A member that is inside another member adds no path the other does not already cover, so the union
+   * of the list is unchanged - and the union is the only thing the allowance means. What changes is the
+   * *bookkeeping* the runtime does with overlapping grants, and it changes in the direction of granting
+   * exactly what was declared: before, the declared tree could be read but not listed; after, it can be
+   * both. Nothing outside any declared root becomes reachable, in either direction.
+   *
+   * Comparison is on the normalised form - separators unified, trailing separator dropped, case folded -
+   * because two spellings of one directory are one directory, and a Windows path is compared
+   * case-insensitively by the filesystem itself. Order is preserved so the list a reader sees is the
+   * order the document declared, minus the members that were redundant.
+   */
+  #withoutNested(roots: readonly string[]): readonly string[] {
+    const normal = (value: string): string =>
+      value.replaceAll("\\", "/").replace(/\/+$/u, "").toLowerCase();
+
+    const unique: string[] = [];
+    const seen = new Set<string>();
+    for (const root of roots) {
+      if (root === "") continue;
+      const key = normal(root);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(root);
+    }
+
+    // A member survives only when no *other* member is a proper ancestor of it.
+    return unique.filter((root) => {
+      const key = normal(root);
+      return !unique.some((other) => {
+        const outer = normal(other);
+        return outer !== key && key.startsWith(`${outer}/`);
+      });
+    });
+  }
+
+  /**
    * The root as the world's own document declared it, spelled relative to the application directory.
    *
    * ## Why the reading does not carry a host path
@@ -863,6 +1032,11 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
       [PROCESS_ENV.host]: block.host,
       [PROCESS_ENV.root]: this.#hostRoot(block),
       [PROCESS_ENV.app]: this.#plan.appPath,
+      // Joined with the platform's own list separator rather than a comma, because these are paths and
+      // a comma is a legal character in one. The program therefore splits on `delimiter` and needs no
+      // quoting rule of its own. Empty when the document observed nothing, which is the ordinary case
+      // and the one a program can test for with a single truthiness check.
+      [PROCESS_ENV.observe]: this.#observeRoots(block).join(delimiter),
     };
   }
 
@@ -941,20 +1115,20 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
     block: ProcessPlan,
   ): ProcessHandle {
     if (application === null) throw new EnvironmentError(MISSING_APPLICATION);
-    // The allowance is a value; applying it is `core/process.ts`'s job. `readRoots` names both
-    // directories because they are two - the program file is opened from the application directory and
-    // everything the criteria read is opened from the sandbox - and a read allowance naming only the
-    // sandbox would refuse to load the program it was asked to confine.
+    // The allowance is a value; applying it is `core/process.ts`'s job. It comes from `#allowance` so
+    // that this child and every `run` step are started under the same one.
     const hostRoot = this.#hostRoot(block);
     const handle = this.#processes.run({
       command: application.command,
       args: application.args,
       cwd: this.#plan.appPath,
       env: this.#env(block),
-      confinement: {
-        readRoots: [this.#plan.appPath, hostRoot],
-        writeRoots: [hostRoot],
-      },
+      // Stated as `this.#allowance(block)` rather than through a local, so the field carries a value
+      // the same way `sim-mobile`'s does. That is not a style preference: `tests/boundary-roster.test.ts`
+      // decides which worlds hand the runner an allowance by the *spelling* at this field, and a local
+      // const named anything at all is a third spelling the guard does not know - which it refused, by
+      // name, the first time this was written any other way.
+      confinement: this.#allowance(block),
       // The substrate is requested only when the document asked for one, and the same allowances are
       // offered to it as to the interpreter: the two mechanisms hold the same boundary by different
       // means, and a substrate given a different allowance would be a second, quieter policy.
@@ -962,8 +1136,8 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
         ? {}
         : {
             isolation: {
-              readRoots: [this.#plan.appPath, hostRoot],
-              writeRoots: [hostRoot],
+              readRoots: this.#allowance(block).readRoots,
+              writeRoots: this.#allowance(block).writeRoots,
               denyNetwork: block.isolation.denyNetwork,
             },
           }),

@@ -2109,3 +2109,58 @@ reads a variable.*
   because a guard was written and it failed - which is the outcome those earlier entries argued for,
   and the reason the fix now runs the daemon for four seconds and reads what it printed rather than
   searching for a string a template never contains.
+
+- **Asking a new question of an old allowance is how a latent defect stops being latent - and one new
+  example asked two.** Building `examples/workspace-audit` required a `run` step to be *refused* a
+  filesystem write, and the reading came back `boundary:write breached` instead of `refused`. The
+  contract was correct. Nothing about confinement was ever wrong at the long-lived application: this
+  world's `#spawn` passed a `confinement` block and always had. But `#run` passed **none** to
+  `runToCompletion`, so a `run` step ran with the parent's full privileges - and `run` is the step kind
+  by which six of this repository's worlds provision, which means every provisioner step in every one of
+  them had been unconfined for the life of the allowance. The second defect was inside the first fix.
+  The adapter always nested `sandbox` inside `app`, and under Node's permission model
+  `--allow-fs-read=A --allow-fs-read=A/B` **denies** operations on `A` itself, so `readdir(appPath)` had
+  been refused in every run of every world since confinement was introduced. That one had no symptom at
+  all: no program in the tree had ever listed the directory it was started from, so the permission was
+  denied and nothing asked. Both were found within minutes of a single new example, and neither was
+  found by the suite, which was green in both directions throughout. *An allowance is a claim about what
+  a child may do, and a claim is only as broad as the operations anyone has exercised* - so when a new
+  subject needs an old boundary, the boundary is the thing to re-measure rather than trust, and the
+  measurement to make first is whether the *question* is new or the *answer* was.
+
+- **A permission model's allowances do not nest: the broader does not contain the narrower, and adding
+  the narrower breaks the broader.** Measured four ways against Node 22.18.0's `--allow-fs-read`, with
+  everything else held constant: `A` alone permits `stat`, `readdir` and `access` on `A`; `A` together
+  with a **disjoint** `B` permits both; `A` together with `A/B` returns `ERR_ACCESS_DENIED` for
+  operations on `A` **itself**, while reads of `A/B`'s own descendants still succeed and `realpath`
+  still resolves; and `A/B` alone permits `A/B`. The first measurement is the control - it is what makes
+  the third a statement about the *pair* rather than about `A` - and the fourth is what makes the third
+  a statement about nesting rather than about the descendant being wrong. This inverts the intuition a
+  POSIX read path trains, where a grant on a parent implies a grant on its children and a redundant
+  narrower grant is harmless; here the redundant narrower grant is the harmful one, and it fails
+  *silently upward*, denying the ancestor rather than the descendant. So a set of roots handed to a
+  permission model has to be **reduced to its maximal members before use**, which is what
+  `#withoutNested` does in `adapters/local-process/local-process-environment.ts`: normalise
+  (backslashes to forward slashes, strip a trailing slash, lowercase), dedupe, then drop every member
+  that is a proper descendant of another. *A redundant entry in an allowance is not a no-op* - and the
+  reason it survived is that the adapter builds its allowance from `appPath` and a sandbox that is
+  always inside it, so the nest is structural rather than accidental and every future world inherits it.
+
+- **A guard that reconciles a roster against a recalled list goes stale on the next addition, and the
+  failure names the wrong file.** `tests/local-process-demo.test.ts` asserted `assert.deepEqual` of the
+  adapter's declared environment-variable names against exactly three names. Declaring a fourth - the
+  read surface `process.observe` added, which no criterion of *this* example reads - made the guard fail
+  and report the **adapter** as at fault for declaring a name one example ignores. The same file's own
+  comment already carried the warning, in as many words: *"a list of names recalled in a test is a claim
+  about two files that nothing reconciles - this repository shipped one such list with a name that
+  existed in neither."* The `deepEqual` **was** that list. It is now a real two-file reconciliation,
+  stating the two directions the test's own name claims: every name the environment document promises in
+  backticks must be one the adapter declares - the actual defect class, because the document is what a
+  contract author reads - and every name the program reads must be declared, with `root` among them.
+  Deliberately **not** asserted is that the adapter declares nothing extra, because that is the half
+  that has no defect behind it and is the half that went stale. The probe that matters here is the one
+  that would otherwise be missed: adding `1` to an expected count, or correcting the roster by adding a
+  fourth name, both leave a test that is green and that will fail again on the fifth. What was measured
+  instead - a backticked name inserted into the document that the adapter never sets - fails exactly one
+  assertion with the message it was written to print, and the restore was verified twice, by a clean
+  `git status` **and** by a byte-identical comparison against the pre-probe content.

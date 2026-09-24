@@ -95,6 +95,10 @@ npm run demo:twin         # the fourteenth, and the only goal whose subject is n
                           # but the MACHINE: it measures the environment's capabilities by exercising
                           # them and writes a twin, and it is judged on whether an absence is
                           # distinguishable from a broken probe rather than on what it found
+npm run demo:audit        # the fifteenth, and the first whose subject is the checkout you are
+                          # standing in: a real tree outside the sandbox is read through a DECLARED
+                          # observation surface, and the same run proves the runtime refuses to write
+                          # into it - judged on the boundary holding, not on what the audit found
 ```
 
 Run the seventeen `npm run` commands below in that order, after `npm ci`. `npm ci` removes
@@ -125,6 +129,22 @@ a service: a real program is started as a real child process on this machine and
 printed on stdout and stderr, the code it exited with, what a probe of it found still running, and the
 files it really wrote. Nothing is stood in - the child process is a process, the file it wrote is on
 the filesystem - so its readings carry no `simulated` field either.
+
+`demo:twin` and `demo:audit` are the third and fourth, and they are the pair whose subject is not the
+run at all. `demo:twin` judges the **machine**: whether a container runtime answers, whether this
+interpreter accepts a network allowance, whether a permission flag is real. `demo:audit` judges the
+**checkout**: which branch `HEAD` points at, what the manifest declares, what is really at the top
+level of the tree you are working in. Both read rather than assume, and neither is pointed at
+something it deployed.
+
+`demo:audit` is the one to read if you want to know what the filesystem boundary is worth, because it
+is the only contract whose subject is a directory it is **forbidden to write**. The tree it audits
+lives outside the world's sandbox, the operator declares it through `process.observe`, and the runtime
+puts it in the read allowance and never in the write allowance - so the probe's attempt to write into
+the tree it was just reading is refused with `ERR_ACCESS_DENIED`, while a write into its own sandbox
+beside it succeeds. The contract demands both readings in one run, because **"I could not write" is
+the answer every broken instrument returns** and a probe with no working write anywhere would report
+the safest-looking line in the report while having measured nothing.
 
 `demo:data` is neither of those, and it is the run where the distinction is easiest to see: the socket
 is real, the bytes are real and the frames are decoded for real, but the *broker* on the other end of

@@ -137,6 +137,12 @@ export function worldIdentity(plan: EnvironmentPlan): WorldIdentity | null {
         ["command", child.application?.command ?? null],
         ["args", child.application === null ? null : child.application.args.join(" ")],
         ["root", child.root],
+        // The observation surface reaches the bundle, and that is the point of putting it here rather
+        // than leaving it in the plan. A reader auditing a verdict has to be able to answer "what was
+        // this run allowed to see" - and a world that read the operator's own tree is the one case
+        // where the answer is not "only its own sandbox". Absent when the list is empty, on this
+        // file's own rule: a key means the plan declared a value for it.
+        ["observe", child.observe.length === 0 ? null : child.observe.join(" ")],
       ]),
     };
   }

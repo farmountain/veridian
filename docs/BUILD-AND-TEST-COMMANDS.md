@@ -232,6 +232,20 @@ npm run demo:twin                           # the fourteenth demo, and the only 
                                             # a broken half passes every check there is. Exit 0 when
                                             # it passes: measured, 4 iterations and 9/9 criteria, the
                                             # failing count descending 4 -> 2 -> 1 -> 0.
+npm run demo:audit                          # the fifteenth demo, and the first whose subject is the
+                                            # checkout YOU are standing in. The goal declares a read
+                                            # surface through `process.observe`, so a real tree outside
+                                            # the sandbox is audited in place - HEAD, the manifest, the
+                                            # top-level census - while the SAME run attempts a write
+                                            # into that tree and reports the runtime's refusal, with a
+                                            # successful write into its own sandbox beside it as the
+                                            # control. No criterion pins a value belonging to this
+                                            # checkout, so the report differs on a fork and the verdict
+                                            # does not. Exit 0 when it passes: measured, 4 iterations
+                                            # and 9/9 criteria, the failing count descending
+                                            # 4 -> 2 -> 1 -> 0. Writes nothing outside its own
+                                            # sandbox: the one attempt to is refused and its residue is
+                                            # stat'd rather than assumed.
 npm run demo:no-browser                     # the same demo with `--browser none`. Every criterion is
                                             # a browser observation, so this must end INCONCLUSIVE
                                             # (exit 2). It shows the refusal, not the aha.

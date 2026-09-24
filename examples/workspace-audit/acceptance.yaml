@@ -1,0 +1,381 @@
+# The contract: nine deterministic criteria over one real audit of a real tree.
+#
+# Every step below is a `run` step - the kind the `sim-posix`, `sim-os` and `sim-container` worlds
+# introduced for a program that provisions by printing vectors, and which `local-process` uses for a
+# program judged on what it printed. It carries a bare array of strings, which the engine decodes as
+# `argv`: there is no `command` field anywhere, and a contract that wrote one would be describing a step
+# the schema does not have.
+#
+# Read the targets as a grammar, because there are two kinds of thing here and each is refused with its
+# own message:
+#
+#   `process.host`, `process.probe`       no target at all - the host is the reading's, and
+#                                         `process.probe` renders the whole world
+#   `process.exitcode`, `process.stdout`, a command, named either `app` (the program this world started
+#   `process.stderr`, `process.run`      and keeps running) or a position counted from 1 naming which
+#                                         `run` step is meant
+#   `process.kind`, `process.contents`,   a path inside the world's own root - the sandbox the plan names,
+#   `process.size`, `process.file`        so `audit/workspace.json` means the one under the sandbox
+#
+# Two consequences decide the shape below. A path is only read when some expectation names it, so a
+# criterion that judges the report has to mention the report. And a command can only be judged if this
+# criterion ran it - `observe()` records none - so every command-targeted expectation sits beside the
+# `run` step that produced it. A criterion that read position 1 without running anything would not fail;
+# it would be `INCONCLUSIVE`, which is the honest answer to a question nobody asked the world.
+#
+# ------------------------------------------------------------------------------------------------
+# What is deliberately not asserted, and why that is the discipline rather than a hole
+# ------------------------------------------------------------------------------------------------
+#
+# This contract runs against **the operator's own checkout**, so a criterion that pinned a reading of
+# that checkout would be a criterion that fails on a fork for a reason that is not about the code. So no
+# criterion below asserts:
+#
+#   - which branch `HEAD` is on, or which commit it names
+#   - the manifest's name, its version, or how many scripts it declares
+#   - how many entries the tree has at its top level
+#   - which errno the runtime refuses a write with - that is a property of the runtime and the platform
+#
+# What is asserted is the **shape of the measurement**: that the surface declared is the surface audited,
+# that the tree really yielded a non-empty census, that the refusal arrived with a successful sandbox
+# write beside it as its control, that anything not present was reported absent rather than inferred, and
+# that an independent second reading of the same tree agrees with the first. Those hold on this checkout,
+# on a fork of it, and on a machine with nothing installed.
+
+version: 1
+goal_id: workspace-audit
+
+criteria:
+  # ---------------------------------------------------------------------------------------------
+  # AC-001 - the world is the world this goal names, and a program is still running in it.
+  #
+  # This is the criterion every other one stands on, and it earns that position by being the only one
+  # whose failure means the world itself is wrong rather than the application. The host is what every
+  # reading carries, so a result read later says which machine produced it. A process that has not
+  # exited has no exit code, which is why this judges `process.state` and not `process.exitcode` - the
+  # exit-code validator says so rather than reporting a zero nobody observed.
+  #
+  # `process.probe` renders the whole world, so its `contains` stops before the sandbox path: that path
+  # depends on where this machine put a temporary directory, and an assertion that included it would be
+  # an assertion about a temporary directory.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-001
+    description: the world names its host, the audit probe announced itself as ready, and it is still running
+    steps: []
+    expect:
+      - validator: process.host
+        equals: "workspace-host (root sandbox)"
+        message: the readings name a host other than the one this goal's environment declares
+      - validator: process.state
+        target: app
+        equals: running
+        message: the probe this world started is not running
+      - validator: process.stdout
+        target: app
+        contains: "workspace-audit daemon ready"
+        message: the audit probe did not announce itself as ready
+      - validator: process.probe
+        contains: "application: node audit-probe.mjs daemon - still running"
+        message: the world's own reading does not describe the audit probe as running
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-002 - the surface declared is the surface audited, the tree really yielded a census, and the
+  # report is a document inside the sandbox.
+  #
+  # Three readings that belong together, because any one of them alone can be produced by a program that
+  # is not auditing anything. `surface:declared 1` is the surface the world was allowed to see, read back
+  # off the environment variable the adapter sets. `surface:kind dir` says that one resolved to a
+  # directory rather than to nothing. The `matches` on the census line is what makes it a *reading*
+  # rather than an echo: zero entries is what a path that exists and holds nothing returns, and it is
+  # also what a wrong path is most likely to return, so the assertion is `[1-9][0-9]*` - some entry was
+  # really seen - while deliberately not pinning *how many*, because that number belongs to the checkout
+  # rather than to the program.
+  #
+  # `process.file` on the report is the one assertion here that could not be made in any other world.
+  # The report is written into the **sandbox**, and the sandbox is inside the world's own root, so a
+  # criterion can read it - while the tree being described stays outside that root and stays unwritten.
+  # That separation is the design: a reset withdraws the report without touching a line of the code under
+  # audit.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-002
+    description: the declared surface was read, the census is non-empty, and the report is a file in the sandbox
+    steps:
+      - run: [node, audit-probe.mjs, audit]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 0
+        message: the audit refused, so there is no report to judge the rest of this contract against
+      - validator: process.stdout
+        target: "1"
+        contains: "surface:declared 1"
+        message: the audit states a surface other than the single directory this goal declares
+      - validator: process.stdout
+        target: "1"
+        contains: "surface:kind dir"
+        message: the declared surface did not resolve to a directory, so nothing was audited
+      - validator: process.stdout
+        target: "1"
+        matches: "surface:entries [1-9][0-9]* of"
+        message: the audit saw nothing at the top level of the tree it was pointed at
+      - validator: process.file
+        target: audit/workspace.json
+        equals: true
+        message: the audit did not leave a report inside the sandbox
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-003 - the boundary was put to the test, and the runtime refused.
+  #
+  # This is the criterion the goal exists for. The probe knows two things it may do - read the observed
+  # tree, write its own sandbox - and it may **not** write into the tree it is observing. So it tries,
+  # and this judges the answer.
+  #
+  # The assertion is three lines rather than one because the outcome, the reason and the residue are
+  # three different facts. `boundary:write refused` is the outcome. `boundary:refusal <CODE>` is the
+  # runtime's own name for why, matched as an errno *shape* rather than pinned to a value, because
+  # pinning it would be a claim about this runtime on this platform rather than about the boundary.
+  #
+  # `boundary:residue none` is the one that is a measurement rather than a deduction. A refusal implies
+  # nothing was written, and a program that reported that implication would be repeating the runtime's
+  # claim instead of checking it - so the probe stat's the target after the attempt either way. The
+  # interesting case is the one that has never been seen: a runtime that refused the write and created
+  # the file anyway. That is reported `left-behind`, counted as a breach, and would fail here.
+  #
+  # What this criterion does not prove on its own is that a refusal means anything - an instrument that
+  # cannot write at all returns the same line. AC-004 is the other half.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-003
+    description: the probe attempted a write into the observed tree, the runtime refused it, and nothing was left behind
+    steps:
+      - run: [node, audit-probe.mjs, audit]
+    expect:
+      - validator: process.stdout
+        target: "1"
+        contains: "boundary:write refused"
+        message: the probe could write into the tree it was auditing, so an audit could alter what it measures
+      - validator: process.stdout
+        target: "1"
+        matches: "boundary:refusal [A-Z]+"
+        message: the refusal did not carry the runtime's own name for why it was refused
+      - validator: process.stdout
+        target: "1"
+        contains: "boundary:residue none"
+        message: the write probe left a file in the tree it was auditing
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-004 - the control held in the same run, so AC-003's refusal is a measurement.
+  #
+  # This is the criterion that makes the one above mean something, and it is the discipline this
+  # repository has already paid for twice - `environment-twin`'s `# control status=available` and
+  # `core/environment/isolation.ts`'s *"the permitted half is read first"*. **"I could not write" is the
+  # answer every broken instrument returns**, so the permitted half is exercised in the same run and in
+  # the same program: the sandbox is written to, read back, and reported.
+  #
+  # Read the three assertions as an implication rather than a list. `audit:control-held yes` is the
+  # sandbox write. `audit:refusal-earned yes` is the program's own statement that the refusal counts -
+  # and it is asserted *separately* precisely so the program cannot report the conclusion while one of
+  # its premises was false. `surface:sandbox ... write=writable` is the raw reading the first of those
+  # was derived from, asserted beside it, so a reader can see the derivation rather than take it.
+  #
+  # A machine whose filesystem is read-only, a program with a typo in its path, and a boundary that
+  # genuinely holds would otherwise all produce the identical line - and a contract that could not tell
+  # those apart would report the safest of the three when it had measured any of them.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-004
+    description: the sandbox was written to in the same run, so the refusal is a measurement rather than an absent instrument
+    steps:
+      - run: [node, audit-probe.mjs, audit]
+    expect:
+      - validator: process.stdout
+        target: "1"
+        contains: "surface:sandbox kind=dir write=writable"
+        message: the sandbox could not be written to, so no refusal in this run can be read
+      - validator: process.stdout
+        target: "1"
+        contains: "audit:control-held yes"
+        message: the known-present control did not succeed
+      - validator: process.stdout
+        target: "1"
+        contains: "audit:refusal-earned yes"
+        message: the program reports the refusal without the control that makes it mean something
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-005 - an absence was reported as absent, and nothing was inferred.
+  #
+  # The audit reads two things that may genuinely not be there: a repository's own `HEAD` and a
+  # `package.json`. Both are read from the file rather than from a tool, deliberately - `git` is not
+  # guaranteed to be on the machine a contract runs on, and a reading that is `absent` because a tool was
+  # missing is a reading about the tool rather than about the tree, which is the exact confusion
+  # `environment-twin` exists to keep apart.
+  #
+  # So this criterion asserts the *branch structure* of both readings rather than either value: the line
+  # is one of `absent`, a ref name or a commit id for `HEAD`, and one of `absent` or a name for the
+  # manifest. Either answer is correct on some checkout, and both answers are a measurement. What would
+  # not be correct is a third possibility - a guess derived from a directory name - and the alternation
+  # is what excludes it, because a guess is neither of the two forms the program can print.
+  #
+  # `audit:every-root-described yes` is asserted beside them so that a program which enumerated nothing
+  # cannot satisfy this criterion vacuously.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-005
+    description: every observed root was described, and a reading that was not there was reported absent rather than inferred
+    steps:
+      - run: [node, audit-probe.mjs, audit]
+    expect:
+      - validator: process.stdout
+        target: "1"
+        contains: "audit:every-root-described yes"
+        message: the audit did not describe every root it was pointed at
+      - validator: process.stdout
+        target: "1"
+        matches: "audit:head (absent|ref|commit)"
+        message: the repository reading is neither a value that was found nor an explicit absence
+      - validator: process.stdout
+        target: "1"
+        matches: "audit:manifest absent|audit:manifest [^ ]+ "
+        message: the manifest reading is neither a value that was found nor an explicit absence
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-006 - a second, independent reading of the same tree agrees with the first.
+  #
+  # The reading carries no clock, and this is the criterion that would catch it if it did: two audits of
+  # an unchanged tree have to be byte-identical, so a difference between them is a difference in the tree
+  # rather than a difference in when the reading was taken. Without this the report is a description of
+  # one moment, which is exactly what a report about a workspace must not be if it is to be compared with
+  # one taken later.
+  #
+  # The comparison is made by the program rather than by the contract, and that choice is deliberate: a
+  # contract comparing two text blobs would have to render them, and a rendering is free to differ from
+  # the bytes in ways that have nothing to do with the tree. The program compares the two reports it
+  # would have written, and reports one word.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-006
+    description: two audits of the same tree in one run are byte-identical
+    steps:
+      - run: [node, audit-probe.mjs, compare]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 0
+        message: two audits of the same tree disagreed, so the report is a reading of a moment rather than of the tree
+      - validator: process.stdout
+        target: "1"
+        contains: "audit:stable yes"
+        message: the program did not report the two readings as identical
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-007 - the report read back off the disk agrees with a fresh audit of the same tree.
+  #
+  # AC-006 compares two readings taken in one process. This one crosses a process boundary: `audit`
+  # writes the report and exits, and `verify` reads that file back and re-audits the tree before saying
+  # whether they agree. That is what makes the report evidence rather than a log line - a document that
+  # another program can be handed without this one running.
+  #
+  # `target: "2"` is the second `run` step, and it is reachable only because this criterion ran it. The
+  # criterion establishes its own precondition with the `audit` step rather than inheriting one from
+  # whichever criteria happened to run before it: a criterion whose meaning depends on the order of the
+  # list changes meaning when the list is reordered.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-007
+    description: the report on disk is read back by a second process, which re-audits and agrees
+    steps:
+      - run: [node, audit-probe.mjs, audit]
+      - run: [node, audit-probe.mjs, verify]
+    expect:
+      - validator: process.exitcode
+        target: "2"
+        equals: 0
+        message: the verify disagreed with the report it wrote, or could not read it
+      - validator: process.stdout
+        target: "2"
+        contains: "audit:agrees yes"
+        message: the second process did not report agreement with the report on disk
+      - validator: process.stdout
+        target: "2"
+        contains: "re-read from disk"
+        message: the verify did not name the report it re-read
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-008 - with nothing to verify, the verify refuses and names what it could not read.
+  #
+  # The `clear` step is why this criterion does not depend on where it sits in the list. A verify run
+  # alone would find the report that AC-007's `audit` step left behind, correctly exit 0, and fail this
+  # criterion against a correct program - which is a defect `environment-twin` already paid for once, in
+  # the same shape, and records in the same place. A criterion that inherits its precondition from the
+  # order other criteria happened to run in is a criterion that changes meaning when the list is
+  # reordered, so this one establishes the state it judges.
+  #
+  # `process.stdout equals ""` is asserted beside the exit code because a refusing program that also
+  # printed a summary would be a program whose output a caller could mistake for a result. The refusal
+  # belongs on stderr, where `local-process` puts every diagnostic.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-008
+    description: a verify with no report refuses with exit 2, names what it could not read, and writes nothing to stdout
+    steps:
+      - run: [node, audit-probe.mjs, clear]
+      - run: [node, audit-probe.mjs, verify]
+    expect:
+      - validator: process.exitcode
+        target: "2"
+        equals: 2
+        message: the verify did not refuse when there was no report to read
+      - validator: process.stdout
+        target: "2"
+        equals: ""
+        message: the verify wrote to stdout while refusing
+      - validator: process.stderr
+        target: "2"
+        contains: "the report could not be read from"
+        message: the verify did not name the document it could not read
+      - validator: process.file
+        target: audit/workspace.json
+        equals: false
+        message: a report existed after the probe was asked to withdraw it
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-009 - an unusable command line is refused by name, and is not reported as a failure.
+  #
+  # `audti` is a transposition, which is the mistake a person makes. The program names it and exits 2 -
+  # and the exit code is the whole point of the criterion. `4` is what a breach produces, `2` is what an
+  # unreadable command line produces, and `1` is what an uncaught exception produces. A contract that
+  # could not tell those apart would report a typo as an application defect and send a repair loop after
+  # working code.
+  #
+  # `process.stdout equals ""` again, on the same reasoning as AC-008: a program that refused and also
+  # printed something would make the one machine-readable stream ambiguous.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-009
+    description: an unrecognised command is named and refused with exit 2, writing nothing to stdout
+    steps:
+      - run: [node, audit-probe.mjs, audti]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 2
+        message: an unusable command line was not refused, so a typo is indistinguishable from a defect
+      - validator: process.stdout
+        target: "1"
+        equals: ""
+        message: the program wrote to stdout while refusing an unusable command line
+      - validator: process.stderr
+        target: "1"
+        contains: "unknown command audti"
+        message: the program did not name the command it could not use
+    evidence:
+      - json

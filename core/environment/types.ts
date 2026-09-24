@@ -926,6 +926,25 @@ export interface ProcessPlan {
   /** Absolute, resolved against `appPath` on the same rule `databasePath` follows. */
   readonly root: string;
   /**
+   * Directories the application may read and may never write.
+   *
+   * Empty is the ordinary case, and the field exists for the one shape of question the fixed read
+   * allowance could not reach: a contract whose subject is the operator's **own** tree rather than a
+   * program the world deploys. The application's read allowance used to be a fixed pair - this
+   * world's application directory and its sandbox - so a real workspace was unreachable, and pointing
+   * `root` at it instead is no answer because `root` is emptied on every reset.
+   *
+   * Read-only **by construction rather than by convention**: each member is added to the run's read
+   * allowance and never to its write allowance, so the runtime refuses a write into an observed tree.
+   * A promise in a comment would be a claim beside the code; this one is held by the same mechanism
+   * that holds every other filesystem boundary here.
+   *
+   * Declared rather than inferred, which is the whole reason it is safe. The rule this world already
+   * held - a path outside the root is refused rather than resolved - is preserved exactly: what is
+   * widened is the set of paths the *operator named*, and everything unnamed is still refused.
+   */
+  readonly observe: readonly string[];
+  /**
    * Whether this world's application runs in a container substrate instead of on this machine.
    *
    * **Opt-in, and the default is off on purpose.** `PLAN.md` §42's rule is *"do not prematurely force

@@ -1,0 +1,92 @@
+# The goal: a real workspace is audited in place, and the audit can not alter what it audits.
+#
+# This is the answer to the question that produced it, and the question is the operator's rather than
+# the repository's: *how does Veridian know the reality of the environment I am actually working in?*
+#
+# `environment-twin` is the neighbouring answer and it stops one step short of this one. It measures the
+# **machine** - is a container runtime installed, does the runtime accept a network allowance - and it
+# measures all of that *inside a sandbox*, so its subject is the world the run stands on and never the
+# tree the operator edits. This goal's subject is the tree the operator edits: which branch the checkout
+# is on, what the manifest declares, what is actually at the top level, and whether the code in it
+# behaves.
+#
+# The statement has four clauses and each is judged by named criteria:
+#
+#   1. a tree on this disk that the run did not create was read, and described without guessing
+#   2. the same run attempted to write into it, and the runtime refused
+#   3. a write into the sandbox next door succeeded, so the refusal means something
+#   4. a second, independent reading of the same tree agrees with the first
+#
+# The third clause is the one that makes the second a measurement rather than a formality, and it is the
+# discipline this repository has already paid for. **"I could not write" is the answer every broken
+# instrument returns**, so the permitted half is exercised first and in the same run. Without it, a
+# machine whose filesystem was read-only, a program with a typo in its path, and a boundary that
+# genuinely held would all produce the identical line - and a contract that could not tell those apart
+# would report the safest of the three when it had measured any of them.
+#
+# The fourth clause is the one that keeps this honest over time. A report that cannot be reproduced is a
+# reading of the moment it was taken, and the audit is written with no clock in it precisely so that two
+# audits of an unchanged tree are byte-identical and a difference in them is a difference in the tree.
+#
+# ## What is deliberately not asserted
+#
+# No criterion below pins a *machine fact*: not the branch this checkout is on, not the manifest's
+# version, not the number of files at the top level. Asserting those would make the contract a claim
+# about the workspace in which it happened to be written, and it would fail on a fork of this repository
+# for a reason that is not about the code. What is asserted is the **shape of the measurement**: that
+# the surface declared is the surface audited, that the refusal arrived with the sandbox write beside it
+# as its control, that nothing was inferred where a file was missing, and that two readings agree.
+
+version: 1
+
+id: workspace-audit
+
+statement: >-
+  A directory tree on this machine that the run did not create is read and described without inference,
+  the same run puts the read-only boundary to the test and reports the runtime's refusal, a write into
+  the sandbox succeeds in that same run so the refusal is a measurement rather than an absent
+  instrument, and an independent second reading of the same tree agrees with the first.
+
+acceptance: acceptance.yaml
+
+environment: environment.yaml
+
+context: |-
+  The fourteenth example, and the first whose subject is the operator's own checkout rather than
+  something the run deployed or the machine it stands on.
+
+  It needed one thing the world did not have. The `local-process` adapter's read surface was a fixed
+  pair - the application directory and the sandbox - and its own documentation said why: a path leaving
+  the root is refused rather than resolved, because opening the developer's own filesystem while calling
+  it the sandbox's is the one thing that world must not do. Pointing `root` at the workspace is not an
+  answer, because `root` is emptied on every reset and a world rooted at the checkout would delete the
+  code under test on its first iteration.
+
+  So `process.observe` was added: a declared read surface. The rule is preserved rather than repealed.
+  The operator writes down what may be looked at; the confinement enforces exactly that list and nothing
+  wider; every member joins the read allowance and never the write allowance; and the list travels into
+  the run bundle beside the host and the root, so a reader of the evidence can see what each run was
+  allowed to see rather than inferring it.
+
+  What a reader should watch for is that this is a *product* seam rather than an example's trick. The
+  example declares one directory and reads it. The schema, the loader, the world identity and the
+  adapter's confinement are where the guarantee lives, and the criterion that measures the refusal is
+  the evidence that it lives there rather than in a comment here.
+
+tags:
+  - workspace-audit
+  - environment-observation
+  - fourteenth-example
+
+limits:
+  # 6 is what the demo needs: one to observe the defects, and five to repair them. Four were used.
+  maxIterations: 6
+  maxRuntimeMs: 300000
+  maxCriterionMs: 30000
+
+  # The audit reaches no network at all, and it writes in exactly one place - its own sandbox, inside
+  # the world's root. That is the strongest form of this pair in the tree, because the *subject* of this
+  # contract is a directory it may only read: the observed tree is where a write would be most damaging
+  # and is the place the runtime refuses one, which AC-003 measures rather than asserts.
+  networkPolicy: deny
+  filesystemWrite: sandbox

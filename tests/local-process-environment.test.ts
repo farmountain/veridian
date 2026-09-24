@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { delimiter } from "node:path";
 import { describe, it } from "node:test";
 
 import { LocalProcessEnvironment, PROCESS_ENV, PROCESS_ENV_NAMES } from "../adapters/local-process/local-process-environment.ts";
@@ -291,6 +292,11 @@ function plan(overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan {
       application: { command: "node", args: ["provision.mjs"] },
       root: "sandbox",
       isolation: null,
+      // Required by the type, and this fixture is the reason that matters: the object below is cast
+      // `as EnvironmentPlan`, so the compiler could not see that this field was missing while every
+      // test that built on it read `undefined` at runtime. The cast is the only reason a green
+      // typecheck coexisted with eleven failing tests.
+      observe: [],
     },
     data: null,
     mobile: null,
@@ -353,7 +359,7 @@ describe("local-process: the lifecycle it really performs", () => {
     assert.equal(health.patternSeen, true, "the readiness line was on stdout, so it must be seen");
   });
 
-  it("hands the program the three names the adapter declares, and none of them is the document's own spelling", async () => {
+  it("hands the program every name the adapter declares, and none of them is the document's own spelling", async () => {
     const { subject, processes } = harness(plan());
     const { id } = await subject.create();
     await subject.start(id);
@@ -361,7 +367,7 @@ describe("local-process: the lifecycle it really performs", () => {
     const env = processes.launched[0]?.request.env;
     assert.ok(env !== undefined, "the program must have been handed an environment");
 
-    assert.deepEqual(Object.keys(env).sort(), [...PROCESS_ENV_NAMES].sort(), "the three declared names are the three handed over");
+    assert.deepEqual(Object.keys(env).sort(), [...PROCESS_ENV_NAMES].sort(), "the declared names are the names handed over");
     assert.equal(env[PROCESS_ENV.host], "veridian-local-process", "the identity the readings name");
     assert.equal(env[PROCESS_ENV.app], "/virtual/examples/local-process", "the application directory");
     assert.match(String(env[PROCESS_ENV.root]), /sandbox$/u, "the sandbox as this machine can open it");
@@ -379,7 +385,7 @@ describe("local-process: the lifecycle it really performs", () => {
   });
 
   it("refuses a process block with no root, because a world with no directory is not a world", async () => {
-    const { subject } = harness(plan({ process: { host: "veridian-local-process", application: null, root: "", isolation: null } }));
+    const { subject } = harness(plan({ process: { host: "veridian-local-process", application: null, root: "", isolation: null, observe: [] } }));
     await assert.rejects(
       () => subject.create(),
       (error: unknown) => {
@@ -410,7 +416,7 @@ describe("local-process: the lifecycle it really performs", () => {
   });
 
   it("starts no program when the contract declares none, and still reports itself healthy", async () => {
-    const { subject, processes, logger } = harness(plan({ process: { host: "veridian-local-process", application: null, root: "sandbox", isolation: null } }));
+    const { subject, processes, logger } = harness(plan({ process: { host: "veridian-local-process", application: null, root: "sandbox", isolation: null, observe: [] } }));
 
     const { id } = await subject.create();
     await subject.start(id);
@@ -533,9 +539,240 @@ describe("local-process: the boundary report is derived from what the world did"
     assert.equal(subject.boundaries().filesystemWrite, "enforced");
   });
 
+  it("grants an observed directory for reading and never for writing", async () => {
+    /**
+     * The property that makes `process.observe` safe rather than merely convenient.
+     *
+     * A contract may now name a directory on this machine - the operator's own tree - and the
+     * application may read it. What it may **not** do is write into it, and the difference has to be
+     * held by the mechanism rather than by a comment, because the failure mode is silent: a world that
+     * wrote into the tree it was auditing would modify the thing it was asked to measure, and every
+     * criterion afterwards would be judging a tree the run itself had changed.
+     *
+     * So the allowance is asserted in both directions. `readRoots` names the observed directory,
+     * `writeRoots` does not, and there is exactly one sandbox in the write set - so a future change
+     * that added the observation surface to both lists fails here by name rather than shipping.
+     */
+    const observed = "/virtual/the-operators-tree";
+    const { subject, processes } = harness(
+      plan({
+        process: {
+          host: "veridian-local-process",
+          application: { command: "node", args: ["audit.mjs"] },
+          root: "sandbox",
+          observe: [observed],
+          isolation: null,
+        },
+      }),
+    );
+    const { id } = await subject.create();
+    await subject.start(id);
+
+    const [request] = processes.requests;
+    assert.notEqual(request, undefined, "the world has to have asked the runner for something");
+    const allowance = request?.confinement;
+    assert.notEqual(allowance, undefined, "the application was started with no allowance at all");
+
+    // Reading is granted. Without this half the contract could not read the tree it audits, and the
+    // field would be a declaration nothing honoured.
+    assert.ok(
+      allowance?.readRoots.includes(observed) === true,
+      `the observed directory is not readable, so the declaration was not honoured: ${String(allowance?.readRoots.join(", "))}`,
+    );
+    // Writing is not. This is the half that makes the guarantee real.
+    assert.ok(
+      allowance?.writeRoots.includes(observed) !== true,
+      `the observed directory is writable, so a run could modify the tree it was asked to measure: ${String(allowance?.writeRoots.join(", "))}`,
+    );
+    // The sandbox is still the only writable place, which is what keeps reset meaningful.
+    assert.equal(allowance?.writeRoots.length, 1, "the write allowance is no longer exactly the sandbox");
+
+    // The program is told the same directories the runtime permits, through the platform's own list
+    // separator. A comma would be wrong here and would only fail on a path that contained one.
+    assert.equal(
+      request?.env?.["VERIDIAN_PROCESS_OBSERVE"],
+      observed,
+      "the application was not told which directories it may read",
+    );
+  });
+
+  it("tells a program it may observe nothing when the document named nothing", async () => {
+    const { subject, processes } = harness(plan());
+    const { id } = await subject.create();
+    await subject.start(id);
+
+    // Empty rather than absent, so a program can test the value with one truthiness check and needs no
+    // second spelling of "the document observed nothing".
+    const [request] = processes.requests;
+    assert.equal(request?.env?.["VERIDIAN_PROCESS_OBSERVE"], "");
+    assert.equal(request?.confinement?.writeRoots.length, 1);
+  });
+
+  it("drops a read allowance that is already inside another one", async () => {
+    /**
+     * The measurement this test holds, and why an ancestor's own operations need it.
+     *
+     * `--allow-fs-read=A --allow-fs-read=A/B` is not the union of the two on this runtime. Under that
+     * pair, every operation on `A` **itself** - `stat`, `lstat`, `readdir`, `access` - answers
+     * `ERR_ACCESS_DENIED`, while `realpath` on `A` and any read of a *descendant* of `A` still succeed.
+     * A disjoint second root does not do this, so it is nesting rather than multiplicity, and the
+     * failure lands on the ancestor's own directory operations - which is the shape a program cannot
+     * work around, because there is no other way to list a directory than to ask the directory.
+     *
+     * This world has always passed such a pair: the sandbox lives inside the application directory. The
+     * consequence was invisible because no program had ever listed the directory it was started from.
+     * `workspace-audit` is the first subject whose whole purpose is to describe a directory tree, so it
+     * is the first to ask - and the plan below declares an observation surface that contains both, which
+     * is what an operator auditing their own checkout actually writes.
+     *
+     * Removing the nested member is not a widening: a member inside another adds no path the other does
+     * not cover, so the union the allowance means is unchanged. What changes is that the declared tree
+     * can now be *listed* and not merely read from.
+     */
+    const observed = "/virtual/the-operators-checkout";
+    const nested = `${observed}/app`;
+    const { subject, processes } = harness(
+      plan({
+        process: {
+          host: "veridian-local-process",
+          application: { command: "node", args: ["audit.mjs"] },
+          root: "sandbox",
+          observe: [observed, nested],
+          isolation: null,
+        },
+      }),
+      // The plan's `appPath` is a made-up path on a virtual filesystem, so the observed surface is
+      // declared to *contain* it rather than the other way round. What is asserted is the rule, not the
+      // layout of this machine.
+    );
+
+    const { id } = await subject.create();
+    await subject.start(id);
+
+    const [request] = processes.requests;
+    const roots = request?.confinement?.readRoots ?? [];
+    assert.ok(
+      roots.includes(observed) === true,
+      `the outermost declared root is not in the allowance: ${roots.join(", ")}`,
+    );
+    assert.equal(
+      roots.includes(nested),
+      false,
+      `a read root nested inside another survived, and on this runtime that denies every operation ` +
+        `on the ancestor itself: ${roots.join(", ")}`,
+    );
+    // And the declaration is not lost: the program is still told both directories, because the list it
+    // is handed is what the document declared while the list the runtime is given is what it can honour.
+    assert.equal(request?.env?.["VERIDIAN_PROCESS_OBSERVE"], `${observed}${delimiter}${nested}`);
+  });
+
+  it("confines a `run` step by the same allowance as the application", async () => {
+    /**
+     * The gap this test exists for, and the reason it is asserted here rather than trusted.
+     *
+     * `run` is the step kind by which six worlds provision, and until this was fixed it carried **no
+     * allowance at all** - so the long-lived application was confined and every provisioning step was
+     * not. Nothing noticed because no example had ever asked a `run` step to stop at a boundary; the
+     * first one to ask was `workspace-audit`, whose whole premise is that an audit of a real tree cannot
+     * write into it. Its reading came back `breached`, which is the correct answer to a question the
+     * world was not asking.
+     *
+     * Two things were measured before the allowance was extended, and both are asserted in
+     * `core/process.ts`'s sibling tests rather than here: `--allow-fs-read` does not imply permission to
+     * write, and a confined child cannot start children of its own without `--allow-child-process` -
+     * which is why that flag is set here and deliberately not for the application, since a provisioning
+     * step that legitimately starts children is a program this world has always run.
+     */
+    const { subject, processes } = harness(
+      plan({
+        process: {
+          host: "veridian-local-process",
+          application: { command: "node", args: ["audit.mjs"] },
+          root: "sandbox",
+          observe: ["/virtual/workspace"],
+          isolation: null,
+        },
+      }),
+      { node: { stdout: READY } },
+    );
+
+    const { id } = await subject.create();
+    await subject.start(id);
+
+    // The application, for comparison - and the comparison is the point, because the defect was that
+    // these two diverged. `requests` is the **request** the world handed the runner, whose
+    // `confinement` is the allowance it asked for; `launched` is the handle, whose `confinement` is the
+    // runner's own reading of what it applied. The two are read for the two different questions: the
+    // allowance is a request, and `applied` is an answer.
+    const application = processes.requests[0];
+    const applicationHandle = processes.launched[0];
+    assert.notEqual(application?.confinement, undefined, "the application was started with no allowance");
+
+    processes.requests.length = 0;
+    processes.launched.length = 0;
+
+    // A `run` step, which is how this world performs the actions a criterion asks for. The step is
+    // written in the **wire** spelling - `{ run: [...] }` - because `#capture` decodes it with the same
+    // function that produced it, and a test that handed over the decoded form would be testing a shape
+    // no contract can produce.
+    //
+    // The exit is delivered by hand, and that is not a convenience. This suite's double models the
+    // Windows ordering it exists for - `stop()` returns before the child's `close` event - so a handle
+    // resolves only when the test says it does. A `run` step is the first thing in this suite that
+    // waits for one to finish on its own, so the test is also the first caller that has to deliver it.
+    // Without this the promise never settles and `node --test` cancels every suite after it, which is
+    // exactly what happened the first time this was written.
+    const pending = subject.execute(id, {
+      runId: "run-1",
+      criterionId: "AC-900",
+      steps: [{ run: ["node", "audit.mjs", "audit"] }],
+      targets: [],
+      evidence: ["json"],
+    });
+    // `runner.run` is called synchronously from inside `runToCompletion`, but `execute` reaches it
+    // through at least one microtask, so the handle is not in `launched` on the next statement.
+    await new Promise((resolve) => setImmediate(resolve));
+    processes.launched[0]?.deliverExit();
+    await pending;
+
+    const runStep = processes.requests[0];
+    const runHandle = processes.launched[0];
+    assert.notEqual(runStep, undefined, "the `run` step started no process");
+    assert.notEqual(
+      runStep?.confinement,
+      undefined,
+      "a `run` step was started with no allowance, so a provisioning program may write wherever the " +
+        "operator can while the application beside it may not",
+    );
+    assert.equal(runHandle?.confinement?.applied, true, "the `run` step's allowance was not applied");
+    assert.equal(runHandle?.confinement?.args[0], "--permission", "the `run` step really was confined");
+    assert.deepEqual(
+      runStep?.confinement?.readRoots,
+      application?.confinement?.readRoots,
+      "the `run` step and the application were given different read allowances",
+    );
+    assert.deepEqual(
+      runStep?.confinement?.writeRoots,
+      application?.confinement?.writeRoots,
+      "the `run` step and the application were given different write allowances",
+    );
+    // The one dimension where the two deliberately differ, and the measurement behind it: a confined
+    // child cannot start children of its own without this flag, and a provisioning step that
+    // legitimately does is a program this world has always run. The application has never needed it.
+    assert.ok(
+      runHandle?.confinement?.args.includes("--allow-child-process") === true,
+      "the `run` step cannot start children, which would break a provisioning program rather than a boundary",
+    );
+    assert.equal(
+      applicationHandle?.confinement?.args.includes("--allow-child-process"),
+      false,
+      "the application was granted the ability to start children, which is a widening and not the fix",
+    );
+  });
+
   it("does not report enforcement for a command the confinement model cannot reach", async () => {
     const { subject, processes } = harness(
-      plan({ process: { host: "veridian-local-process", application: { command: "cmd", args: ["/c", "build.bat"] }, root: "sandbox", isolation: null } }),
+      plan({ process: { host: "veridian-local-process", application: { command: "cmd", args: ["/c", "build.bat"] }, root: "sandbox", isolation: null, observe: [] } }),
       // `cmd` is not Node, so the runner refuses the allowance by name and `cmd` is what really starts.
       { cmd: { stdout: READY } },
     );
@@ -583,6 +820,7 @@ describe("local-process: the substrate it can be held in", () => {
         host: "veridian-local-process",
         application: { command: "node", args: ["provision.mjs"] },
         root: "sandbox",
+        observe: [],
         isolation: { denyNetwork },
       },
     });

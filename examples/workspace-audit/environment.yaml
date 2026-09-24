@@ -1,0 +1,107 @@
+# The world the `workspace-audit` goal is judged in.
+#
+# This is the `local-process` world - the tenth adapter, the second that is NOT simulated. Nothing is
+# stood in for: a real child process starts, every exit code a criterion reads was produced by
+# `process.exitCode` on a process this kernel reaped, and the tree it reports on is a tree on this disk.
+#
+# That last sentence is what makes this document different from every other one in the repository, and
+# the difference is one field.
+#
+# ## `process.observe`, and why the world needed a field to be able to ask this question
+#
+# Until this contract existed, every world judged something the run **deployed**. None of them could be
+# pointed at the operator's own checkout, and the reason was structural rather than missing code. The
+# `local-process` world's read surface was a fixed pair - the application directory and the sandbox -
+# so a real workspace was unreachable by construction, and its rule said so in as many words: *"a path
+# that leaves the root is refused rather than resolved, because opening the developer's own filesystem
+# while calling it the sandbox's is the one thing this world must not do."*
+#
+# The other obvious route is worse, and it is worth naming because it is the one that looks right:
+# point `root` at the workspace instead. `root` is the directory this world **creates, empties and
+# deletes** on its own schedule, so a world rooted at the checkout would delete the code under test on
+# its first iteration. The choice was between refusing the question and destroying the answer.
+#
+# So `observe` exists, and it is shaped by the rule it does not repeal:
+#
+#   - It is a **declared** list, not a widened boundary. The operator names what may be looked at, and
+#     the confinement enforces exactly that list. There is no path from an application to a directory
+#     the operator did not write down, which is the property `local-process` was protecting.
+#   - Every member resolves relative to `app`, so the document reads the same on any machine.
+#   - Every member joins the **read** allowance and **never** the write allowance. The guarantee is
+#     held by the runtime rather than by this comment, and AC-004 is the criterion that measures it.
+#
+# That last point is the contract's whole safety argument. A world that could write into the tree it was
+# auditing would modify the thing it was asked to observe, and every criterion afterwards would be
+# judging a tree the run itself had altered - an environment failure wearing the application's clothes.
+#
+# ## The surface this contract declares, and how narrow it is
+#
+# `../../../` is the repository root. It is declared **once**, as a directory, and the program reads it
+# with no more privilege than any program the operator starts from a shell. The audit is read-only by
+# construction rather than by good behaviour: the probe attempts a write and reports the refusal, and a
+# refusal that does not arrive is reported as a breach rather than swallowed.
+#
+# The declaration is deliberately the repository and not the machine. A world that could read all of
+# `C:\` or all of `/` would be a world whose reading changed with whoever was logged in, and an audit
+# whose subject is "everything" is an audit that has named no subject.
+
+adapter: local-process
+
+# Relative to this file. The adapter runs `start` and every `run` step with the working directory set
+# here, which is why the contract writes `audit-probe.mjs` rather than a path to it.
+app: app
+
+process:
+  # The identity every reading carries, so a result read later says which machine produced it. Named for
+  # the subject rather than the adapter: this world stands on a workspace and reports on it.
+  host: workspace-host
+
+  # The sandbox - the one directory this world may create, empty and delete. Resolved relative to `app`
+  # exactly as `databasePath` is in the inventory demo, and required rather than defaulted because a
+  # defaulted root would judge the contract against whichever directory the run happened to start in.
+  #
+  # It is NOT the audited tree, and the distinction is the point of the whole document. The sandbox holds
+  # the probe's report; the observed tree holds the workspace. Keeping them apart is what lets a reset
+  # withdraw a report without touching a line of the code under audit.
+  root: sandbox
+
+  # The declared read surface: the repository root, reached from `app/` and never resolved further.
+  #
+  # One entry, a directory, no globs and no nesting - the schema refuses a blank member and the loader
+  # refuses a path that leaves the resolved tree, so the list is the whole of what this run may see
+  # outside its own sandbox.
+  observe:
+    - ../../../
+
+  application:
+    command: node
+    args: [audit-probe.mjs, daemon]
+
+# Null means "this program has no dependencies to install" - a fact about a program written against the
+# Node standard library alone, which is what lets this example run from a clean checkout with nothing to
+# fetch. It matters more here than elsewhere: an audit that ran `npm install` first would have modified
+# the tree it was measuring before it took a single reading.
+dependencyInstall: null
+
+start:
+  command: node
+  args: [audit-probe.mjs, daemon]
+
+  # The world waits for the probe to say it is ready. The pattern stops before the sandbox path, because
+  # that path is machine-specific: a readiness gate that depended on it would let a temporary directory
+  # abort the run instead of failing a criterion.
+  #
+  # This is also the line no defect in this example may touch. `local-process` paid for that rule: a
+  # defect that misspelt the readiness word took the *world* down, so the run ended before any criterion
+  # was observed and before the repair gate was reached - and a defect that takes down the world cannot
+  # be repaired by a loop that only starts once the world is up.
+  readyPattern: "workspace-audit daemon ready"
+
+# Reset is first-class. `restart` stops the daemon before emptying the sandbox and starting it again, so
+# each iteration is judged in a world holding nothing the previous one wrote - including no report,
+# which is what makes AC-008's "verify with nothing to verify" a real state rather than a race.
+#
+# Nothing here touches the observed tree, and that is a consequence of the read-only allowance rather
+# than a promise made in this file.
+reset:
+  strategy: restart

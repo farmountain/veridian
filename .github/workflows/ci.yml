@@ -225,11 +225,19 @@ jobs:
       # gate because it starts a real child process and reaches nothing else, and because its own
       # defects are defects in the probe rather than in an application, which makes it the one demo
       # whose failure could otherwise look like a machine difference rather than a regression.
+      #
+      # `audit` is the newest and the one that would be least safe to leave unrun here. Its subject is a
+      # real tree outside the world's sandbox - the checkout CI is standing in - so it is the only demo
+      # that reads the workspace and the only one that could damage it. What keeps it safe is a
+      # boundary the runtime enforces rather than a promise: the observed tree joins the read
+      # allowance and never the write allowance, and AC-003 measures the refusal while AC-004 measures
+      # a successful write into the sandbox beside it. A regression that widened the allowance would
+      # have to fail AC-003 first, which is why this job is where a widened allowance would be caught.
       - name: every world must demo green, and say which one did not
         run: |
           set +e
           failed=""
-          for world in db k8s posix os cloud container vscode api local-process data cockpit mobile twin; do
+          for world in db k8s posix os cloud container vscode api local-process data cockpit mobile twin audit; do
             echo "::group::npm run demo:$world"
             npm run "demo:$world"
             code=$?

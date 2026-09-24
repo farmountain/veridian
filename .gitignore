@@ -168,6 +168,24 @@ examples/vscode-cockpit/app/sandbox/
 # waiting to pay for it again.
 examples/environment-twin/app/**/sandbox/
 
+# The sandbox tree the `workspace-audit` example's world builds, added *with* the example rather than
+# after it - which is the one way this rule differs from its neighbour's two lines up, and the reason
+# it is worth saying so. `environment-twin` paid for a late rule; this one is the same rule written
+# before the same mistake could be made, and the `**` is carried across for the same reason it was
+# carried there.
+#
+# The artifacts here are a specific hazard rather than a stale release, and it is a new kind. This
+# example's subject is the **checkout it is running in**, so a committed `audit/workspace.json` would be
+# a document describing this repository - branch, manifest, top-level census - sitting inside the
+# sandbox where the next reader would find it looking like a current reading of *their* checkout. That
+# is the `sim-mobile` context rule and the `environment-twin` capability rule arriving at a third
+# subject: a committed reading of a live thing stops being a reading and becomes a claim.
+#
+# The sandbox is also the only path this world may write at all. Every write outside it is refused by
+# the runtime, so an unignored sandbox is the one artefact a run *can* leave in the tree - which makes
+# this rule the whole of the containment rather than a hygiene measure beside it.
+examples/workspace-audit/app/**/sandbox/
+
 # The state directory the self-acceptance contract's world builds - the one generated tree in this
 # repository that is not under an example's `app/`. The reasoning is the `sim-posix` one, and it is
 # sharper here because the world's root and the CLI's `--state-dir` are the *same* directory:

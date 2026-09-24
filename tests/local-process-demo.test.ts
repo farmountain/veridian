@@ -44,6 +44,7 @@ const repo = nodeIo();
 const programPath = "examples/local-process/app/cart-build.mjs";
 const demoPath = "examples/local-process/demo.ts";
 const goalPath = "examples/local-process/goal.yaml";
+const environmentPath = "examples/local-process/environment.yaml";
 const CHANNEL = "nightly";
 /** The fragment of the banner the world's readiness check waits for. Held against the source below. */
 const READY_LITERAL = "cart-build audit daemon ready";
@@ -739,19 +740,35 @@ describe("the goal, the contract and the environment agree", () => {
   });
 
   it("names the same environment variables the application reads, read out of both files", async () => {
-    // A list of names recalled in a test is a claim about two files that nothing reconciles - this
-    // repository shipped one such list with a name that existed in neither. So the set is read out of
-    // the application's own source and intersected with the adapter's, and the intersection is what
-    // is asserted.
     const program = await readProgram();
+    const document = await repo.readTextFile(environmentPath);
+    assert.ok(document !== null, `${environmentPath} is missing, so the world has no document`);
     const declared = new Set(PROCESS_ENV_NAMES);
     const read = new Set(program.match(/VERIDIAN_PROCESS_[A-Z_]+/g) ?? []);
 
-    assert.deepEqual([...declared].sort(), [
-      "VERIDIAN_PROCESS_APP",
-      "VERIDIAN_PROCESS_HOST",
-      "VERIDIAN_PROCESS_ROOT",
-    ]);
+    // This assertion was an exact equality against three names, and it was **right until it was
+    // wrong**. `workspace-audit` needed a fourth - `VERIDIAN_PROCESS_OBSERVE`, which is how a program
+    // learns the read surface its own document declared - and the equality then reported the adapter
+    // as at fault for declaring a name this one example happens not to read.
+    //
+    // A test whose message is a roster goes stale on every addition, so the claim is restored to what
+    // this test is actually about, from both directions and out of both files. **Supplied**: every
+    // name the environment document says the world sets must be one the adapter declares - the defect
+    // this exists for, a document promising a variable nothing sets, which is a real one because the
+    // document is what a contract author reads. **Read**: every name the program reads must be
+    // declared, and it must read `root`, or the world has built a sandbox nobody is inside. What is
+    // deliberately *not* asserted is that the document names every name the adapter declares: a name
+    // an example ignores costs nothing, and pinning that is how this went stale.
+    const promised = new Set(document.match(/`(VERIDIAN_PROCESS_[A-Z_]+)`/gu) ?? []);
+    assert.ok(
+      promised.size > 0,
+      "the world's document names none of its own variables, so this reconciliation would be vacuous",
+    );
+    for (const name of promised) {
+      const bare = name.replaceAll("`", "");
+      assert.ok(declared.has(bare), `the document promises ${bare}, which the adapter never sets`);
+    }
+
     assert.ok(read.size > 0, "the application reads none of this world's names, so the world sets none it needs");
     for (const name of read) {
       assert.ok(declared.has(name), `the application reads ${name}, which this world never sets`);

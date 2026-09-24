@@ -568,8 +568,53 @@ function readProcess(raw: unknown, appPath: string): ProcessPlan | null {
     host,
     application: readApplication(raw["application"]),
     root: resolveSibling({ dir: appPath, path: "", text: "" }, root),
+    observe: readObserve(raw["observe"], appPath),
     isolation: readProcessIsolation(raw["isolation"]),
   };
+}
+
+/**
+ * The directories a contract may read and may never write, resolved and refused when unnamed.
+ *
+ * `absent` and `empty` are the same reading here and both mean *the application sees only its own
+ * directory and the sandbox*, which is what every contract in this tree did before this field
+ * existed. That equivalence is deliberate rather than convenient: a field whose absence meant one
+ * thing and whose empty array meant another would be a distinction no reading could observe, which
+ * is the shape this repository refuses by name.
+ *
+ * A blank member is **refused** rather than skipped, and the difference matters. A document that
+ * wrote `observe: [""]` asked to observe something and named nothing; a loader that dropped the
+ * entry would hand the run a smaller allowance than the document declared, and the failure would
+ * surface later as a criterion reporting that an application could not read a file the operator
+ * believes they granted. Naming the entry is the only place that failure can be reported with the
+ * operator's own document in hand.
+ *
+ * Each member is resolved against `appPath` on the same rule every other path in this file follows, so
+ * `../..` names the tree the example lives in and an absolute path names itself. `resolveSibling`
+ * stands an absolute reference on its own, which is what makes the second case work on Windows as
+ * well as on POSIX - the defect that function was repaired for.
+ */
+function readObserve(raw: unknown, appPath: string): readonly string[] {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) {
+    throw defect(
+      "$.process.observe",
+      "process.observe must be a list of directories the application may read. Empty and absent both " +
+        "mean the application sees only its own directory and the sandbox.",
+    );
+  }
+  return raw.map((entry, index) => {
+    const spelled = asString(entry).trim();
+    if (spelled === "") {
+      throw defect(
+        `$.process.observe[${String(index)}]`,
+        "a member of process.observe is blank. A document that names an empty observation surface has " +
+          "asked to observe something and named nothing, and skipping the entry would hand the run a " +
+          "smaller allowance than the document declared.",
+      );
+    }
+    return resolveSibling({ dir: appPath, path: "", text: "" }, spelled);
+  });
 }
 
 /**
