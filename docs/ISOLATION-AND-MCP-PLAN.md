@@ -31,7 +31,7 @@ figure that matters is in the last column: **seven items, six built, one designe
 | W3 | Documentation currency | `:354` | `IMPLEMENTATION-PLAN.md` §1 now carries a `Status` column; two rows were **split** rather than edited; `tests/implementation-plan-status.test.ts` holds the vocabulary | **built** |
 | W4 | Playwright as an optional peer | `:378`, §10 | `package.json` carries `peerDependencies` **and** `peerDependenciesMeta.playwright.optional`; `tests/package-manifest.test.ts` holds both spellings | **built** |
 | W5 | The ladder as a measured claim | `:402`, §12 | A guard over the register **and** a run exercising all seven origins, run **twice** inside one invocation (`npm run acceptance:ladder`); §12.5's falsification ledger | **built** |
-| W6 | The isolation seam and the MCP gate | `:459` | This document. `core/**` holds **zero** occurrences of `mcp` | **designed, not built** |
+| W6 | The isolation seam and the MCP gate | `:459` | This document. `core/**` holds **zero** occurrences of `mcp` | **built** - both halves: `core/environment/isolation.ts` (E1) and `mcp/server.ts` (E2) |
 | W7 | HipCortex: the refusal is the record | `:479`, §11 | `HttpMemory#post()` carries the substrate's own stated cause; `tests/memory-port.test.ts` holds both halves of the refusal/unreachability discrimination; `AGENTS.md`'s memory section carries the rule | **built** |
 
 **Two things this table is not.** It is not a claim that the W-list was a poor plan - the opposite: six
@@ -91,7 +91,20 @@ piece of work is what made it deferrable; reading it as two is what makes one of
   `docs/phases/07-the-isolation-substrate.md`.
 - **E2 - the MCP surface.** The third declared integration level, greenfield, requiring **no new
   dependency**, and provable here today by starting a real child process and driving it over its own
-  protocol. **Executable in this session.**
+  protocol. It was recorded here as *executable in this session*; **it is built**, and built the way the
+  sentence above describes rather than the way it was sketched: `mcp/server.ts` (49,652 bytes),
+  `mcp/tools.ts`, `mcp/protocol.ts`, with `mcp/server.test.ts` (43,112 bytes) holding its decisions and
+  an `MCP surface` CI job that **spawns the real server as a child and drives it over a real pipe** -
+  the half no fake can prove. The register is **eight** tools, which is §4.2's *nine spellings of eight
+  capabilities* with the `get_result` / `get_validation_result` pair collapsed to one spelling, and
+  `tests/mcp-demo.test.ts` pins it: a ninth tool fails, naming it.
+
+  **The layering rule outlived the gate, which is the reading worth keeping.** §3.2 records the rule as
+  *MCP is a surface over Core, and `core/**` must still contain no `mcp` when E2 lands*; it landed, and
+  `core/**` still contains **zero** occurrences - re-measured with a search over `core/**/*.ts` rather
+  than recalled from the plan. A gate whose condition is met is an authorization, and the rule it
+  protected was restated as a guard before the work began, which is why the authorization did not spend
+  it.
 
 The two are independent. E2 does not need E1's substrate and E1 does not need E2's protocol. They were
 deferred together only because both were "the part that could not be finished and verified in the same
@@ -219,11 +232,15 @@ contract, and the substrate lands in the pass that can run it. **R2.**
 |-------|--------------------|----------------|
 | 1 - Manual | An agent modifies code; a human clicks Validate | **built**: `node cli/veridian.ts validate`, and the Cockpit's commands |
 | 2 - File-based feedback | `.veridian/latest-result.json`, `.veridian/latest-failure.md` | **built**: both are written per run and named in `AGENTS.md` as the Level-2 agent feedback artifacts |
-| 3 - MCP | Six tools, and §45 names eight more | **zero of them exist**, and `core/**` contains no `mcp` whatsoever |
+| 3 - MCP | Six tools, and §45 names eight more | **built**: `mcp/server.ts` and `mcp/tools.ts` register **eight** tools - the fourteen rows across §23 and §45 collapsed to nine spellings of eight capabilities, and then the duplicated pair collapsed to one spelling |
 
 **That is the measurement the design asked for.** "Level-3" is not a slogan: it is *two levels built and
 one level not started*, and the third level's membership is a list of names in a document - the same
-shape as a validator roster, and it gets the same treatment (§4.4).
+shape as a validator roster, and it gets the same treatment (§4.4). **That sentence was true when it was
+written and is now one level out of date: all three levels are built.** The table's last row was taken
+before E2 landed, and it is corrected in place rather than left as the moment the measurement was taken,
+because unlike the counts this repository deliberately keeps at their own date, this row states the
+*tree's* status rather than the pass's, and a status is measured.
 
 **The gate's own condition has been met, and this is the plan's most consequential reading.** Both
 decisions deferring MCP give the same reason - *"a thin surface after further Core stability, never as
