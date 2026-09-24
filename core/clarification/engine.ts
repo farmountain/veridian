@@ -68,9 +68,15 @@ function coerceAnswer(ambiguity: Ambiguity, text: string): unknown {
 /**
  * Resolve a batch of ambiguities against one artifact.
  *
- * The ladder is a straight line — each rung is attempted at most once — so termination is a
- * property of the structure rather than of any budget. The budgets exist to bound the *cost*
- * (human interruptions, wall clock), not to make the loop terminate.
+ * Every rung is *entered* at most once per gap, and the record of the walk carries that as a
+ * property rather than a promise: `rungs` is pushed before the rung is given its chance, so the
+ * sequence is non-decreasing and repeat-free by construction.
+ *
+ * Entering a rung once is not the same as asking once, and the difference is where the budgets
+ * live. Rung 4 puts the same gap to its port again while the port declines, so the attempt cap and
+ * the wall-clock ceiling are what terminate it - the shape of the walk does not. The budgets
+ * therefore bound two things: the cost of asking (human interruptions, wall clock) and the one
+ * loop in this ladder that has no structural exit.
  */
 export class ClarificationEngine {
   readonly #derive: DerivePort | undefined;

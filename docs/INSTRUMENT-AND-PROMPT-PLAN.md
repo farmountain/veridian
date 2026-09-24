@@ -349,7 +349,7 @@ answered below at a file and an anchor.
 
 | Lifecycle point | detector | rung-4 reachable via | exit | fallback on decline |
 | --- | --- | --- | --- | --- |
-| Goal definition | `detectGoalAmbiguities`, `core/clarification/detect.ts:350` | `core/definition.ts:144`, on the shared clarifier | the three bounds, `core/clarification/engine.ts:280`, `:281`, `:288` | ASK if blocking and a user port exists, else DEFER naming a `DEFER_REASONS` member |
+| Goal definition | `detectGoalAmbiguities`, `core/clarification/detect.ts:350` | `core/definition.ts:144`, on the shared clarifier | the three bounds, `core/clarification/engine.ts:286`, `:287`, `:294` | ASK if blocking and a user port exists, else DEFER naming a `DEFER_REASONS` member |
 | Acceptance criteria | `detectAcceptanceAmbiguities`, `detect.ts:450` | `core/definition.ts:173` - one call carries this family and the next | same | same |
 | Validation planning | `detectValidationAmbiguities`, `detect.ts:609` | `core/definition.ts:173` - the same call, and the site the ladder fixture's rung-4 resolution lives at | same | same |
 | Test planning | **none** | **none** | n/a | n/a - **a gap, with its reason stated below** |
@@ -366,10 +366,10 @@ property of the host rather than of the point. The MCP surface reaches the same 
 doors supply the same port for the same reason rather than by two rules that could disagree.
 
 **The exit is checked at the placement, and the guard includes a cap already at zero.**
-`#selfPromptFor` (`engine.ts:272`) spends a round at exactly one statement - `:294`,
+`#selfPromptFor` (`engine.ts:278`) spends a round at exactly one statement - `:300`,
 `this.#selfPromptRounds += 1` - and all three bounds sit above it: the per-gap cap as the loop
-condition at `:280`, the per-run cap as a guard at `:281`, and the wall-clock ceiling as a guard at
-`:288`. So no bound can be passed, because none is compared after the spend. Two of the three
+condition at `:286`, the per-run cap as a guard at `:287`, and the wall-clock ceiling as a guard at
+`:294`. So no bound can be passed, because none is compared after the spend. Two of the three
 terminate different attempts: the per-gap cap, not the per-run cap, is what ends the fixture's
 `validation` gap, and the per-run cap is what ends a run whose contract holds many gaps. The
 placement is held by `tests/clarification-ladder.test.ts` in two subtests - *"reaches the per-gap
@@ -391,13 +391,13 @@ ending before editing it (`engine.ts="\r\n"`), asserted the anchor was present a
 changed the file, computed its verdict from the failing test titles rather than a substring, and
 restored the file byte for byte (`sha256` prefix `FA7D1572D2BD08E0` before and after).
 
-**A decline is recorded rather than silent, and a skipped rung is a different reading.** `:193`-`:194`
-is the whole of the difference, and the two lines sit together: `:193` is the guard,
-`if (this.#selfPrompt?.available)`, and `:194` is the push of `self_prompted` into the rung list -
-the local `rungs` array that every record carries as `rungsAttempted`. Only *then* does `:195`
+**A decline is recorded rather than silent, and a skipped rung is a different reading.** `:199`-`:200`
+is the whole of the difference, and the two lines sit together: `:199` is the guard,
+`if (this.#selfPrompt?.available)`, and `:200` is the push of `self_prompted` into the rung list -
+the local `rungs` array that every record carries as `rungsAttempted`. Only *then* does `:201`
 attempt the round. So a declined, throwing or low-confidence answer is recorded as a rung that was
 attempted, and the gap then falls to rung 5 (blocking, with a user port) or rung 6, whose
-`#deferReason` at `:221` returns a member of `DEFER_REASONS`. A port that is not available at all
+`#deferReason` at `:227` returns a member of `DEFER_REASONS`. A port that is not available at all
 takes the other branch: the rung is **never pushed**, which is the distinction the switch's own
 reasoning names at `cli/session.ts:94-98` - *a declined round is work the run did and reported, a
 skipped rung is work it never attempted*.
@@ -411,8 +411,8 @@ repository has already watched one rule stated in several places drift, and the 
 the one answering the narrower question.
 
 Both halves are asserted beside the rule: the per-gap subtest requires `rungsAttempted` to be
-`["self_prompted", "deferred"]`, and `#safe` (`engine.ts:436`, which wraps the port's own `prompt` at
-`:296` and returns `U | null`) makes a throwing port equivalent to one that found nothing, so a
+`["self_prompted", "deferred"]`, and `#safe` (`engine.ts:442`, which wraps the port's own `prompt` at
+`:302` and returns `U | null`) makes a throwing port equivalent to one that found nothing, so a
 misbehaving port cannot take the run down.
 
 **Test planning is a gap, and its reason is not a missing port.** This document is the only file in

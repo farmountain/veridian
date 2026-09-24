@@ -110,7 +110,14 @@ export type Resolution =
 export interface ClarificationRecord {
   readonly ambiguity: Ambiguity;
   readonly resolution: Resolution;
-  /** Rungs actually attempted, in order. The ladder is a straight line, so this is bounded. */
+  /**
+   * Rungs attempted, in order, each at most once: the walk records a rung before giving it its
+   * chance, so this sequence is non-decreasing and free of repeats by construction.
+   *
+   * What it does **not** count is rung 4's attempts. One rung may put the same gap to the port more
+   * than once, which is why that rung carries an attempt budget and why the run reports
+   * `selfPromptRounds` beside this - a rung entered once can still cost more than one reading.
+   */
   readonly rungsAttempted: readonly Rung[];
 }
 

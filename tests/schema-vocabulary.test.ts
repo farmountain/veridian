@@ -556,14 +556,15 @@ describe("the ladder answers every word it owns", () => {
       assert.ok(
         record.rungsAttempted.length <= RUNGS.length,
         `the "${rung}" resolution recorded ${String(record.rungsAttempted.length)} rungs attempted ` +
-          `out of ${String(RUNGS.length)}, which the ladder cannot do: it is a straight line and ` +
-          "each rung is attempted at most once per gap.",
+          `out of ${String(RUNGS.length)}, which the ladder cannot do: a rung is entered at most once ` +
+          "per gap, because the walk records the rung before giving it its chance.",
       );
       assert.equal(
         new Set(record.rungsAttempted).size,
         record.rungsAttempted.length,
-        `the "${rung}" resolution recorded the same rung twice, which means the ladder revisited a ` +
-          "rung - the one property that makes its termination structural.",
+        `the "${rung}" resolution recorded the same rung twice, which means the ladder re-entered a ` +
+          "rung rather than re-asking one - and `rungsAttempted` describes which rungs were entered, " +
+          "not how many times a port was asked.",
       );
       assert.equal(
         outcome.report.byVia[rung],
