@@ -141,16 +141,18 @@ per design section 0's method rule.
 
 ### W3 - the ESI interchange document, export only
 
-**Files.** the ELI module.
+**Files.** the ELI module, plus `core/metrics/import.ts` for the half that does not build anything.
 
 **AC-7.** Export then import yields a byte-identical `environment.json` identity block and a dENV of
-zero.
+zero. **Met**, both directions, by `tests/world-import.test.ts`.
 
 **AC-8.** An import is staged at `prepare()`. An import presented as a live world must give
-`INCONCLUSIVE`, never `PASS`.
+`INCONCLUSIVE`, never `PASS`. **Met**, and the refusal is above the step that creates the world rather
+than beside it, so a plan that declared an adoption and did not get one never reaches `create`.
 
 **Not in scope.** `M_in` against real external state. Design section 3.5 makes isolation a
-precondition, not a sibling.
+precondition, not a sibling - and the precondition now exists (phase 07), so this item is buildable
+rather than blocked.
 
 ### W4 - surfaces
 
@@ -173,6 +175,18 @@ W0 first because it is one field, two write sites and two guards, and because W1
 identity that does not survive the bundle. W3's import half stays out until the isolation substrate
 exists.
 
+**That gate has been cleared, and the sentence above is kept as the order this was built in rather than
+as a current restriction.** The substrate landed as phase 07 of the phase program
+(`core/environment/isolation.ts`), and the import half landed as phase 08
+(`core/metrics/import.ts`), so the sequence W0 → W1 → W2 → W3 → (W4) is complete. One thing the
+sequence did not anticipate and that is worth recording here, because it changes what "the import
+half" means: **the delivered import is a verification, not a materialisation.** It compares the identity
+an ESI document names against the identity the operator's own plan derives, refuses when they differ,
+and the world is then built by the adapter that would have built it anyway. So an import cannot
+construct a world - which is the property that makes it safe, and which is why it *could* land without
+the isolation substrate it was gated on. The gate was cleared rather than jumped: the phase that built
+it recorded that the materialising reading of this work item is the dangerous one.
+
 This plan refuses, by name:
 
 - a parallel vocabulary for fidelity, sanitization, snapshot or lifecycle (design section 5);
@@ -188,5 +202,16 @@ This plan refuses, by name:
 The twin is **aligned**, not delivered, when `environment.json` names its world for all twelve worlds
 (AC-1), the ELI joins existing bundles without new persistence (AC-3), dENV is computable and zero
 across a clean reset (AC-5), and the export predicate refuses a named key set with a probe that proves
-the refusal (AC-6). The import half is **outside** the exit condition until isolation is available -
-which is a statement about the isolation substrate, not about the twin.
+the refusal (AC-6).
+
+The import half was **outside** the exit condition until isolation was available - a statement about the
+isolation substrate rather than about the twin - and **it is now inside it**, because both conditions
+have been met: the substrate is phase 07 and the import is phase 08. The five acceptance criteria above
+plus **AC-7** (round trip byte-identical in both directions) and **AC-8** (staged at `prepare()`, or
+`INCONCLUSIVE` and never `PASS`) are therefore all met, each held by a suite that was falsified before it
+was trusted: `tests/world-import.test.ts` for AC-7 and AC-8, with AC-8's probe measured by disabling the
+refusal in `core/environment/manager.ts` and reading `17 pass / 1 fail` on exactly the named subtest.
+
+**What this does not do is close the twin.** W4's Cockpit surface is still deferred behind W0-W3, which
+are green; and an adopted world's *isolation* is phase 07's subject rather than this plan's, so a twin
+that verifies where a world came from says nothing about where that world's work then runs.
