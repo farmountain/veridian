@@ -22,10 +22,10 @@ five files above.
 | 03 | [dENV and the export predicate](./03-denv-export-predicate.md) | A total predicate over the record, with a known-present control | built | 02 |
 | 04 | [The ESI interchange document](./04-the-esi-interchange.md) | Export only: identity plus dENV, byte-stable | built | 03 |
 | 05 | [The Cockpit twin surface](./05-the-cockpit-twin-surface.md) | A thin client over the join, with no validation logic | next | 02, 03, 04 |
-| 06 | [Network enforcement](./06-network-enforcement.md) | The one boundary dimension enforced nowhere becomes enforced somewhere | next | 01 |
+| 06 | [Network enforcement](./06-network-enforcement.md) | The one boundary dimension enforced nowhere becomes enforced somewhere | built | 01 |
 | 07 | [The isolation substrate](./07-the-isolation-substrate.md) | A real substrate behind the seam that already exists | **blocked here** | 06 |
 | 08 | [Import into a prepared world](./08-import-into-a-prepared-world.md) | An imported world enters through `prepare()` or not at all | gated by 07 | 04, 07 |
-| 09 | [Documentation currency](./09-documentation-currency.md) | The documentation guards run as a programme rather than one at a time, and what they report is repaired | next | 01 |
+| 09 | [Documentation currency](./09-documentation-currency.md) | The documentation guards run as a programme rather than one at a time, and what they report is repaired | built | 01 |
 | 10 | [Veridian judged by Veridian](./10-veridian-judged-by-veridian.md) | The CLI judged as a product by `local-process`, and a run judged as a witness by `acceptance:ladder` | **built** | 01 |
 | 11 | [The distribution and environments ledger](./11-the-distribution-and-environments-ledger.md) | Every row of the world table true of the tree, and every "blocked" row naming the world that answers it | next | 01, 09 |
 | 12 | [Memory, and the end of the program](./12-memory-and-the-end-of-the-program.md) | The tree's own account of its memory matches the port's behaviour, and the program is closed | **in flight** | 09 |

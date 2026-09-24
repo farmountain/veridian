@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | next -- nothing blocks it |
+| **Status** | built |
 | **Depends on** | 01 |
 | **Source** | `docs/GAP-CLOSURE-DESIGN.md` S9 (W1's retro, the open item); `docs/BOUNDARY-SPINE-DESIGN.md`; `docs/ISOLATION-AND-MCP-PLAN.md` S3.1 |
 | **Touches** | `core/environment/confinement.ts`; `core/environment/types.ts`; the adapters whose seam can hold the guard; `tests/boundary-roster.test.ts` |
@@ -72,6 +72,31 @@ is a front door, not a child.** Two worlds whose every request passes a guarded 
   measured reason is attached** -- which is a smaller claim and a true one.
 - `core/environment/types.ts`'s premise and `tests/boundary-roster.test.ts`'s explanation state the
   corrected separation, and a search of the tree for the old sentence returns nothing.
+
+### What was measured, and how the phase was found
+
+This phase was found **already built** when it was picked up, and that is worth recording rather than
+quietly flipping its status. Its `| **Status** |` cell said `next` in both the table and its own file,
+and the two agreed with each other while both being false of the tree - which is the one thing the
+phase guard cannot see, because it compares a status with a status and not with the code.
+
+| Claim of this phase | Where it was measured | Reading |
+|---|---|---|
+| The stale premise is corrected | `core/environment/types.ts` (the `BOUNDARY_ENFORCEMENTS` doc block) | States *"the separation is a front door rather than a child"*, and names the two guarded-door worlds beside `local-process` |
+| The guard derives the split rather than restating it | `tests/boundary-roster.test.ts` (`NAMING_ENFORCED` / `NAMING_UNENFORCEABLE`, derived from each adapter's own `boundaries()` arm) | 14 pass / 0 fail; `enforced` = `local-api`, `local-web`; `unenforceable` = `local-process`; the other nine `unsupported` |
+| The answer is earned rather than declared | `adapters/local-web/local-web-environment.ts`'s `boundaries()` | `network === "allow" ? "not-requested" : this.#boundaryHeld ? "enforced" : "unsupported"` - read back from `#spawn`, not written as a literal |
+| A refusal is recorded as a crossing | `adapters/local-web/local-web-environment.ts` `#collect`, asserted at `tests/local-web-environment.test.ts` | The crossing carries `boundary: "network"` and the refused subject |
+| The old sentence is gone from the tree | `Select-String` over `core`, `tests`, `docs`, `adapters` | Two hits remain, both in `docs/GAP-CLOSURE-DESIGN.md` and `docs/RULES-PAID-FOR.md` - and both are the *record* of the defect, quoted rather than believed |
+
+**The probe, run against a file whose ending was detected from the file and printed (`CRLF`), with the
+harness not restoring it before the suite:** patching `local-process`'s network arm from
+`"unenforceable"` to `"enforced"` fails **3** subtests - the vocabulary claim, the document roster,
+and the count - which is the derivation proving it reads the adapters rather than a list.
+
+The third probe this phase names - patching the stale sentence back - is recorded here as the phase
+itself records it: **useless on its own.** A guard that holds a vocabulary's *membership* cannot hold
+its *meaning*, which is why the search above is a step of this phase rather than something a test
+covers.
 
 ## Falsification probe
 

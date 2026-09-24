@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Agent instructions for the **Veridian** repository. This is the single always-on
-instructions file for this workspace — do not add a second one
+instructions file for this workspace �?do not add a second one
 (`.github/copilot-instructions.md`) alongside it.
 
 > **Status: the MVP is implemented and green, and eleven more sandbox worlds have landed.** Core, the
@@ -80,8 +80,8 @@ instructions file for this workspace — do not add a second one
 > reading carries `simulated` - and nothing is emulated: no emulator, no image and no booted system
 > anywhere in the loop. It adds no step kind: the application provisions with the `run` steps the
 > second world introduced, and three of its criteria use one.
-> `npx tsc --noEmit` is silent and `node --test` reports 2569 passing tests over 426 suites -
-> Veridian's own 2497 plus the 72 the VS Code Cockpit contributes, which the root runner discovers
+> `npx tsc --noEmit` is silent and `node --test` reports 2625 passing tests over 438 suites -
+> Veridian's own 2553 plus the 72 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Five distribution routes ship - a clone, an npm package, the Cockpit (as
 > a development install and as a `.vsix`), the extension marketplaces that `.vsix` is published to,
 > and a container image - and there is still **no
@@ -94,7 +94,7 @@ instructions file for this workspace — do not add a second one
 
 ## Project
 
-- **Name:** Veridian. **Formerly AVF — "Agent Validation Fabric"** (renamed). The plan in
+- **Name:** Veridian. **Formerly AVF �?"Agent Validation Fabric"** (renamed). The plan in
   `docs/PLAN.md` was written under the old name and still says "AVF" in places; read AVF as
   Veridian. Likewise the plan's `.avf/` persistence directory is now `.veridian/`.
 - **Purpose:** Veridian is the **sandbox testing and validation layer for AI coding agents**.
@@ -147,8 +147,8 @@ Concrete rejections that follow from this, and that reviewers should enforce:
 - **Do not write our own browser automation.** Playwright is the adapter.
 - **Do not make MCP the foundation.** MCP is an *interface to* Veridian, not Veridian.
   *"MCP is the door. Veridian is the building."*
-- **Do not make VS Code the architecture.** *"VS Code ≠ Veridian."* The extension is the
-  **Veridian Cockpit** — a thin client over a stable local Core interface, so that CLI, CI, and
+- **Do not make VS Code the architecture.** *"VS Code �?Veridian."* The extension is the
+  **Veridian Cockpit** �?a thin client over a stable local Core interface, so that CLI, CI, and
   MCP can drive the same engine later.
 - **Do not build a goal compiler, plugin marketplace, SaaS backend, or multi-agent framework.**
 - **Do not put Postgres/Kafka/Redis/Kubernetes in the MVP.** The MVP runs on a local machine.
@@ -173,30 +173,30 @@ Concrete rejections that follow from this, and that reviewers should enforce:
 
 ### Universal lifecycle
 
-Every environment — no matter how exotic — exposes the same lifecycle semantics:
+Every environment �?no matter how exotic �?exposes the same lifecycle semantics:
 
 ```
-DEFINE → CREATE → START → DEPLOY → EXECUTE → OBSERVE → VALIDATE
-       → COLLECT EVIDENCE → PASS/FAIL → RESET → REPEAT
+DEFINE �?CREATE �?START �?DEPLOY �?EXECUTE �?OBSERVE �?VALIDATE
+       �?COLLECT EVIDENCE �?PASS/FAIL �?RESET �?REPEAT
 ```
 
 ```
 EnvironmentAdapter:  create() start() deploy() execute() observe()
                      snapshot() restore() reset() stop() destroy()
 
-Validator:           validate(criterion, observation) → ValidationResult
+Validator:           validate(criterion, observation) �?ValidationResult
 
 ValidationResult:    criterion_id, status, actual, expected, timestamp,
                      evidence, environment_id, run_id
-                     status ∈ { PASS, FAIL, ERROR, SKIPPED, INCONCLUSIVE }
+                     status �?{ PASS, FAIL, ERROR, SKIPPED, INCONCLUSIVE }
 ```
 
 ### Run state machine
 
 ```
-CREATED → PREPARING → READY → EXECUTING → OBSERVING → VALIDATING
-                                   PASS → COMPLETED
-                                   FAIL → FAILED → RESETTING → READY
+CREATED �?PREPARING �?READY �?EXECUTING �?OBSERVING �?VALIDATING
+                                   PASS �?COMPLETED
+                                   FAIL �?FAILED �?RESETTING �?READY
 ```
 
 Terminal states: `COMPLETED, ABORTED, ERROR, MAX_ITERATIONS`. No ambiguous execution paths.
@@ -208,7 +208,7 @@ network / filesystem / process boundaries. **No infinite agent loop.** Veridian 
 potentially untrusted AI-generated code, so the adapter architecture must leave room for
 stronger isolation later even though the MVP runs in a local trusted development mode.
 
-## MVP scope — Web Sandbox Validation Environment only
+## MVP scope �?Web Sandbox Validation Environment only
 
 **In:**
 
@@ -217,7 +217,7 @@ VS Code  +  Veridian Core  +  Local application  +  Browser
   +  Playwright  +  deterministic acceptance criteria  +  evidence  +  reset/replay
 ```
 
-**Out (future adapters — do not start on these):**
+**Out (future adapters �?do not start on these):**
 
 ```
 Kubernetes   cloud        mobile farm        Windows/macOS VM
@@ -227,12 +227,12 @@ SaaS backend              LLM training       sophisticated goal compiler
 marketplace               plugin ecosystem   Chrome extension
 ```
 
-**MVP success metrics** (not LOC, not adapter count): M1 ≥ 99% result consistency on repeat
+**MVP success metrics** (not LOC, not adapter count): M1 �?99% result consistency on repeat
 runs · M2 100% of canonical demo defects detected · **M3 zero false PASS** · M4 100% reset
 reproducibility · M5 100% evidence completeness.
 
 **Canonical demo:** a Shopping Cart app with 3 deliberate defects and 4 acceptance criteria,
-iterating FAIL → agent repair → PARTIAL → repair → PASS. That is the "aha" moment: *the agent
+iterating FAIL �?agent repair �?PARTIAL �?repair �?PASS. That is the "aha" moment: *the agent
 generated code that was proven to work in a real sandbox.*
 
 ## Working agreements
@@ -240,7 +240,7 @@ generated code that was proven to work in a real sandbox.*
 - **Verify before claiming.** A change is done only when its gate (typecheck / lint / test)
   has actually run and passed in the terminal. Report the command output, not an intention.
 - **Never guess a command.** If no manifest (`package.json`, `pyproject.toml`, `Cargo.toml`)
-  exists, ask or leave a `TODO` — do not fabricate an install/build/test command.
+  exists, ask or leave a `TODO` �?do not fabricate an install/build/test command.
 - **Keep changes surgical.** Add structure only when a concrete requirement demands it. No
   speculative abstractions, no "while I'm here" refactors, no building an adapter the MVP
   explicitly excludes.
@@ -291,13 +291,13 @@ Server: `http://127.0.0.1:3030` (override with `HIPCORTEX_URL`).
   own. Held by `tests/memory-port.test.ts`'s sibling discipline: an assertion about a failure names the
   failure the test actually produced.
 - Environment observations must go through the intent/receipt path
-  (`open_intent` → `accept_receipt`), never `add_memory`. The working arguments, measured here:
+  (`open_intent` �?`accept_receipt`), never `add_memory`. The working arguments, measured here:
   `open_intent` takes `{ actor, target_entity }` - **`target_entity` is required**, and omitting it is
   the schema rejection quoted above, not an unreachability - and returns an `intent_id`;
   `accept_receipt` takes `{ actor, intent_id, observation, sensor_path, ok }` and answers `{"ok": true}`.
   A gate reading filed this way is a receipt, not a claim: the observation is the command, its exit code
   and its counts.
-- If the server is unreachable, run `hipcortex start`, or say memory is unavailable — never
+- If the server is unreachable, run `hipcortex start`, or say memory is unavailable �?never
   silently skip the write. *Unreachable* means `ECONNREFUSED`, which is the one cause
   `tests/memory-port.test.ts` still allows that word to name.
 
@@ -306,7 +306,7 @@ Full protocol: [`.github/skills/hipcortex-memory`](./.github/skills/hipcortex-me
 ## Environment
 
 - **OS / shell:** Windows, **PowerShell 5.1**. Chain commands with `;`, never `&&`.
-- **`rtk` is not installed on this machine** — do **not** prefix commands with it, or the command
+- **`rtk` is not installed on this machine** �?do **not** prefix commands with it, or the command
   fails with `CommandNotFoundException` before it runs. *This corrects an earlier instruction in this
   file that told agents to always use it.* If it ever appears on `PATH`, prefer it; it passes
   unrecognised commands through unchanged.
@@ -315,7 +315,7 @@ Full protocol: [`.github/skills/hipcortex-memory`](./.github/skills/hipcortex-me
   a file path, or nothing at all.
 - **`$LASTEXITCODE` read after a pipeline is the pipeline's exit code** (`-1` from `Select-String`),
   not the command's. Read it from an unpiped invocation when the code matters.
-- **The console code page mangles typographic punctuation** (`—` arrives as `鈥?`). Print ASCII
+- **The console code page mangles typographic punctuation** (`—` arrives as `�?`). Print ASCII
   punctuation in CLI output, error messages and demo narration.
 - **Quoting trap:** PowerShell strips inner double quotes passed to native executables via
   `-c`/`-e`. Write a scratch script file instead of inlining quoted or multi-line code.
@@ -367,7 +367,7 @@ in the tree and most passes need none of it.
 | [`docs/BOUNDARY-SPINE-DESIGN.md`](./docs/BOUNDARY-SPINE-DESIGN.md) | The design the boundary work was executed against: the eight gaps as they were found, the self-prompted questions each one resolved into, the `confinement.ts` seam and its two-stage probe, and the acceptance criteria the work was judged by. **Read before changing what a world reports about its own boundaries**, because the vocabulary it defines is now derived by `tests/boundary-roster.test.ts` rather than recalled. |
 | [`docs/DISTRIBUTION-AND-ENVIRONMENTS.md`](./docs/DISTRIBUTION-AND-ENVIRONMENTS.md) | What comes after the MVP: the npm, Docker and VS Code routes, the next adapters in the order they can be **proven**, the self-prompting resolution table that ordered them, and §5's reframing of what "blocked" actually means - every remaining row names the `sim-*` world that answers it, because a world may be simulated and a real-infrastructure absence is not a blocker. **Read before promising an adapter.** |
 | [`docs/GAP-CLOSURE-PLAN.md`](./docs/GAP-CLOSURE-PLAN.md) | The implementation plan for W2 - `sim-mobile`, which was the last unbuilt world and is now the twelfth. Twelve additive places each measured at a file and an anchor rather than recalled (the twelfth being `core/environment/load.ts`, which an earlier census missed), the six guards the change trips and the expected failure of each, and the falsification probe for every claim. **Read before building a thirteenth world**, because it is the checklist a world has to satisfy and the record of what one of the six guards does when a directory is not a world. |
-| [`docs/ISOLATION-AND-MCP-PLAN.md`](./docs/ISOLATION-AND-MCP-PLAN.md) | The plan for the two halves of W6, the one item of the seven that was designed rather than built. §3.1 defers the isolation substrate to a CI-proven phase, and its absence here is a **measurement**: `docker` is not on `PATH` and `node --permission` rejects `--allow-net` with `bad option`, exit 9, taken with a positive control. §3.2 and §4 build the MCP Level-3 surface as a **fourth consumer** beside `cli/` and `extension/vscode/` and never as the foundation, §3.3 answers `PLAN.md` §55's `❌ MCP server` by reading the three prohibition lists separately and showing two of them were already crossed in shipped code, and the fourteen tool rows across §23 and §45 collapse to nine spellings of eight capabilities under a register guard. **Read before building an MCP surface or an isolation substrate**, because every claim in it is measured at a file and an anchor, and the deliverable is a self-binding plan rather than code. |
+| [`docs/ISOLATION-AND-MCP-PLAN.md`](./docs/ISOLATION-AND-MCP-PLAN.md) | The plan for the two halves of W6, the one item of the seven that was designed rather than built. §3.1 defers the isolation substrate to a CI-proven phase, and its absence here is a **measurement**: `docker` is not on `PATH` and `node --permission` rejects `--allow-net` with `bad option`, exit 9, taken with a positive control. §3.2 and §4 build the MCP Level-3 surface as a **fourth consumer** beside `cli/` and `extension/vscode/` and never as the foundation, §3.3 answers `PLAN.md` §55's `�?MCP server` by reading the three prohibition lists separately and showing two of them were already crossed in shipped code, and the fourteen tool rows across §23 and §45 collapse to nine spellings of eight capabilities under a register guard. **Read before building an MCP surface or an isolation substrate**, because every claim in it is measured at a file and an anchor, and the deliverable is a self-binding plan rather than code. |
 | [`docs/INSTRUMENT-AND-PROMPT-PLAN.md`](./docs/INSTRUMENT-AND-PROMPT-PLAN.md) | The two gap classes found by running `veridian metrics` over the 142-run history and reading the answer: the three ways the **instrument** reported something untrue about the runs on disk (W-A scopes M3's ground truth by subject, W-B splits M4's two conflated properties, W-C makes a `PASS` clause carry its reading), and whether the clarification ladder's self-prompting rung is reachable at each lifecycle point and its exit bounded (W-D). §1 records the measured decomposition behind M3's 117 accusations - twelve subjects, none of them `shopping-cart@local-web`, whose own scoped reading is **0** - and refutes an earlier hypothesis about `ded994` rather than dropping it. §5 states exactly what its repair does **not** claim. **Read before touching `core/metrics/` or adding a rung**, because its falsification table's last row is a probe that must leave the suite green. |
 | [`docs/DIGITAL-TWIN-DESIGN.md`](./docs/DIGITAL-TWIN-DESIGN.md) | The bidirectional digital-twin vision aligned against this tree: the six claimed gaps classified as satisfied / partial / missing with a `file:line` or a command output behind each, the measured defect it opens with (`environment.json`'s writer drops the ten per-world declaration blocks the plan carries, while the two flat identity fields survive), the four words the vision wants that already exist here, the constraint the vision did not state (an imported world enters through `prepare()`, because this repository has paid for an inherited world three times), and Phases 0-4 each with an acceptance criterion derived from M1..M5 and a falsification probe. Its section 0 records that KARM was unavailable for it and that no KARM output is cited. **Read before building anything called a twin, an ELI or a materialization**, because the recommendation is a join and a name rather than a new layer. |
 | [`docs/DIGITAL-TWIN-PLAN.md`](./docs/DIGITAL-TWIN-PLAN.md) | The execution half of the digital-twin work, written at the only level that decides anything - the file, the anchor and the assertion: W0 (the world identity survives the bundle, where `EnvironmentRecord` declares none of the ten per-world blocks the plan carries and a `sim-cloud` bundle can name its adapter and not its account), W1 (the ELI as a join over `listRuns`/`readRunHistory`, reusing the subject string M1 already computes so it cannot answer a question M1 refuses), W2 (`dENV` and the export predicate carried on `BOUNDARY_ENFORCEMENTS`' declared-versus-measured shape rather than a vocabulary of its own), W3 (the ESI interchange document, export only, staged at `prepare()` or not at all) and W4 (the Cockpit surface, deferred until W0-W3 are green) - each with its acceptance criterion, the falsification probe that would break it and the guard already in the tree that must still pass. Its section 2 records the seven open questions and the rung each was settled at, and says in as many words that the rungs were **not** executed; section 5 names what the plan refuses; section 6 holds the import half outside the exit condition until the isolation substrate exists. **Read before building anything the design's phase list allows**, because it is the checklist those phases have to satisfy and it is written at a file and an anchor rather than as a phase list. |
@@ -375,8 +375,9 @@ in the tree and most passes need none of it.
 | [`docs/BUILD-AND-TEST-COMMANDS.md`](./docs/BUILD-AND-TEST-COMMANDS.md) | Every gate, smoke check and demo command, each quoted from the output it was measured against, beside the platform traps that make a command fail before it runs. **Read before running a gate or claiming one passed.** |
 | [`docs/RULES-PAID-FOR.md`](./docs/RULES-PAID-FOR.md) | The register of every rule that cost a real defect, each with the observation that produced it. It is the largest document in the tree. **Read the entries that bear on what you are touching; do not read it whole**, and write a new rule there rather than in `AGENTS.md`. |
 | [`extension/vscode/README.md`](./extension/vscode/README.md) | The Cockpit's front door. `src/host/activate.ts` points here, so it has to exist and say what the extension is not (VS Code is not Veridian), how to install it for development, and - explicitly - what only a real VS Code test host could exercise and what no check in this tree can reach at all. |
+| [`docs/phases/`](./docs/phases/README.md) | The phase program: thirteen phase files, one each, written so that one phase plus the tree it touches fits in one context window. The index carries the closed list of eight status words and the source document each phase argues from. **Read the index and then exactly one phase file** - reading the directory is the cost the split exists to remove. |
 
-Add a one-line index entry here for each new doc instead of duplicating its content in this file.
+Add a one-line index entry here for each new doc instead of duplicating its content in this file - **and one for each new directory that holds documents**, naming the directory itself, so that a whole tree cannot arrive unindexed the way `docs/phases/` did. `tests/docs-roster.test.ts` asks both questions.
 
 ## Agent customizations
 
@@ -389,7 +390,7 @@ Add a one-line index entry here for each new doc instead of duplicating its cont
 | [`.github/instructions/typescript.instructions.md`](./.github/instructions/typescript.instructions.md) | Auto-attaches to every `*.ts` file via `applyTo`. |
 | [`.github/agents/verifier.agent.md`](./.github/agents/verifier.agent.md) | Delegated gate runs. Read-only by design. |
 | [`.github/agents/cockpit-operator.agent.md`](./.github/agents/cockpit-operator.agent.md) | Driving or reading a Veridian run through the Cockpit or the CLI. Read-only by design. |
-| [`.github/prompts/new-module.prompt.md`](./.github/prompts/new-module.prompt.md) | `/` → **Add a Module**. |
+| [`.github/prompts/new-module.prompt.md`](./.github/prompts/new-module.prompt.md) | `/` �?**Add a Module**. |
 | [`.github/hooks/format.json`](./.github/hooks/format.json) | `PostToolUse` on every file write. |
 | [`.github/hooks/format.mjs`](./.github/hooks/format.mjs) | The hook's implementation. Never installs anything, never exits non-zero. |
 
