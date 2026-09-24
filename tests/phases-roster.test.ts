@@ -5,7 +5,7 @@ import { nodeIo } from "../core/io.ts";
 
 /**
  * `docs/phases/README.md` is the index for the phase program, and it is written to be the one file a
- * reader opens before reading exactly one phase file. Everything it says about the twelve phases is a
+ * reader opens before reading exactly one phase file. Everything it says about the thirteen phases is a
  * claim about the directory beside it, and until this file existed **nothing read both**.
  *
  * It was wrong when this guard was written, in two ways at once, and the pair is instructive:
@@ -71,9 +71,9 @@ const COUNT_WORDS: Record<string, number> = {
 
 const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** The table under `## The twelve`, from its header row down to the first line that is not a row. */
-function twelveTable(body: string): readonly string[] {
-  const start = body.indexOf("## The twelve");
+/** The table under `## The phases`, from its header row down to the first line that is not a row. */
+function phaseTable(body: string): readonly string[] {
+  const start = body.indexOf("## The phases");
   if (start === -1) return [];
   const after = body.indexOf("\n## ", start + 1);
   const block = body.slice(start, after === -1 ? undefined : after);
@@ -161,7 +161,7 @@ function parseRows(rows: readonly string[]): {
 }
 
 const readme = (await repo.readTextFile("docs/phases/README.md")) ?? "";
-const rows = twelveTable(readme);
+const rows = phaseTable(readme);
 const { entries, malformed } = parseRows(rows);
 const declared = declaredStatuses(readme);
 
@@ -188,7 +188,7 @@ for (const [name, body] of fileBodies) {
 }
 
 /** The header paragraph's five files and the byte count it states for each of them. */
-const sizes = [...readme.slice(0, readme.indexOf("## The twelve")).matchAll(
+const sizes = [...readme.slice(0, readme.indexOf("## The phases")).matchAll(
   /`(docs\/[A-Za-z0-9._/-]+\.md)`\s+([\d,]+)/g,
 )].map((match) => ({
   file: match[1] ?? "",
@@ -208,7 +208,7 @@ describe("the phase index in docs/phases/README.md", () => {
     // empty lists as agreement. This is the assertion that says the list is a reading of the tree.
     assert.ok(
       rows.length >= 1,
-      "the table under `## The twelve` was not found, so every assertion below was asked of an " +
+      "the table under `## The phases` was not found, so every assertion below was asked of an " +
         "empty block",
     );
 
@@ -249,7 +249,7 @@ describe("the phase index in docs/phases/README.md", () => {
     );
   });
 
-  it("numbers the phases 01 to 12 with no gap and no repeat", () => {
+  it("numbers the phases 01 to 13 with no gap and no repeat", () => {
     const numbers = entries.map((entry) => entry.number).sort();
     const expected = Array.from({ length: onDisk.length }, (_, index) =>
       String(index + 1).padStart(2, "0"),

@@ -7,13 +7,13 @@ The remaining work in this repository is documented across **five** files totall
 problem is arithmetic: carrying all five at once is tens of thousands of tokens before a line of code
 has been read, and a context window spent on the plan is a window with nothing left for the work.
 
-This directory is the divide-and-conquer answer. **Twelve phases, one file each.** A phase file is
+This directory is the divide-and-conquer answer. **Thirteen phases, one file each.** A phase file is
 written to be read *alone*: it states what is already true, what it changes, the acceptance criterion
 it is judged by, the probe that would falsify it, the guards from the existing tree that must still
-pass, and the context it does and does not need. Nothing in the twelve assumes a reader has opened the
+pass, and the context it does and does not need. Nothing in the thirteen assumes a reader has opened the
 five files above.
 
-## The twelve
+## The phases
 
 | # | Phase | What it delivers | Status | Depends on |
 |---|-------|------------------|--------|------------|
@@ -29,6 +29,7 @@ five files above.
 | 10 | [Veridian judged by Veridian](./10-veridian-judged-by-veridian.md) | The CLI judged as a product by `local-process`, and a run judged as a witness by `acceptance:ladder` | **built** | 01 |
 | 11 | [The distribution and environments ledger](./11-the-distribution-and-environments-ledger.md) | Every row of the world table true of the tree, and every "blocked" row naming the world that answers it | next | 01, 09 |
 | 12 | [Memory, and the end of the program](./12-memory-and-the-end-of-the-program.md) | The tree's own account of its memory matches the port's behaviour, and the program is closed | **in flight** | 09 |
+| 13 | [The always-on budget](./13-the-always-on-budget.md) | The instruction file every turn loads, cut back to the invariants it must hold | next | 01 |
 
 Statuses mean exactly this, and nothing more:
 
@@ -84,7 +85,7 @@ and currently unclaimed, which is a fact about the remaining work rather than an
 
 Two consequences, both deliberate:
 
-- The twelve files are **not** a summary of the five. A summary would restate the plan and double the
+- The thirteen files are **not** a summary of the five. A summary would restate the plan and double the
   bulk. Each file carries only what its own phase needs to be executed, and points at the source for
   the argument.
 - The source files are **not** retired. They hold the reasoning behind the work and the audit trail of
