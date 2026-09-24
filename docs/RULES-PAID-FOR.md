@@ -1618,3 +1618,19 @@ port had none, which is why the defect reached a demo run.
   a false one. *The rule that a number must be re-measured rather than recalled cuts both ways: it keeps a
   document from carrying a stale count, and it equally stops a reader from "fixing" a count that was never
   wrong - and the only way to tell those apart is to take the measurement.*
+
+- **A markdown bullet is a bullet because of its line position, so an edit that absorbs a newline deletes
+  a member of the list the bullet was in - and nothing but a parser of that document can tell.** Phase 11's
+  index gained a `## What is still open, in one place` table inserted immediately before the paragraph
+  that declares the eight status words. The replacement's `newString` ended `...and nothing more:` where
+  its `oldString` had ended `...and nothing more:` plus a blank line, so `` Statuses mean exactly this,
+  and nothing more: `` and `- **built** -- the deliverable exists...` were joined onto **one line**. The
+  document then read as a closed list of eight that printed seven, and every bullet below survived intact
+  - nine of the ten lines were byte-identical to what they had been, which is why a diff would not have
+  shown it and a read would not have caught it. `tests/phases-roster.test.ts` caught it in two assertions
+  at once: `declaredStatuses()` matches `/^- \*\*(.+?)\*\* -- /gm`, so the absorbed first bullet stopped
+  being a member (7 where the prose says 8), and `spells every status with a word the document declares`
+  then reported `row 11: built` as a status the document does not declare - the second failure naming the
+  *consequence* while the first named the *cause*. **A prose edit in a document whose structure is parsed
+  is a structural edit**, and the remedy is to run the guard before believing the edit was cosmetic: this
+  one was submitted as an insertion, read as an insertion, and was a deletion.

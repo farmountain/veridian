@@ -23,6 +23,15 @@ the MVP, this one covers what comes after it.
 | 5 | Linux / Kali / Windows / macOS | Roadmap Tier 2-3 | Linux/Kali built as a **simulated** world, `sim-posix` (Phase C3); Windows **and macOS** built as `sim-os` (Phase C4), one world with two declared families, §7 |
 | 6 | Kubernetes, cloud, data platform | Roadmap Tier 4-5 | Kubernetes built as a **simulated** world, `sim-k8s`; cloud built as `sim-cloud` (Phase C5); the container runtime built as `sim-container` (Phase C6); the data platform built as a **simulated** broker, `sim-data` (Phase C8) |
 
+**This table decomposes the request that arrived, and four worlds landed afterwards that no row of it
+asked for.** `sim-vscode` (Phase C7) answers the separate idea §3's last row used to defer; `local-api`
+(Phase D) and `local-process` (Phase D2) are the two worlds with no simulation in them at all; and
+`sim-mobile` (Phase C9) is the handset. So the *status* columns above are the answer to the six rows as
+written and not a roster of the tree - **§5's table is the roster**, and it is compared to the code by
+`tests/simulated-surfaces.test.ts` rather than to this one. A reader who counted worlds here would
+count ten and the tree holds twelve, which is the direction a document is allowed to be old in as long
+as it says which table is the current one.
+
 Nothing in this list is forbidden. `PLAN.md` §3 forbids Veridian becoming a *Kubernetes management
 platform*, a *cloud deployment platform*, a *CI/CD platform*; it explicitly permits integrating with
 all of them. An adapter that deploys the application under test into an existing cluster and judges
@@ -87,7 +96,7 @@ the questions that gated this plan are recorded with their resolution and the ru
 | Is Kubernetes in scope at all? | **derived** | In scope as an adapter, out of scope as a management platform - `PLAN.md` §3 draws the line and it is not ambiguous. |
 | Can npm packaging be done without reversing a recorded decision? | **derived** | No. `IMPLEMENTATION-PLAN.md` §8 records the registry path as *declined*. The request reverses it, so the document must be corrected in the same pass (`AGENTS.md` requires it). |
 | Does adding a build step contradict "there is no build step"? | **answered, narrowly** | It changes the sentence rather than breaking it. Development still runs `.ts` directly; only the *distributed* artifact is compiled. Both facts are now stated, in the places that state them. |
-| Is a VS Code extension a "sandbox environment"? | **inferred** | No - it is a UI. `PLAN.md` §30 and §47 put it in the UI column, and "VS Code != Veridian". Treated as Phase B, a client, not an adapter. A *separate* idea - an adapter for validating VS Code extensions - is recorded in §5 as a real, unblocked future adapter rather than silently merged into this one. |
+| Is a VS Code extension a "sandbox environment"? | **inferred** | No - it is a UI. `PLAN.md` §30 and §47 put it in the UI column, and "VS Code != Veridian". Treated as Phase B, a client, not an adapter. A *separate* idea - an adapter for validating VS Code extensions - is Phase C7 and is **built**: `sim-vscode` loads a real extension in a real Node process and judges it on what the host recorded, so this cell's original claim that the idea was *recorded in §5 as a real, unblocked future adapter* was false in two ways by the time this pass read it - §5 holds no such row, and the adapter is no longer future. |
 | How many rounds may Phase A take before stopping? | **defaulted** | Two fix rounds per gate failure, then record and stop. Same bounded-exit rule the run loop uses. |
 
 No question required the user, because each one resolved on a rung below `answered`: either a rule
@@ -98,7 +107,56 @@ outlives it. That is the ladder working as designed - `ASK` is for gaps no rule 
 
 ## 4. Phases
 
-### Phase A1 - npm install route (built here)
+Fourteen phases, and every one of them is in exactly one of three states. **All fourteen are built and
+observed.** The three states are stated here rather than left to the reader, because a document that
+assigns a status must read the code that earns it - and because the state a reader *expects* a plan to
+end in is the third one:
+
+- **built and observed** - the deliverable exists and the command below was run, on this machine or in
+  a named CI job, with the result it gave. Not "the code is there": the command, run, with its exit.
+- **superseded** - a later phase or world answers the same question, so building it would duplicate.
+- **still open** - neither of the above, and then it must name the row that answers it.
+
+**Two of the three have no members in this section, and that is the finding rather than a gap.** The
+`still open` state is empty because §5's reframing abolished it: a phase that is "planned" with no world
+named was the state this document corrected itself out of, and the five rows §5 still calls *blocked*
+name five built `sim-*` worlds. The `superseded` state is empty because no phase here was answered by a
+later one - each of the fourteen is a distinct route or a distinct world. A plan whose every phase landed
+is the one outcome a plan is not supposed to be able to report, so the evidence is printed rather than
+asserted:
+
+| Phase | Command actually run | Result |
+|-------|---------------------|--------|
+| A1 - npm install route | `npm run smoke:dist` | exit 0 |
+| A2 - Docker install route | `docker build` / `docker run`, in CI | job `container image`, 16s, success |
+| B - the VS Code Cockpit | `npm run demo:cockpit` | exit 0 |
+| C - `local-db` | `npm run demo:db` | exit 0 |
+| C2 - `sim-k8s` | `npm run demo:k8s` | exit 0 |
+| C3 - `sim-posix` | `npm run demo:posix` | exit 0 |
+| C4 - `sim-os` | `npm run demo:os` | exit 0 |
+| C5 - `sim-cloud` | `npm run demo:cloud` | exit 0 |
+| C6 - `sim-container` | `npm run demo:container` | exit 0 |
+| C7 - `sim-vscode` | `npm run demo:vscode` | exit 0 |
+| D - `local-api` | `npm run demo:api` | exit 0 |
+| D2 - `local-process` | `npm run demo:local-process` | exit 0 |
+| C8 - `sim-data` | `npm run demo:data` | exit 0 |
+| C9 - `sim-mobile` | `npm run demo:mobile` | exit 0 |
+
+All fourteen were run in one pass. Two further demos exist and neither is a row above, because neither
+is a phase: `npm run demo` is `local-web` itself and exits 0, and `npm run demo:no-browser` exits **2**
+on purpose, because what it demonstrates is the refusal rather than the aha - it is the only demo in the
+repository whose acceptance criterion *is* a non-zero exit code, and a table that printed every exit as
+`0` would have to leave it out or misreport it.
+
+**The A2 row is observed on a different commit from the other thirteen, and that difference is the
+honest part of this table.** `docker` is not on `PATH` here, so the image can only be built where the
+runtime exists - which is why the row names a CI job and a run id rather than a command. That job ran on
+`35423126548`, the last **pushed** commit; the thirteen local rows were taken on the working tree this
+pass. So "built and observed" is true of A2 *for that commit* and not yet for this one. The plan's own
+**Exit** for A2 says the Dockerfile is reverted rather than shipped unrun, so what is owed is a re-run
+after the next push - not a new design, and not a quieter status word.
+
+### Phase A1 - npm install route (built and observed)
 
 The design is not new; `## The distribution route, as shipped` at the foot of this document already
 specified it while declining it - that section was `AGENTS.md`'s `## Distribution` until the always-on
@@ -122,7 +180,7 @@ exists to prevent is a `dist/*.js` that no test touches.
 
 **Exit:** two fix rounds, then record.
 
-### Phase A2 - Docker install route (built here)
+### Phase A2 - Docker install route (built and observed)
 
 A `Dockerfile` plus a CI job that builds the image and runs the CLI inside it. Docker is unavailable
 on the development machine and available on `ubuntu-latest`, so the verification happens where the
@@ -134,7 +192,7 @@ document is arguing against.
 **Exit:** if the image cannot be built in CI within two rounds, the Dockerfile is reverted rather than
 shipped unrun.
 
-### Phase B - the VS Code Cockpit (built here)
+### Phase B - the VS Code Cockpit (built and observed)
 
 `PLAN.md` §30: sidebar, goal and acceptance editors, environment status, run and reset, history, a
 PASS/FAIL dashboard, an evidence viewer. It stays thin - `VS Code != Veridian` - and drives Core
@@ -287,7 +345,7 @@ deliberate: with `files` in the manifest, `vsce` includes only what the allowlis
 manifest and the README, so a `.vscodeignore` would *replace* that rule with a permissive one rather
 than refine it.
 
-### Phase C - the second adapter: `local-db`
+### Phase C - the second adapter: `local-db` (built and observed)
 
 This is the phase that tests the architecture rather than adding a feature.
 
@@ -306,7 +364,7 @@ is a result; only silence is not.
 **Acceptance:** a contract against a seeded SQLite database passes and fails for the right reasons;
 `core/` diff is limited to registration; the M-metrics report the same shape as the web run.
 
-### Phase C2 - the third adapter: `sim-k8s`, the first *simulated* world
+### Phase C2 - the third adapter: `sim-k8s`, the first *simulated* world (built and observed)
 
 Phase C proved the seam admits a second world. It did not test the case this document's §5 was
 rewritten for: a world whose **substitution is the point** rather than a convenience. A cluster world
@@ -334,7 +392,7 @@ to a named substitute rather than to unexamined reality.
 rewrites the manifests, `PASS` on the last - with no cluster anywhere on the machine, and
 `environment.json` names what was simulated.
 
-### Phase C3 - the fourth adapter: `sim-posix`, the operating-system world
+### Phase C3 - the fourth adapter: `sim-posix`, the operating-system world (built and observed)
 
 Phases C and C2 proved the seam admits a second and a third world. This one attacks the axis neither
 of them touched: a world whose subject is the *operating system itself* - accounts, file modes,
@@ -365,7 +423,7 @@ at all.
 repair agent rewrites the provisioning program one defect per iteration, and `environment.json` names
 which system was stood in for.
 
-### Phase C4 - the fifth adapter: `sim-os`, the machine world
+### Phase C4 - the fifth adapter: `sim-os`, the machine world (built and observed)
 
 Phase C3 proved a world can be an operating system. This one proves the family seam admits a *second*
 operating system whose questions are not the same questions, which is a stronger claim than another
@@ -403,7 +461,7 @@ correctly, and a model that is almost correct produces a confident wrong answer.
 **Acceptance:** four deliberate defects, seventeen criteria, the same `FAIL` -> repair -> `PASS`
 descent, and a bundle that names the substitute. Measured in §7.
 
-### Phase C5 - the sixth adapter: `sim-cloud`, the provider-account world
+### Phase C5 - the sixth adapter: `sim-cloud`, the provider-account world (built and observed)
 
 Phase C4 proved the family seam admits a second operating system. This one attacks a different axis:
 its subject is not a container for files at all but a **remote account**. A provider account is the
@@ -442,7 +500,7 @@ re-derivation of the ordering rules. That split is the same one `sim-os` makes b
 **Acceptance:** four deliberate defects, twenty-seven criteria, the same `FAIL` -> repair -> `PASS`
 descent, and a bundle whose reading names each surface standing in for something. Measured in §7.
 
-### Phase C6 - the seventh adapter: `sim-container`, the runtime world
+### Phase C6 - the seventh adapter: `sim-container`, the runtime world (built and observed)
 
 Phase C5 proved the subject can be an account. This one attacks the axis the two simulated operating
 systems left standing: a **container runtime**, which is where the application's own filesystem view
@@ -477,7 +535,7 @@ own stdout and the substitute really executes them, exactly as `sim-posix` and `
 descent, and a bundle whose reading names the seven surfaces standing in for something. Measured in
 §7.
 
-### Phase C7 - the eighth adapter: `sim-vscode`, the extension-host world
+### Phase C7 - the eighth adapter: `sim-vscode`, the extension-host world (built and observed)
 
 C6 proved a world can be the thing that *produces* an application's filesystem view. This one attacks
 a subject no other world has: an **editor's extension API**. Here the application does not provision
@@ -517,7 +575,7 @@ state is the one surface genuinely shared.
 descent, and a bundle whose reading names the seven surfaces standing in for something. Measured in
 §7.
 
-### Phase D - the ninth adapter: `local-api`, the world that is not simulated
+### Phase D - the ninth adapter: `local-api`, the world that is not simulated (built and observed)
 
 Every world so far except `local-web` and `local-db` has been a substitute. This one is Tier 1's other
 item (`PLAN.md` §36) and it is the first in the series that substitutes **nothing at all**: a real
@@ -569,7 +627,7 @@ capability rather than a detail.
 **Acceptance:** four deliberate defects, eight criteria, the same `FAIL` -> repair -> `PASS` descent,
 and a reading that names no substitute because there is none. Measured in §7.
 
-### Phase D2 - the tenth adapter: `local-process`, the world with no socket in it
+### Phase D2 - the tenth adapter: `local-process`, the world with no socket in it (built and observed)
 
 The other Tier 1 item, and the second world in the series that substitutes **nothing at all**: a real
 program is started as a real child process and judged on the text it printed on stdout and stderr, the
@@ -626,7 +684,7 @@ sharpest distinction in the series.
 **Acceptance:** four deliberate defects, nine criteria, the same `FAIL` -> repair -> `PASS` descent,
 and a reading that names no substitute because there is none. Measured in §7.
 
-### Phase C8 - the eleventh adapter: `sim-data`, the message-broker world
+### Phase C8 - the eleventh adapter: `sim-data`, the message-broker world (built and observed)
 
 The last of the data-infrastructure Tier, and the first world whose subject is a **wire protocol**
 rather than a document shape: the application is a real child process, it is handed an address through
@@ -712,7 +770,7 @@ which the design turned on.
 in the world through a `run` step and **one of those expecting the world to refuse it**, and the same
 `FAIL` -> repair -> `PASS` descent. Measured in §7.
 
-### Phase C9 - the twelfth adapter: `sim-mobile`, the handset world
+### Phase C9 - the twelfth adapter: `sim-mobile`, the handset world (built and observed)
 
 The last of the Tier 2-3 device family, and the first world whose subject is a **handset**. The
 application is a real child process and it provisions the substitution the way `sim-posix`, `sim-os`
@@ -803,8 +861,12 @@ exact failure mode (a false `PASS`) this product exists to make impossible.
 
 ### The worlds, and what is real in each
 
-A status of *planned* is a claim about this repository, and §7 is where claims are kept honest with
-run ids rather than adjectives.
+A status of *planned* was a claim about this repository, and §7 is where claims are kept honest with run
+ids rather than adjectives. **There is no longer a `planned` member**, and that is a statement about the
+tree rather than about the wording: the twelve rows below are twelve registered adapters, and the five
+rows of the second table are five *blocked* things, each of which names the built world that answers it.
+A reader who came here for the roadmap finds a roster, which is the outcome §2's rule was written to
+produce - **a phase is built when it can be proven, not when it can be written.**
 
 | World | Application executes | Simulated | Status |
 |-------|---------------------|-----------|--------|
@@ -1744,13 +1806,20 @@ What the phase produced, all measured on this machine:
 
 ```
 npx tsc --noEmit    silent (exit 0)
-node --test         72 tests, 0 failing
+node --test         92 tests, 0 failing
 npm run build       out/, 7 files
 npm run smoke:out   15 checks, exit 0
-npm run package     veridian-cockpit-0.5.0.vsix, 12 files, 119.98 KB
+npm run package     veridian-cockpit-0.5.0.vsix, 13 files, 125.09 KB
 npm run smoke:vsix  35 checks, exit 0
 npm run gate        exit 0
 ```
+
+**Every figure in that block was re-taken after the twin surface landed, and three of them had moved.**
+The block is a fenced reading rather than a table cell, which is exactly why it went stale without
+anything failing: the world table has a guard and this does not. It said `72 tests`, `12 files` and
+`119.98 KB` while the tree said `92`, `13` and `125.09` - and a reader has no way to tell a reading
+from a recollection. *A measurement in a document is a reading with a date on it, and the date is what
+makes it re-takeable.*
 
 - `src/port.ts` declares by hand the slice of the editor API the Cockpit uses, so the *decisions* are
   testable without an editor; `src/host-boundary.test.ts` makes "only the two host files may import

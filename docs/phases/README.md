@@ -27,9 +27,27 @@ five files above.
 | 08 | [Import into a prepared world](./08-import-into-a-prepared-world.md) | An imported world enters through `prepare()` or not at all | gated by 07 | 04, 07 |
 | 09 | [Documentation currency](./09-documentation-currency.md) | The documentation guards run as a programme rather than one at a time, and what they report is repaired | built | 01 |
 | 10 | [Veridian judged by Veridian](./10-veridian-judged-by-veridian.md) | The CLI judged as a product by `local-process`, and a run judged as a witness by `acceptance:ladder` | **built** | 01 |
-| 11 | [The distribution and environments ledger](./11-the-distribution-and-environments-ledger.md) | Every row of the world table true of the tree, and every "blocked" row naming the world that answers it | next | 01, 09 |
+| 11 | [The distribution and environments ledger](./11-the-distribution-and-environments-ledger.md) | Every row of the world table true of the tree, and every "blocked" row naming the world that answers it | **built** | 01, 09 |
 | 12 | [Memory, and the end of the program](./12-memory-and-the-end-of-the-program.md) | The tree's own account of its memory matches the port's behaviour, and the program is closed | blocked here | 09 |
 | 13 | [The always-on budget](./13-the-always-on-budget.md) | The instruction file every turn loads, cut back to the invariants it must hold | **built** | 01 |
+
+## What is still open, in one place
+
+**`docs/DISTRIBUTION-AND-ENVIRONMENTS.md`'s fourteen phase headings have no `still open` member**, and
+that is what phase 11 established rather than assumed: all fourteen are built and each names the command
+that was actually run. So the remaining work in this repository is not there, and a reader looking for
+"what is next" should read this list rather than fourteen headings in a 158 kB plan:
+
+| Still open | Why, and the address that answers it |
+|------------|--------------------------------------|
+| **07 -- the isolation substrate** (`blocked here`) | A measurement on this machine, not an absence of design: `docker` is not on `PATH`, and `node --permission` rejects `--allow-net` as a `bad option` (exit 9) against a positive control that is accepted (exit 0). See `docs/ISOLATION-AND-MCP-PLAN.md` §3.1. |
+| **08 -- import into a prepared world** (`gated by 07`) | Buildable now, and a false `PASS` if built before 07 lands, because an imported world with no substrate behind it is a world whose boundaries are declared and unenforced. |
+| **12 -- the receipt half of its memory criterion** (`blocked here`) | Three of its four criteria are met. The fourth asks that every environment observation be a receipt rather than a claim, and it is measured false in that phase's own record rather than waved past. |
+| **Phase A2's re-run** | Not a phase: an obligation `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` carries. Its Docker image is observed in CI job `container image`, 16s, success -- on run `35423126548`, the last **pushed** commit. The route is therefore observed for a commit and not for this tree, and re-taking it is a push and a re-run rather than a design. |
+
+This paragraph is the program's answer to *"what is next"*, and it exists because the alternative is a
+reader assembling that answer from three status words in a table plus a plan's own backlog. The statuses
+above still hold each phase's own truth; **this table is the order.**
 
 Statuses mean exactly this, and nothing more:
 
@@ -120,7 +138,8 @@ files, and what each is authoritative for:
 
 `tests/phases-roster.test.ts` holds this directory, and it reads `docs/phases/` off the disk rather
 than from a list. It asks five things of the table above: that every phase file on disk is named in
-it, that every row names a file that exists, that the numbers run `01` to `12` with no gap, that
+it, that every row names a file that exists, that the numbers run `01` to `13` with no gap, that
+`13` being taken from the files on disk rather than written down here, that
 every status -- the row's and the phase file's own -- is one of the eight declared above, and that
 the row's status **agrees with the phase file's**.
 
