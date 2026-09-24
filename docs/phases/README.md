@@ -1,7 +1,7 @@
 # The phase program
 
-The remaining work in this repository is documented across **five** files totalling **214,026 bytes**
-(measured: `docs/DIGITAL-TWIN-PLAN.md` 14,399; `docs/DIGITAL-TWIN-DESIGN.md` 26,788;
+The remaining work in this repository is documented across **five** files totalling **214,671 bytes**
+(measured: `docs/DIGITAL-TWIN-PLAN.md` 15,044; `docs/DIGITAL-TWIN-DESIGN.md` 26,788;
 `docs/ISOLATION-AND-MCP-PLAN.md` 59,746; `docs/INSTRUMENT-AND-PROMPT-PLAN.md` 35,625;
 `docs/GAP-CLOSURE-DESIGN.md` 77,468). None of those five is wrong, and none of them is redundant. The
 problem is arithmetic: carrying all five at once is tens of thousands of tokens before a line of code

@@ -159,9 +159,14 @@ rather than blocked.
 **Files.** `extension/vscode/`.
 
 **AC-9.** A twin panel reads the ELI, and the extension gains **no** validation logic - the Cockpit is
-a thin client over a stable local Core interface.
+a thin client over a stable local Core interface. **Met.**
 
-**Deferred** until W0-W3 are green, on design section 3.4's measurement.
+**Was deferred** until W0-W3 were green, on design section 3.4's measurement - and they are green, so the
+deferral has expired rather than been abandoned. It landed as phase 05 of the phase program:
+`extension/vscode/src/twin.ts` reads the join and renders it, and AC-9 is held by reading that module's
+imports rather than by asserting good intentions about them. Worth keeping beside the status: the
+deferral's *reason* was that a surface built over a join that does not exist can only be built over a
+guess about the join, so the order was the substance of the item rather than scheduling around it.
 
 ---
 
@@ -212,6 +217,7 @@ plus **AC-7** (round trip byte-identical in both directions) and **AC-8** (stage
 was trusted: `tests/world-import.test.ts` for AC-7 and AC-8, with AC-8's probe measured by disabling the
 refusal in `core/environment/manager.ts` and reading `17 pass / 1 fail` on exactly the named subtest.
 
-**What this does not do is close the twin.** W4's Cockpit surface is still deferred behind W0-W3, which
-are green; and an adopted world's *isolation* is phase 07's subject rather than this plan's, so a twin
+**What this does not do is close the twin.** W4's Cockpit surface was deferred behind W0-W3 and has since
+landed as phase 05, so the phase list is complete; what remains open about the twin is not a work item
+but a property - an adopted world's *isolation* is phase 07's subject rather than this plan's, so a twin
 that verifies where a world came from says nothing about where that world's work then runs.
