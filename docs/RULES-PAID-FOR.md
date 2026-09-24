@@ -1807,3 +1807,28 @@ reads a variable.*
   reports them as one unnamed suite among 451. *A guard is only preventive if it is run before the
   thing it guards has been sent* - and the containment here is worth naming, because the alternative to
   a guard that fires is a document that states a figure nobody re-measured.
+- **The document that must be kept true is the one written in the present tense; the one that must not
+  be touched is the one that names the moment it measured.** A plan item deferred behind a precondition
+  expires when the precondition is met, and **no commit records that event** - the work that satisfies
+  it lands somewhere else entirely. So the sweep is not "which document looks out of date", which
+  requires reading every document, but **"whose precondition has now been met"**, which points at the
+  gate directly. Asked that way, this pass found three: `docs/DIGITAL-TWIN-PLAN.md`'s import half
+  (cleared by the world-import work), `docs/ISOLATION-AND-MCP-PLAN.md`'s MCP surface (built as a fourth
+  consumer), and W4's Cockpit twin (built as phase 05, `extension/vscode/src/twin.ts`). Each was
+  corrected at its own address rather than at its date, because a status row states *the tree's* status
+  rather than *the pass's*. What decides whether a stale sentence may be rewritten at all is not its
+  title and not its staleness - it is whether the document is a *description* or a *record*, and the
+  tree already had the answer: `docs/GAP-CLOSURE-DESIGN.md` opens `**Status:** design. **Date:**
+  2026-09-17. **Base commit:** da4831e` and `docs/BOUNDARY-SPINE-DESIGN.md` opens `Date 2026-09-16.
+  Base commit d05a6f7`, while `tests/docs-roster.test.ts`'s `COUNT_SITES` comment had already called
+  `docs/DIGITAL-TWIN-DESIGN.md` *"an archived design document"* whose figure *"is a measurement of that
+  document's own moment"* and which is *"right to"* carry it, because *"rewritng them would destroy the
+  audit trail"*. The near-miss is the reason this is a rule: `docs/DIGITAL-TWIN-DESIGN.md`'s section 3
+  presents a six-row census whose verdicts have **all six** moved - `eli.ts`, `denv.ts`, `esi.ts`,
+  `twin.ts`, `import.ts`, `isolation.ts` all now exist - so the correction was one edit away from being
+  made, and making it would have rewritten *the argument the plan it sourced exists to answer*. A
+  census that shows six open gaps is the only thing that explains why the plan has six work items; a
+  census edited to show none leaves a plan with no reason to have been written. *The document that
+  argues a plan into existence is not the document that reports whether the plan succeeded* - and the
+  tell is a date in the header, because a document that names the moment it measured has already said
+  which tense it is in.
