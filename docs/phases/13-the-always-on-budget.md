@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | built -- the always-on file is cut and every figure was re-taken afterwards |
+| **Status** | built -- the always-on file `AGENTS.md` is cut and every figure was re-taken afterwards |
 | **Depends on** | 01 |
 | **Source** | this program's own governing rule in `docs/phases/README.md` -- *"A phase is a context budget, not a topic"* -- measured against the figures below |
 | **Touches** | `AGENTS.md`; three new `docs/*.md`; `docs/DISTRIBUTION-AND-ENVIRONMENTS.md`; `docs/phases/README.md`; `tests/phases-roster.test.ts`; `tests/observation-vocabulary.test.ts`; `tests/docs-roster.test.ts`; `.github/instructions/typescript.instructions.md` |
@@ -62,7 +62,7 @@ and the two indexes that guards read.
   of that shape are recorded four times over (`db.query`, `db.rowCount`, `web.visible`, the observation
   vocabulary). `## Distribution` therefore merges into the existing
   `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` rather than becoming `docs/DISTRIBUTION.md`.
-- **The guards are green at the figures above**: `npm run gate` exits 0 at **2645** tests over **438**
+- **The guards are green at the figures above**: `npm run gate` exits 0 at **2649** tests over **438**
   suites, `npm run acceptance` prints `exit 0 - PASS` for both of its runs.
 
 ## What this phase does

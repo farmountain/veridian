@@ -28,7 +28,7 @@ five files above.
 | 09 | [Documentation currency](./09-documentation-currency.md) | The documentation guards run as a programme rather than one at a time, and what they report is repaired | built | 01 |
 | 10 | [Veridian judged by Veridian](./10-veridian-judged-by-veridian.md) | The CLI judged as a product by `local-process`, and a run judged as a witness by `acceptance:ladder` | **built** | 01 |
 | 11 | [The distribution and environments ledger](./11-the-distribution-and-environments-ledger.md) | Every row of the world table true of the tree, and every "blocked" row naming the world that answers it | next | 01, 09 |
-| 12 | [Memory, and the end of the program](./12-memory-and-the-end-of-the-program.md) | The tree's own account of its memory matches the port's behaviour, and the program is closed | **in flight** | 09 |
+| 12 | [Memory, and the end of the program](./12-memory-and-the-end-of-the-program.md) | The tree's own account of its memory matches the port's behaviour, and the program is closed | blocked here | 09 |
 | 13 | [The always-on budget](./13-the-always-on-budget.md) | The instruction file every turn loads, cut back to the invariants it must hold | **built** | 01 |
 
 Statuses mean exactly this, and nothing more:

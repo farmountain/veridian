@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | built -- `2625` tests over `438` suites, `0` fail, and ten roster guards each falsified in this pass |
+| **Status** | built -- `tests/docs-roster.test.ts` now indexes subdirectories, and ten roster guards were each falsified in that pass |
 | **Depends on** | 01 |
 | **Source** | `docs/GAP-CLOSURE-DESIGN.md` S4 (W3) |
 | **Touches** | `AGENTS.md`, `README.md`, `extension/vscode/README.md`, `docs/*.md`, `tests/docs-roster.test.ts`; no source file except to **read** it |

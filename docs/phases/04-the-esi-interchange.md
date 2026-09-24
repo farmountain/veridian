@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | built |
+| **Status** | built -- `core/metrics/esi.ts`, held by `tests/esi-interchange.test.ts` |
 | **Depends on** | 03 (there is nothing worth exporting until the predicate says what may leave) -- landed |
 | **Source** | `docs/DIGITAL-TWIN-PLAN.md` S4 (W3); `docs/DIGITAL-TWIN-DESIGN.md` S6 |
 | **Touches** | `core/metrics/esi.ts` (the writer, beside the ELI); `tests/esi-interchange.test.ts`; no `schemas/` entry, see below |

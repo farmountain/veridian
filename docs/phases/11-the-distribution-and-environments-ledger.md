@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | next -- a document phase with one code obligation |
+| **Status** | next -- a document phase with one code obligation, over `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` |
 | **Depends on** | 01, 09 |
 | **Source** | `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` (158,325 bytes / 1,653 lines -- the bulkiest plan in the tree) |
 | **Touches** | that document, plus whatever code it turns out to be wrong about |

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **built** -- and this phase is its second route, `acceptance:ladder` |
+| **Status** | **built** -- and this phase is its second route, `npm run acceptance:ladder` |
 | **Depends on** | 01 |
 | **Source** | `docs/IMPLEMENTATION-PLAN.md` S5 and step 9 of its execution order; `AGENTS.md` |
 | **Touches** | `acceptance/ladder/**`; `docs/phases/10-*`; `package.json` only if a new route is declared |

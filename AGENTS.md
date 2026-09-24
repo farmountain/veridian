@@ -80,8 +80,8 @@ instructions file for this workspace �?do not add a second one
 > reading carries `simulated` - and nothing is emulated: no emulator, no image and no booted system
 > anywhere in the loop. It adds no step kind: the application provisions with the `run` steps the
 > second world introduced, and three of its criteria use one.
-> `npx tsc --noEmit` is silent and `node --test` reports 2645 passing tests over 438 suites -
-> Veridian's own 2553 plus the 92 the VS Code Cockpit contributes, which the root runner discovers
+> `npx tsc --noEmit` is silent and `node --test` reports 2649 passing tests over 438 suites -
+> Veridian's own 2557 plus the 92 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Five distribution routes ship - a clone, an npm package, the Cockpit (as
 > a development install and as a `.vsix`), the extension marketplaces that `.vsix` is published to,
 > and a container image - and there is still **no
@@ -583,3 +583,31 @@ already has a style is a second rulebook rather than a description.
   happened**, and the only way to know is to check that the probe changed the state its assertion
   reads. A probe that edits a neighbouring cell is a probe that measures the guard's tolerance rather
   than its scope.*
+
+- **A probe aimed at an assertion's *needle* weakens the assertion instead of violating it, and it
+  reports a guard with a hole where there is none.** Closing the phase program produced this three times
+  in one pass, which is why it is a rule rather than an instance. `tests/memory-port.test.ts` holds *"a
+  refused write reports `precondition blocked` and does **not** contain 'unreachable'"*, and the obvious
+  probe edits that assertion - `doesNotMatch(warning.message, /unreachable/)` becomes `/refused/`. The
+  suite stays at `6 pass / 0 fail`, which reads as a guard that cannot fail. It cannot: the second needle
+  is a **weaker** question, so the assertion passes more easily, and what the probe changed is the
+  *question* rather than the *answer*. The probe that works edits the port - `describeFailure`'s `status`
+  string, `#degrade`'s `error` field - because those are the values the assertions observe. The same
+  mistake was made twice more in the same pass: phase 05's AC-9 import probe was first written as *swap
+  one import for another*, which is a module-level crash reported as `not ok 1 - src\twin.test.ts` rather
+  than as a named assertion - it **looked** like a firing probe while the guard never ran - and phase 05's
+  schema probe was written against a two-line `required` block that is in fact one line, so `Replace`
+  returned its input and the probe changed nothing at all. *A probe is a measurement of the code; a probe
+  that edits the expectation measures the expectation, and a probe whose change marker is never printed
+  is indistinguishable from one that works.*
+
+- **A restore has to be verified by a status check, because a failed restore presents as a passing
+  probe.** The same pass hit this directly: `Set-Content` on `core/memory/memory.ts` failed with
+  `the process cannot access the file ... because it is being used by another process` - a transient
+  Windows lock on a file a Node process had just read - and **the restore silently did not happen**. The
+  next command in the same batch then reported `3 fail`, which is the *probe's* state read as though it
+  were the restoration check. `git status --porcelain <path>` is what caught it, and
+  `git checkout -- <path>` is the reliable restore for a file that is unmodified in `HEAD`, because it
+  does not depend on a handle being free. *Restore with the tool that cannot half-succeed, and assert the
+  restore with a status reading rather than with the suite going green* - because a suite that is green
+  after a restore and a suite that was green all along are the same output.

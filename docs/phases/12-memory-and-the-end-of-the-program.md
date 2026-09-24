@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | in flight -- the disclosure half is built; the discipline half is this phase |
+| **Status** | **blocked here** -- three of its four criteria are met and held by `tests/memory-port.test.ts` and `tests/phase-anchors.test.ts`; the receipt half is not, and the measurement is in the section below |
 | **Depends on** | 09 (the memory rules are stated in the same documents the sweep repairs) |
 | **Source** | `docs/GAP-CLOSURE-DESIGN.md` S7 (W7); `AGENTS.md`'s Memory section; `.github/skills/hipcortex-memory/SKILL.md` |
-| **Touches** | `core/memory/**`; `tests/memory-port.test.ts`; the memory section of `AGENTS.md` |
+| **Touches** | `core/memory/**`; `tests/memory-port.test.ts`; `tests/phase-anchors.test.ts`; the memory section of `AGENTS.md` |
 | **Acceptance** | the tree's account of its own memory matches the port's behaviour, and the phase program is closed |
 
 ## Why this phase exists, and why it is last
@@ -112,6 +112,100 @@ and its counts. That distinction is the same one the phase program's own index d
   have been written to the literal key -- *a question the answer cannot close.*
 - **The alignment probe, which is the phase's real subject.** Ask the index for the next phase and act on
   it. If the answer is stale, the program was documented rather than closed.
+
+## What was measured, and the one criterion my own action falsified
+
+### Criterion 4 is met, and it needed a guard rather than a promise
+
+*Every phase document carries a status that is true of the tree as measured, and each gives the anchor
+it was measured against.* Nothing enforced that, so `tests/phase-anchors.test.ts` is new. It reads
+every `docs/phases/NN-*.md` file, extracts the `| **Status** |` cell, and requires the cell to name a
+resolvable anchor in one of three shapes:
+
+| Shape | Resolved by |
+|---|---|
+| a path with a `/` in it | the file must exist under the repository root |
+| a bare file name | some file with that name must exist in the tree |
+| a command | an `npm run X` must name a script `package.json` declares |
+
+**All thirteen cells failed it on the first run, which is what a guard finding thirteen real drifts
+looks like** - and two of them were substantive rather than cosmetic:
+
+- **Phase 09's cell carried the figure `2625`.** It was correct when written and became wrong in the
+  same pass that phase 05 added twenty tests. A count in a status cell is a count that rots on the next
+  commit, so the figure was **removed** rather than updated: the cell names the guard it was measured
+  by, which is the part that can be re-taken.
+- **This phase's own cell said `in flight`**, and the index defines that word as *the work exists in
+  the working tree and is not committed*. `git status --porcelain` was **empty**, so no work was in
+  flight. That is the phase 06 shape a second time: a row and a cell agreeing with each other and both
+  false of the tree.
+
+The guard's own probe is a test rather than a comment - a cell with no anchor is reported, a path that
+resolves is accepted, and a **command naming a script the manifest does not declare is rejected**, so
+the command shape is a check rather than a pattern.
+
+### Criterion 3 is met, and both halves were re-probed
+
+`tests/memory-port.test.ts` passes (6 tests, 0 failing) and both halves of the renamed-cause rule were
+falsified against **the port's own message sites**:
+
+| Probe | Site | Result |
+|---|---|---|
+| A refusal reported as an unreachability | `describeFailure`'s `status` string | 1 failure, naming *carries the raw body of a refusal that declined to explain itself in JSON* |
+| `ECONNREFUSED` reported as something else | `#degrade`'s `error` field | 3 failures, naming both refusal subtests and *still reports the transport error when the substrate really is unreachable* |
+
+**Both probes were misaimed on their first attempt, and that is the third instance of one shape in this
+program.** The first version edited the *assertions* - `doesNotMatch(warning.message, /unreachable/)`
+became `/refused/` - which **weakens** an assertion instead of violating it, so the suite stayed at
+`6 pass / 0 fail` and the probe looked like a guard with a hole. The same thing happened in phase 05's
+AC-9 import probe and in phase 05's schema probe. *A probe aimed at an assertion's needle measures the
+needle, not the code; the probe has to change the state the assertion observes.*
+
+One more thing was measured the hard way: the restore after the second probe **failed** with `the process
+cannot access the file ... because it is being used by another process`, and the next command's reading
+was already the probe's state. A `git status` check caught it. `git checkout -- <path>` is the reliable
+restore for a file that is unmodified in `HEAD`, and a restore has to be **verified by a status check**
+rather than by the suite going green.
+
+### Criterion 2 is falsified, by this session, and the measurement is the report
+
+*Every environment observation taken during this program is a **receipt**; no observation was filed with
+`add_memory`.* **This one is false, and it is false because of what I did rather than what I omitted.**
+
+The measurement, taken in one session: `mcp_hipcortex_open_intent` returned the string
+
+```
+Tool mcp_hipcortex_open_intent is currently disabled by the user, and cannot be called.
+```
+
+to **two separate calls**, and `mcp_hipcortex_get_system_health` returned the same string for its own
+name. `mcp_hipcortex_add_memory` **succeeded** on its first call, returning a record id - so the substrate
+is reachable and what answered with that string is the intent/receipt path specifically.
+
+**No cause is named here, and in particular nothing is claimed about the operator.** `AGENTS.md` already
+carries this as the fourth instance of one shape and the sharpest, because the phrase *"by the user"*
+was copied out of an error string, reported to the operator as a fact about their own configuration, and
+written into a memory record as durable fact. The attribution is the **message's**. What is recorded is
+the two calls, the verbatim string, the third tool that answered, and nothing else.
+
+The consequence is stated rather than routed around: the observations taken during this program were
+filed with `add_memory`, which makes them **claims rather than receipts**, and this criterion cannot be
+satisfied until `open_intent` answers. A refusal or an unavailability is reported, never skipped and
+never renamed - which is this phase's own fourth item read the other way.
+
+### Criterion 1 is met
+
+The decision is filed durably: the backlog was split into thirteen phase files, and the split, the
+source documents and the exit condition are recorded as one record whose `target` stands alone. **A
+fresh session can name the next phase from `docs/phases/README.md` and the memory alone**: phase 11,
+depending on 01 and 09, both `built`.
+
+### What this phase therefore does not claim
+
+Not "the program is closed". Three phases remain open and one of them is this one: 07 is `blocked here`
+on a substrate this machine does not have, 08 is `gated by 07`, and 11 is `next`. The exit condition is
+**aligned, not delivered** - and a program that reported twelve `built` phases over this tree would be
+the defect this phase was written to prevent.
 
 ## Guards that must still pass
 

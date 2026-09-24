@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | built |
+| **Status** | built -- `core/metrics/eli.ts`, held by `tests/eli-join.test.ts` |
 | **Depends on** | 01 (the world identity has to be in the bundle before anything can join on it) |
 | **Source** | `docs/DIGITAL-TWIN-PLAN.md` S4 (W1); `docs/DIGITAL-TWIN-DESIGN.md` S1-S2 |
 | **Touches** | a new `core/metrics/eli.ts`, beside the `subjectOf` it keys on rather than in `core/evidence/` (which would make the evidence layer import the metrics layer); a new test; no CLI verb, because the function is not yet called from the command line |

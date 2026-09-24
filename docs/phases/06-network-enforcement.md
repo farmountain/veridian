@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | built |
+| **Status** | built -- `core/environment/confinement.ts`, held by `tests/confinement.test.ts` |
 | **Depends on** | 01 |
 | **Source** | `docs/GAP-CLOSURE-DESIGN.md` S9 (W1's retro, the open item); `docs/BOUNDARY-SPINE-DESIGN.md`; `docs/ISOLATION-AND-MCP-PLAN.md` S3.1 |
 | **Touches** | `core/environment/confinement.ts`; `core/environment/types.ts`; the adapters whose seam can hold the guard; `tests/boundary-roster.test.ts` |

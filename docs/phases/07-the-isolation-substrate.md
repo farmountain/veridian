@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **blocked here** -- the design is written and the blocker is measured on this machine |
+| **Status** | **blocked here** -- the design is written and the blocker is measured on this machine, in `docs/ISOLATION-AND-MCP-PLAN.md` |
 | **Depends on** | 06 (the seam has to be honest about what it enforces before a substrate is put behind it) |
 | **Source** | `docs/ISOLATION-AND-MCP-PLAN.md` S3.1 (E1); `docs/GAP-CLOSURE-DESIGN.md` S6 (W6) |
 | **Touches** | a new `IsolationPort` in the shape of `ProcessRunner`; the world that adopts it; a CI job |

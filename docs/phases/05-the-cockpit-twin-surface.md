@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | built -- the panel reads the join and renders it, and the extension gained no validation logic |
+| **Status** | built -- `extension/vscode/src/twin.ts` reads the join and renders it, and AC-9 is held by reading that module's imports |
 | **Depends on** | 02, 03, 04 (there is nothing to render until the join, the predicate and the document exist) -- all three built |
 | **Source** | `docs/DIGITAL-TWIN-PLAN.md` S4 (W4); `extension/vscode/README.md` |
 | **Touches** | `extension/vscode/src/**` and the manifest; **no** root-tree file |

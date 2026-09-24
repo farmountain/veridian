@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | built |
+| **Status** | built -- `core/metrics/denv.ts`, held by `tests/denv-export.test.ts` |
 | **Depends on** | 02 (the ELI names the rows; dENV says which of them may leave) |
 | **Source** | `docs/DIGITAL-TWIN-PLAN.md` S4 (W2); `docs/DIGITAL-TWIN-DESIGN.md` S8's Phase 2 |
 | **Touches** | `core/metrics/denv.ts`, `core/metrics/eli.ts` (the join), `scripts/denv-reading.mjs`, and `tests/denv-export.test.ts` |

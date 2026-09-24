@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | built -- the code is committed and the guards are green |
+| **Status** | built -- the code is committed and `npm run gate` exits 0 |
 | **Depends on** | -- |
 | **Source** | `docs/INSTRUMENT-AND-PROMPT-PLAN.md` S3, S3A, S4, S5, S6; `docs/DIGITAL-TWIN-PLAN.md` S4 (W0) |
 | **Touches** | the modified files below, plus `core/evidence/world-identity.ts` and three new documents |
