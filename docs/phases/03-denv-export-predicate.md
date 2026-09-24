@@ -68,6 +68,19 @@ default rather than exported by default.
   is why the reading is scoped to one subject rather than taken across different ones.
 - **AC-6** -- the export predicate is **total** over the record: it answers for every key, and it
   refuses a named key set whose members are chosen *because* they are present in the fixture.
+- **The totality is over keys, and the first version of this phase stopped there - which was a hole.**
+  `ruleFor` answered for every top-level key, and `world` was ruled `kept`, so the identity block left
+  as a unit. But `worldIdentity()` builds that block out of the plan, and for **eight** of the twelve
+  kinds the name or a detail is a location: `ClusterPlan.imagesPath` is documented as absolute on
+  `databasePath`'s own rule, every `root` is absolute, `ProcessPlan.application` puts the operator's
+  command line into `detail.command`/`detail.args`, and a `database` world is **named after its file**.
+  Measured on this repository's own bundle: `database_path` is
+  `D:/all_projects/Veridian/examples/inventory-db/app/data.db`, and for a post-W0 `local-db` run the
+  *same value* is also `world.name` and `world.detail.path` - rendered in one slot and exported in the
+  other. `world`, `boundary` and `reset` are now `rendered` through named renderers, and the guard is a
+  **sweep over all twelve kinds** rather than a list of the ones that leaked, so a thirteenth block is
+  a row somebody adds rather than a leak nobody notices. The falsification probe - reverting `world` to
+  `kept` - fails exactly eight subtests, one per location-carrying kind.
 - A refused value never reaches an artifact. Asserted by building a record that **does** carry a
   refused key, exporting it, and reading the exported document for the key's value -- not by reading the
   predicate's source.

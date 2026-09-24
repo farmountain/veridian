@@ -101,9 +101,12 @@ export const EXPORT_RULES: Readonly<Record<string, ExportRule>> = Object.freeze(
     reason: "as app_path: the declaration is kept, the absolute prefix is the operator's",
   },
   world: {
-    decision: "kept",
+    decision: "rendered",
     resource: true,
-    reason: "the identity block is the field phase 01 added for exactly this export",
+    reason:
+      "the identity block is the field phase 01 added for exactly this export, and it is walked " +
+      "rather than copied: a `database` world is *named* after its file, and `detail` can hold a " +
+      "root, an images directory or the application's command line",
   },
   command: {
     decision: "refused",
@@ -128,9 +131,11 @@ export const EXPORT_RULES: Readonly<Record<string, ExportRule>> = Object.freeze(
     reason: "the declared readiness check is part of how the world is asked to come up",
   },
   reset: {
-    decision: "kept",
+    decision: "rendered",
     resource: true,
-    reason: "the declared reset strategy is what M4 reproducibly replays",
+    reason:
+      "the declared reset strategy is what M4 reproducibly replays; the command beside it is a " +
+      "command line and is refused, on the same argument the top-level `command` is",
   },
   browser: {
     decision: "kept",
@@ -152,9 +157,11 @@ export const EXPORT_RULES: Readonly<Record<string, ExportRule>> = Object.freeze(
       "this run waited rather than what the world is",
   },
   boundary: {
-    decision: "kept",
+    decision: "rendered",
     resource: true,
-    reason: "declared policy beside measured enforcement is the pair the whole boundary spine reports",
+    reason:
+      "declared policy beside measured enforcement is the pair the whole boundary spine reports, " +
+      "and a crossing's `subject` is the path that was refused - a location, rendered like the rest",
   },
   transitions: {
     decision: "kept",
@@ -194,6 +201,13 @@ export interface RefusedKey {
   readonly reason: string;
 }
 
+/** A key whose value was **rendered** into a form that keeps the declaration without the operator. */
+export interface RenderedKey {
+  /** The document's own spelling of where the value sat, dotted - `world.detail.root`. */
+  readonly path: string;
+  readonly reason: string;
+}
+
 export interface EnvExport {
   /** The document that may leave. Never carries a refused key under any name. */
   readonly document: Readonly<Record<string, unknown>>;
@@ -205,6 +219,17 @@ export interface EnvExport {
    * nothing would be indistinguishable from a record that never had one.
    */
   readonly refused: readonly RefusedKey[];
+  /**
+   * What was **rendered**, with the reason, for the same argument - and this half is the one that
+   * `refused` cannot make.
+   *
+   * A rendered value is still *present*; only its prefix is gone. A reader who compared the export
+   * against the bundle and found `app_path: shopping-cart` where the bundle said
+   * `D:\...\examples\shopping-cart` has found a difference, not a loss, and the difference is
+   * deliberate. Without this list that difference is indistinguishable from a value the exporter
+   * silently rewrote, which is the failure mode a sanitizer has.
+   */
+  readonly rendered: readonly RenderedKey[];
 }
 
 /** The last segment of a path, under either separator - the world's own spelling of what it names. */
@@ -216,30 +241,190 @@ const lastSegment = (path: string): string => {
 /** Render a declared path as the world's own spelling: its name, without the operator's prefix. */
 const renderPath = (value: unknown): unknown => (typeof value === "string" ? lastSegment(value) : value);
 
+/** Where a render was recorded, and why. Threaded through the walk rather than rebuilt per branch. */
+interface ExportRecord {
+  readonly refused: RefusedKey[];
+  readonly rendered: RenderedKey[];
+}
+
+/** Render a path **and record it**, but only when the rendering actually changed the value. */
+const renderPathAt = (value: unknown, path: string, reason: string, record: ExportRecord): unknown => {
+  const renderedValue = renderPath(value);
+  if (renderedValue !== value) record.rendered.push({ path, reason });
+  return renderedValue;
+};
+
 /**
- * The export: the document that leaves, and the refusals that produced it.
+ * Keys inside `world.detail` that name a location the world's own spelling is the last segment of.
+ *
+ * They are enumerated rather than recognised by shape, and the reason is a counter-example already in
+ * this document: `health.path` holds `/health`, a *route*, and a shape test for "starts with a
+ * separator" cannot tell it from `/usr/bin`. A reader who reached for the shape would render every
+ * health check in the tree to `health`.
+ */
+const IDENTITY_PATHS: readonly string[] = ["root", "images", "path"];
+
+/**
+ * Keys inside `world.detail` that carry a command line, refused for the reason `command` is refused.
+ *
+ * `command` is here because `worldIdentity()` writes `child.application.command` into it, and `args`
+ * because it writes `child.application.args.join(" ")` - which is the operator's own command line
+ * reaching the export through the identity block rather than through the top-level fields that
+ * already refuse it. Same value class, one level down.
+ */
+const IDENTITY_COMMANDS: readonly string[] = ["command", "args"];
+
+/**
+ * The identity block, exported - and it is the one key whose ruling **depends on its own contents**.
+ *
+ * `kind` is kept exactly as declared, because a reader needs it to interpret `name`: **`name` is a
+ * location for one kind and an account for another.** `worldIdentity()` names a `database` world
+ * after `plan.databasePath` - measured on this repository's own bundle `run-20260915-225605-a3a48e`
+ * as `D:/all_projects/Veridian/examples/inventory-db/app/data.db` - and names a `cloud` world after
+ * `cloud.account`. So the same key is a leak for one kind and the whole point of the export for
+ * another, and no rule written per *key* can express that. The rule is written here, where `kind` is
+ * in hand, which is why this key is `rendered` rather than `kept`.
+ *
+ * The alternative was to leave `world` as `kept` and accept that one kind's `name` and `detail.path`
+ * carry the operator's checkout. It was rejected because `database_path` - the *same resolved value*,
+ * one key over - is already ruled `rendered`: keeping it in one slot while rendering it in another is
+ * one value with two rulings, and the second ruling is the one a reader would not think to check.
+ */
+const renderWorldIdentity = (value: unknown, record: ExportRecord): unknown => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const block = value as Record<string, unknown>;
+  const kind = typeof block["kind"] === "string" ? block["kind"] : "";
+
+  // A `database` world is named after its file, so its name is the one world name that is a location.
+  const name =
+    kind === "database"
+      ? renderPathAt(block["name"], "world.name", `a \`${kind}\` world is named after its file`, record)
+      : block["name"];
+
+  const detail = block["detail"];
+  let renderedDetail = detail;
+  if (typeof detail === "object" && detail !== null && !Array.isArray(detail)) {
+    const out: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(detail as Record<string, unknown>)) {
+      if (IDENTITY_COMMANDS.includes(key)) {
+        record.refused.push({
+          key: `world.detail.${key}`,
+          reason: "the application's command line, reached through the identity block",
+        });
+        continue;
+      }
+      out[key] = IDENTITY_PATHS.includes(key)
+        ? renderPathAt(entry, `world.detail.${key}`, "a location the world's own spelling names", record)
+        : entry;
+    }
+    renderedDetail = out;
+  }
+
+  return { kind: block["kind"], name, detail: renderedDetail };
+};
+
+/**
+ * The boundary report, exported - walked for one field.
+ *
+ * `crossings[].subject` is the path a request was refused at, so it is a location on the filesystem
+ * the world confined. It is the one nested value in this block that carries an operator prefix; the
+ * policies and the enforcement words are a vocabulary, and a vocabulary has no prefix to lose.
+ */
+const renderBoundary = (value: unknown, record: ExportRecord): unknown => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const block = value as Record<string, unknown>;
+  const crossings = block["crossings"];
+  if (!Array.isArray(crossings)) return value;
+
+  return {
+    ...block,
+    crossings: crossings.map((entry) => {
+      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return entry;
+      const crossing = { ...(entry as Record<string, unknown>) };
+      if (Object.hasOwn(crossing, "subject")) {
+        crossing["subject"] = renderPathAt(
+          crossing["subject"],
+          "boundary.crossings.subject",
+          "the path the crossing was refused at",
+          record,
+        );
+      }
+      return crossing;
+    }),
+  };
+};
+
+/**
+ * The reset block, exported - the strategy is kept and the command is refused.
+ *
+ * A `null` command is **not** a refusal: it declares that this world resets with no command, which
+ * is a fact the strategy already carries, and recording a refusal about it would be a refusal about
+ * nothing. The same rule the identity block's absent `command` follows.
+ */
+const renderReset = (value: unknown, record: ExportRecord): unknown => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (key === "command" && entry !== null) {
+      record.refused.push({
+        key: "reset.command",
+        reason: "the command that replays the reset is a command line, as the top-level `command` is",
+      });
+      continue;
+    }
+    out[key] = entry;
+  }
+  return out;
+};
+
+/** The renderer a `rendered` key gets. A key with no entry here is copied through unchanged. */
+const RENDERERS: Readonly<Record<string, (value: unknown, record: ExportRecord) => unknown>> = {
+  app_path: (value, record) =>
+    renderPathAt(value, "app_path", "the declaration is kept, the operator's prefix is not", record),
+  database_path: (value, record) =>
+    renderPathAt(value, "database_path", "the declaration is kept, the operator's prefix is not", record),
+  world: renderWorldIdentity,
+  boundary: renderBoundary,
+  reset: renderReset,
+};
+
+/**
+ * The export: the document that leaves, the refusals that produced it, and what was rendered.
  *
  * It reads the record through `serializeEnvironment` rather than walking `EnvironmentRecord` itself,
  * so the key set this predicate decides is **the same key set the bundle writes** - one serialiser,
  * one predicate, and no way for the two to hold different opinions about what an environment document
  * contains. A predicate over the record's own fields would be a second description of the document,
  * and the first field added to one and not the other is the whole of the defect.
+ *
+ * Three keys are `rendered` rather than `kept` because their values are **structures**, and the leak
+ * this predicate exists to close is not always at the top level: a `database` world's *name* is its
+ * file, `world.detail` can hold a root or the application's command line, and a boundary crossing's
+ * `subject` is the path that was refused. Keeping the block as a unit would have kept all three.
+ * `RENDERERS` is where each one's rule lives, and a key ruled `rendered` with no entry there is
+ * copied through - which is a branch `tests/denv-export.test.ts` holds, because a renderer registry
+ * with an unreachable default is a registry nothing is checking.
  */
 export function exportEnvironment(record: EnvironmentRecord): EnvExport {
   const serialized = serializeEnvironment(record);
   const document: Record<string, unknown> = {};
-  const refused: RefusedKey[] = [];
+  const log: ExportRecord = { refused: [], rendered: [] };
 
   for (const [key, value] of Object.entries(serialized)) {
     const rule = ruleFor(key);
     if (rule.decision === "refused") {
-      refused.push({ key, reason: rule.reason });
+      log.refused.push({ key, reason: rule.reason });
       continue;
     }
-    document[key] = rule.decision === "rendered" ? renderPath(value) : value;
+    if (rule.decision === "rendered") {
+      const render = RENDERERS[key];
+      document[key] = render === undefined ? value : render(value, log);
+      continue;
+    }
+    document[key] = value;
   }
 
-  return { document, refused };
+  return { document, refused: log.refused, rendered: log.rendered };
 }
 
 /** One key whose value differs between two readings of the same subject. */

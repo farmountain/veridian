@@ -349,3 +349,187 @@ describe("dENV over a run history - AC-5's denominator", () => {
     assert.deepEqual(report.unreadableEnvironments, []);
   });
 });
+
+/**
+ * The leak sweep: every world kind, exported, searched for the operator's checkout.
+ *
+ * This is the half of AC-6 that a per-key table cannot hold, and it exists because the table had a
+ * hole that no assertion was aimed at. `worldIdentity()` builds the identity block from the plan, and
+ * for **eight** of the twelve kinds the name or the detail it builds is a location - `ClusterPlan`'s
+ * own doc says `imagesPath` is *"Absolute, resolved against `appPath` on the same rule `databasePath`
+ * follows"*, and every `root` is absolute for the same reason. So a `database` world is *named* after
+ * its file, which is the same value `database_path` carries one key over and was already ruled
+ * `rendered`. Keeping the block as a unit rendered it in one slot and exported it in another - one
+ * value, two rulings, and the second is the one a reader would not think to check.
+ *
+ * The sweep is written over a **table of kinds** rather than over the kinds that were leaking when it
+ * was written, so a thirteenth block added to `worldIdentity()` is a row somebody has to add rather
+ * than a leak nobody has to notice. It asserts the **positive control** first: the raw document is
+ * searched for the checkout before the export, so a fixture that stopped carrying a path fails here
+ * instead of passing as a clean export.
+ *
+ * The `web` and `api` kinds carry a URL rather than a path, and they are in the table on purpose: a
+ * sweep that only visited the kinds known to leak would be a list of the defect rather than a rule
+ * about it, and `http://127.0.0.1:4173` must survive the walk untouched - a renderer that ate URLs
+ * would have turned the world's own address into `4173`.
+ */
+
+/** Where every fixture below claims the operator's checkout is. Absolute, with a drive letter. */
+const CHECKOUT = "D:\\all_projects\\Veridian\\examples\\shopping-cart";
+
+const WORLD_KIND_CASES: readonly {
+  readonly kind: string;
+  readonly plan: Partial<EnvironmentPlan>;
+  /** The world's own name, as the export must still carry it. */
+  readonly name: string;
+}[] = [
+  {
+    kind: "database",
+    plan: { url: null, databasePath: `${CHECKOUT}\\app\\data.db` },
+    name: "data.db",
+  },
+  {
+    kind: "cluster",
+    plan: {
+      url: null,
+      cluster: { name: "cart-dev", namespace: "cart", imagesPath: `${CHECKOUT}\\build\\images` },
+    },
+    name: "cart-dev",
+  },
+  {
+    kind: "posix",
+    plan: {
+      url: null,
+      posix: { distribution: "veridian-simulated-linux", user: "cart", root: `${CHECKOUT}\\sandbox` },
+    },
+    name: "veridian-simulated-linux",
+  },
+  {
+    kind: "os",
+    plan: {
+      url: null,
+      os: { family: "windows", system: "Windows 11 23H2", user: "cart", root: `${CHECKOUT}\\sandbox` },
+    },
+    name: "Windows 11 23H2",
+  },
+  {
+    kind: "container",
+    plan: {
+      url: null,
+      container: { runtime: "veridian-container-sim", platform: "linux", root: `${CHECKOUT}\\sandbox` },
+    },
+    name: "veridian-container-sim",
+  },
+  {
+    kind: "vscode",
+    plan: {
+      url: null,
+      vscode: {
+        host: "veridian-vscode-host",
+        apiVersion: "1.100.0",
+        activationEvent: null,
+        root: `${CHECKOUT}\\sandbox`,
+        settings: {},
+      },
+    },
+    name: "veridian-vscode-host",
+  },
+  {
+    kind: "process",
+    plan: {
+      url: null,
+      process: {
+        host: "veridian-local-process",
+        application: { command: `${CHECKOUT}\\bin\\node`, args: [`${CHECKOUT}\\cart-build.mjs`, "daemon"] },
+        root: `${CHECKOUT}\\sandbox`,
+      },
+    },
+    name: "veridian-local-process",
+  },
+  {
+    kind: "mobile",
+    plan: {
+      url: null,
+      mobile: { device: "sim-cart-device", platform: "android", root: `${CHECKOUT}\\sandbox` },
+    },
+    name: "sim-cart-device",
+  },
+  { kind: "cloud", plan: { url: null, cloud: { provider: "veridian-cloud", region: "veridian-1", account: "acct-cart", principal: "svc-cart" } }, name: "acct-cart" },
+  { kind: "data", plan: { url: null, data: { cluster: "veridian-data", nodeId: 1, host: "127.0.0.1", port: 0 } }, name: "veridian-data" },
+  { kind: "api", plan: { api: { service: "cart-api" } }, name: "cart-api" },
+  { kind: "web", plan: { url: "http://127.0.0.1:4173" }, name: "http://127.0.0.1:4173" },
+];
+
+describe("dENV - no exported world block carries the operator's checkout", () => {
+  it("covers all twelve kinds, so a thirteenth block is a row somebody has to add", () => {
+    const kinds = WORLD_KIND_CASES.map((entry) => entry.kind);
+    assert.equal(new Set(kinds).size, kinds.length, "a kind is visited twice and another once, or not at all");
+    assert.deepEqual(kinds.sort(), ["api", "cloud", "cluster", "container", "data", "database", "mobile", "os", "posix", "process", "vscode", "web"]);
+  });
+
+  it("takes the world kind from the plan, so each case exercises the block it names", () => {
+    // The cases are only a sweep if each one really produces the kind it claims. `worldIdentity()`
+    // reads the blocks in a fixed order and falls back to `url` and then `databasePath`, so a case
+    // that forgot to null its `url` would silently be a `web` world and the block it meant to test
+    // would never be reached - a fixture that passes while testing nothing, which is the defect this
+    // guard's own doc names.
+    for (const entry of WORLD_KIND_CASES) {
+      const document = serializeEnvironment(record(entry.plan));
+      const world = document["world"] as { kind?: unknown } | null;
+      assert.equal(world?.kind, entry.kind, `${entry.kind}: the fixture produced a different kind`);
+    }
+  });
+
+  for (const entry of WORLD_KIND_CASES) {
+    it(`renders the operator's prefix out of a \`${entry.kind}\` world, and keeps the name`, () => {
+      const before = serializeEnvironment(record(entry.plan));
+
+      // Step 1, the positive control - and it is asked of the **identity block**, not of the whole
+      // document. The whole document always carries the prefix, because `app_path` is the operator's
+      // checkout and is rendered in every case; a control over the document would therefore be true
+      // for all twelve and would stop telling a case that leaked from a case that never could.
+      const carried = JSON.stringify(before["world"]).includes("all_projects") &&
+        before["world"] !== null;
+
+      const { document, rendered } = exportEnvironment(record(entry.plan));
+
+      assert.equal(
+        Boolean(document["world"]),
+        true,
+        `${entry.kind}: the identity block must survive the walk, or the export lost the world`,
+      );
+      assert.equal((document["world"] as { name?: unknown }).name, entry.name);
+      assert.equal(
+        JSON.stringify(document).includes("all_projects"),
+        false,
+        `${entry.kind}: the operator's checkout reached the artifact`,
+      );
+
+      if (carried) {
+        // Every case that really carried the prefix must say so, under the document's own spelling of
+        // where it sat. A renderer that silently rewrote a value without recording it is the failure
+        // mode this list exists against.
+        assert.ok(
+          rendered.some((item) => item.path.startsWith("world.")),
+          `${entry.kind}: the prefix was dropped without being recorded: ${JSON.stringify(rendered)}`,
+        );
+      } else {
+        // And a case that carried none must not claim a rendering - the other direction, which is how
+        // a registry of renderers grows entries for things it never touched.
+        assert.deepEqual(rendered.filter((item) => item.path.startsWith("world.")), []);
+      }
+    });
+  }
+
+  it("keeps a `web` world's own address untouched, because it is an address and not a location", () => {
+    // The renderer is a path renderer, and a URL is the value that would be destroyed by applying it.
+    // `lastSegment("http://127.0.0.1:4173")` is `4173` - a world named after its port.
+    const { document, rendered } = exportEnvironment(record(WORLD_KIND_CASES.find((entry) => entry.kind === "web")?.plan ?? {}));
+    const world = document["world"] as { name?: unknown; detail?: Record<string, unknown> } | null;
+    assert.equal(world?.name, "http://127.0.0.1:4173");
+    assert.equal(world?.detail?.["address"], "http://127.0.0.1:4173");
+    // Filtered to the identity block: `app_path` is rendered in every case and is not this test's
+    // subject, which is why the assertion names the paths it is about rather than the whole list.
+    assert.deepEqual(rendered.filter((item) => item.path.startsWith("world.")), []);
+  });
+});
