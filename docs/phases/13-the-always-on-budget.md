@@ -62,7 +62,7 @@ and the two indexes that guards read.
   of that shape are recorded four times over (`db.query`, `db.rowCount`, `web.visible`, the observation
   vocabulary). `## Distribution` therefore merges into the existing
   `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` rather than becoming `docs/DISTRIBUTION.md`.
-- **The guards are green at the figures above**: `npm run gate` exits 0 at **2650** tests over **438**
+- **The guards are green at the figures above**: `npm run gate` exits 0 at **2660** tests over **441**
   suites, `npm run acceptance` prints `exit 0 - PASS` for both of its runs.
 
 ## What this phase does

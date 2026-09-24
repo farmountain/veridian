@@ -80,8 +80,8 @@ instructions file for this workspace �?do not add a second one
 > reading carries `simulated` - and nothing is emulated: no emulator, no image and no booted system
 > anywhere in the loop. It adds no step kind: the application provisions with the `run` steps the
 > second world introduced, and three of its criteria use one.
-> `npx tsc --noEmit` is silent and `node --test` reports 2650 passing tests over 438 suites -
-> Veridian's own 2558 plus the 92 the VS Code Cockpit contributes, which the root runner discovers
+> `npx tsc --noEmit` is silent and `node --test` reports 2660 passing tests over 441 suites -
+> Veridian's own 2568 plus the 92 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Five distribution routes ship - a clone, an npm package, the Cockpit (as
 > a development install and as a `.vsix`), the extension marketplaces that `.vsix` is published to,
 > and a container image - and there is still **no
