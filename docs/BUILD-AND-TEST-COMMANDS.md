@@ -272,7 +272,7 @@ need compiling. `scripts/acceptance.mjs` is `.mjs` on the same ground as the fir
 through a child process, so it has to be runnable whatever state the tree's types are in.
 
 **CI runs the same gates, on both platforms, and now the artifacts too.**
-[`.github/workflows/ci.yml`](./.github/workflows/ci.yml) has seven jobs. `gate` runs `npm run gate` on
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml) has eight jobs. `gate` runs `npm run gate` on
 `ubuntu-latest` and `windows-latest` (both resolving Node from `.nvmrc`). `demo` runs the canonical
 demo on ubuntu, asserts that `--browser none` really exits 2, and uploads `.veridian/` as an artifact.
 `browserless worlds` runs twelve of the fourteen declared demos and names the world that regressed,
@@ -299,6 +299,18 @@ check does not: the source tree *is* the program. `container image` builds the D
 requires the container to run the CLI **and** to resolve its own schemas from a browserless run, and
 `VS Code Cockpit` runs the extension's own gate and reads the packaged `.vsix` back - the root gate
 neither typechecks nor tests that tree, because the root tsconfig excludes `extension/**`.
+
+**`isolation` is the eighth, and it exists because every other job's version of it can skip.**
+`gate` runs the whole suite, including the two suites whose subject is the container substrate - but
+those tests skip with a stated reason on a machine that has no runtime, and *a skipped boundary check
+and a passed boundary check print the same green*. So this job runs three steps whose failure modes are
+all distinct from a zero exit code: `node scripts/probe-isolation.ts`, which exits 1 unless the host
+allowed an escape **and** the substrate refused it **and** the permitted write still worked; and the
+same two suites, read for `# skipped 0` rather than for a zero exit. The shape it is defending against
+is the `upload the evidence bundle` step that uploaded nothing for every green build - a check that was
+executed and did not measure what its name says. Its first run has not happened: the branch is pushed
+but no pull request is open, and this workflow triggers on `main` or on a pull request, so triggering
+it is a `workflow_dispatch` rather than a push.
 
 **Both of those last two jobs have now run, and that is why they can be cited.** They were added and
 pushed in one commit, which means they existed for a short window as exactly the thing this file

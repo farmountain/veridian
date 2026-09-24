@@ -6,7 +6,7 @@
 # emits dist/ for the npm package and for the container image, because Node 22
 # refuses to strip types under node_modules.
 #
-# Seven jobs, because they answer different questions:
+# Eight jobs, because they answer different questions:
 #   gate   - does the source still hold? Runs on both platforms that matter.
 #   demo   - does the product still do the thing it exists to do? Needs a
 #            browser, so it is separate and does not slow the gate down.
@@ -29,6 +29,13 @@
 #            programs in one repository. It also packages the extension and
 #            reads the archive back, because the `.vsix` is a third artifact no
 #            test in either tree can load: there is no VS Code test host here.
+#   isolation - can a substrate refuse what this host allows? The `gate` job
+#            runs the same suites, but on a machine with no runtime they skip
+#            with a stated reason - and a skipped boundary check and a passed
+#            one print the same green. So this is the job whose subject is the
+#            substrate itself, and it requires `# skipped 0` rather than merely
+#            a zero exit. Its predecessor in this shape is the `upload the
+#            evidence bundle` step that uploaded nothing for every green build.
 name: CI
 
 on:
