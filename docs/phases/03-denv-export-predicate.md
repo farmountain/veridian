@@ -2,11 +2,11 @@
 
 | | |
 |---|---|
-| **Status** | planned |
+| **Status** | built |
 | **Depends on** | 02 (the ELI names the rows; dENV says which of them may leave) |
-| **Source** | `docs/DIGITAL-TWIN-PLAN.md` S4 (W2) |
-| **Touches** | wherever the ELI lands (`core/evidence/eli.ts` or `core/metrics/eli.ts`); a new test |
-| **Acceptance** | AC-6 of `docs/DIGITAL-TWIN-PLAN.md` S4 |
+| **Source** | `docs/DIGITAL-TWIN-PLAN.md` S4 (W2); `docs/DIGITAL-TWIN-DESIGN.md` S8's Phase 2 |
+| **Touches** | `core/metrics/denv.ts`, `core/metrics/eli.ts` (the join), `scripts/denv-reading.mjs`, and `tests/denv-export.test.ts` |
+| **Acceptance** | AC-5 and AC-6 of `docs/DIGITAL-TWIN-PLAN.md` S4 |
 
 ## Why this phase exists
 
@@ -26,8 +26,11 @@ default rather than exported by default.
 
 ## What is already true
 
-- `core/environment/boundary.ts`'s vocabulary pairs each *declared* policy with the enforcement
-  *measured* for it, and `environment.json` writes the pair. That is the shape W2 reuses.
+- `core/environment/types.ts`'s `BOUNDARY_ENFORCEMENTS` pairs each *declared* policy with the
+  enforcement *measured* for it, and `environment.json` writes the pair. That is the shape W2 reuses.
+  This paragraph first named `core/environment/boundary.ts` for it, and there is no such file: **read
+  the vocabulary at `types.ts`, which holds `BOUNDARY_ENFORCEMENTS` and the derived
+  `BoundaryEnforcement`** - the two names were one module written twice.
 - `core/evidence/writer.ts` already has the serialization seam: `serializeEnvironment` writes a fixed
   key set, and `environmentRecord()` builds it. Anything that leaves the process already passes through
   one function, which is what makes a total predicate expressible at all.
@@ -51,6 +54,18 @@ default rather than exported by default.
 
 ## Acceptance criterion
 
+- **AC-5** -- dENV is empty across a clean reset. Read on this repository's own bundles rather than on a
+  fixture, because `.veridian/` is gitignored and holds no committed file: a unit test asserting a
+  delta over it would pass here and fail on a fresh clone, reporting the checkout rather than the code.
+  The reading is therefore `npm run reading:denv`, which calls the same `listEliEnvDeltas` the fixture
+  suite exercises. **Measured 2026-09-24** over 14 subjects and 1527 pairs: `local-api@local-api` is
+  6 runs, **15 pairs, 0 non-empty** -- AC-5's own figure, and the only subject whose reading is clean.
+  Five keys move on the other thirteen subjects, and the first draft of this bullet named three of
+  them: `boundary` (ten subjects), `app_path` (`sim-container`, `sim-mobile`, `veridian-cockpit`,
+  `veridian-mvp`), `world` (`veridian-mvp`), `valid` (`local-process`) and `browser`
+  (`shopping-cart`). Every one of those is contract drift, a published port, an operator's checkout
+  or a world that really is recorded invalid -- recorded as a change and not as a failed reset, which
+  is why the reading is scoped to one subject rather than taken across different ones.
 - **AC-6** -- the export predicate is **total** over the record: it answers for every key, and it
   refuses a named key set whose members are chosen *because* they are present in the fixture.
 - A refused value never reaches an artifact. Asserted by building a record that **does** carry a
@@ -86,8 +101,8 @@ second half to fail. A guard that cannot fail is the thing this tree has paid fo
 
 ## Context budget
 
-**Read:** `docs/DIGITAL-TWIN-PLAN.md` S4's W2 block; `core/environment/boundary.ts`;
-`core/evidence/writer.ts`.
+**Read:** `docs/DIGITAL-TWIN-PLAN.md` S4's W2 block; `core/environment/types.ts` for
+`BOUNDARY_ENFORCEMENTS` (there is no `core/environment/boundary.ts`); `core/evidence/writer.ts`.
 
 **Do not read:** the twelve `*-observation.ts` files. dENV is a decision about keys, and the per-world
 readings are phase 02's input as a projection, not this phase's subject.

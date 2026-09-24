@@ -34,6 +34,7 @@
     "build": "tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
     "smoke:dist": "node scripts/smoke-dist.mjs",
     "smoke:mcp": "node scripts/mcp-smoke.mjs",
+    "reading:denv": "node scripts/denv-reading.mjs",
     "prepare": "npm run build",
     "prepublishOnly": "npm run gate",
     "veridian": "node cli/veridian.ts",

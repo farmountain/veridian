@@ -27,6 +27,8 @@
  * be legible, which is the same shape as M1 calling an unreadable bundle a clean run.
  */
 
+import { envDelta } from "./denv.ts";
+import type { EnvDifference } from "./denv.ts";
 import { BUNDLE_FILES, bundleLayout, worldLabel } from "../evidence/index.ts";
 import type { WorldIdentity } from "../evidence/index.ts";
 import type { IoPort } from "../io.ts";
@@ -134,17 +136,37 @@ const declaredWorld = (value: unknown): Pick<WorldIdentity, "kind" | "name"> | n
  * record with no `world` all answer the same way, because they are the same fact about the bundle -
  * it does not name a world - and three different return values would be three vocabularies for it.
  */
-const worldOf = async (io: IoPort, stateDir: string, runId: string): Promise<string | null> => {
-  const path = `${bundleLayout(stateDir, runId).runDir}/${BUNDLE_FILES.environment}`;
-  const raw = await io.readTextFile(path);
+/**
+ * Where one run's environment document lives - **one expression**, so the two readers below cannot
+ * disagree about it.
+ *
+ * It is a function rather than a line repeated at two call sites because the two callers ask
+ * different questions of the same file: `worldOf` reads its `world` block and `listEliEnvDeltas`
+ * compares the whole document. A path spelled twice is a path that can be corrected once.
+ */
+const environmentPath = (stateDir: string, runId: string): string =>
+  `${bundleLayout(stateDir, runId).runDir}/${BUNDLE_FILES.environment}`;
+
+/** One run's `environment.json`, parsed - or `null` when it is absent or unparseable. */
+const readEnvironment = async (io: IoPort, stateDir: string, runId: string): Promise<unknown> => {
+  const raw = await io.readTextFile(environmentPath(stateDir, runId));
   if (raw === null) return null;
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    return JSON.parse(raw) as unknown;
   } catch {
     return null;
   }
-  const world = declaredWorld(parsed);
+};
+
+/**
+ * The world one run measured, labelled - or `null`.
+ *
+ * Reaches the document through `readEnvironment`, so a bundle whose `world` block cannot be read and
+ * a bundle the delta reader cannot parse are one fact discovered once rather than two facts each
+ * reader discovers for itself.
+ */
+const worldOf = async (io: IoPort, stateDir: string, runId: string): Promise<string | null> => {
+  const world = declaredWorld(await readEnvironment(io, stateDir, runId));
   return world === null ? null : worldLabel(world);
 };
 
@@ -176,4 +198,114 @@ export async function listEliRows(io: IoPort, stateDir: string): Promise<EliRepo
   );
 
   return { rows, groups: groupEliRows(rows), unreadable: history.unreadable };
+}
+
+/**
+ * One pair of runs of one subject, and the resource keys that did not come back between them.
+ *
+ * The run ids are carried beside the differences rather than left implicit in the pair's position,
+ * because a reader chasing a non-empty delta needs to open the two bundles that produced it - and a
+ * list index into a subject's rows is not a name they can act on.
+ */
+export interface EliEnvPair {
+  readonly before: string;
+  readonly after: string;
+  readonly differences: readonly EnvDifference[];
+}
+
+/**
+ * **dENV for one subject**: every pair of its runs, compared key by key.
+ *
+ * `pairsCompared` and `nonEmptyPairs` are both reported, and the pair is the point. *An empty delta
+ * is satisfied by a function that compares nothing*, so a reading that reported only "no differences"
+ * would be the same number for a world that came back unchanged and for a subject this reader could
+ * not open a single bundle of. A reader who wants "dENV is empty across a clean reset" has to be able
+ * to see `pairsCompared: 15` beside `nonEmptyPairs: 0` - the denominator is what makes the numerator
+ * a finding rather than an absence.
+ */
+export interface EliEnvGroup {
+  readonly subject: string;
+  /** The runs actually compared: the subject's rows whose document could be read. */
+  readonly runIds: readonly string[];
+  readonly pairs: readonly EliEnvPair[];
+  readonly pairsCompared: number;
+  readonly nonEmptyPairs: number;
+  /** Every key that moved in at least one pair, sorted - the design's "which resources differ". */
+  readonly movingKeys: readonly string[];
+}
+
+export interface EliEnvReport {
+  readonly groups: readonly EliEnvGroup[];
+  /**
+   * Runs whose `environment.json` could not be read, by run id - reported, never dropped.
+   *
+   * This is a **different** list from `EliReport.unreadable`, and conflating them would lose a
+   * distinction that matters: `unreadable` is a run whose *result* could not be parsed, so it is not
+   * a row at all, while this is a row whose world document is missing. A run in this list still
+   * contributes to its subject's denominator, so a subject that could not be compared cannot pass for
+   * a subject that came back unchanged.
+   */
+  readonly unreadableEnvironments: readonly string[];
+}
+
+/**
+ * **dENV over the runs on disk** - AC-5, read on this repository's own bundles.
+ *
+ * The grouping is `listEliRows`', not a second computation of it: the deltas are taken within the
+ * groups the join already produced, so a change to the subject rule moves both readings together.
+ * Re-deriving `\`${goalId}@${adapter}\`` here would agree with the join until the first bundle whose
+ * fields needed a rule only one of them was written with.
+ *
+ * Every pair of a subject's runs is compared rather than each run against one baseline. AC-5 states
+ * the reading as *"all fifteen of its pairs"* for a six-run subject - which is `C(6,2)` - and a
+ * baseline comparison would report five. The difference is not cosmetic: a baseline walk can report a
+ * clean delta for a set of runs that disagree with each other in ways the baseline happens not to
+ * share, and the reset property under test is exactly "they all came back the same".
+ *
+ * One consequence, stated rather than hidden: this is quadratic in a subject's run count. The largest
+ * subject in this repository's own history is 44 runs, which is 946 comparisons of a small object,
+ * and it is the price of the property. A subject that grows past that is a subject whose delta should
+ * be computed against its resources rather than pair by pair, which is a design change and not a
+ * micro-optimisation to make here.
+ */
+export async function listEliEnvDeltas(io: IoPort, stateDir: string): Promise<EliEnvReport> {
+  const report = await listEliRows(io, stateDir);
+  const documents = new Map<string, Record<string, unknown>>();
+  const unreadableEnvironments: string[] = [];
+
+  for (const row of report.rows) {
+    const parsed = await readEnvironment(io, stateDir, row.runId);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      unreadableEnvironments.push(row.runId);
+      continue;
+    }
+    documents.set(row.runId, parsed as Record<string, unknown>);
+  }
+
+  const groups = report.groups.map((group): EliEnvGroup => {
+    const runIds = group.rows.map((row) => row.runId).filter((runId) => documents.has(runId));
+    const pairs: EliEnvPair[] = [];
+    const moving = new Set<string>();
+
+    for (let index = 0; index < runIds.length; index += 1) {
+      for (let other = index + 1; other < runIds.length; other += 1) {
+        const before = documents.get(runIds[index] as string) as Record<string, unknown>;
+        const after = documents.get(runIds[other] as string) as Record<string, unknown>;
+        const differences = envDelta(before, after);
+        for (const entry of differences) moving.add(entry.key);
+        pairs.push({ before: runIds[index] as string, after: runIds[other] as string, differences });
+      }
+    }
+
+    return {
+      subject: group.subject,
+      runIds,
+      pairs,
+      pairsCompared: pairs.length,
+      nonEmptyPairs: pairs.filter((pair) => pair.differences.length > 0).length,
+      movingKeys: [...moving].sort(),
+    };
+  });
+
+  return { groups, unreadableEnvironments };
 }
