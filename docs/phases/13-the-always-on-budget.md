@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | next -- nothing blocks it, and it lowers the cost of every other phase |
+| **Status** | built -- the always-on file is cut and every figure was re-taken afterwards |
 | **Depends on** | 01 |
 | **Source** | this program's own governing rule in `docs/phases/README.md` -- *"A phase is a context budget, not a topic"* -- measured against the figures below |
 | **Touches** | `AGENTS.md`; three new `docs/*.md`; `docs/DISTRIBUTION-AND-ENVIRONMENTS.md`; `docs/phases/README.md`; `tests/phases-roster.test.ts`; `tests/observation-vocabulary.test.ts`; `tests/docs-roster.test.ts`; `.github/instructions/typescript.instructions.md` |
