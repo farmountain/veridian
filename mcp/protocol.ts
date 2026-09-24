@@ -115,14 +115,27 @@ export const MCP_SERVER_NAME = "veridian";
 /**
  * The implementation version reported in `serverInfo`.
  *
- * Deliberately **not** the package manifest's version, and the reason is a defect this repository
- * has already paid for twice: `assetsRoot()` is one level up from the module, so from the source
- * tree it is the repository root while from `dist/` it is `dist/` - and `dist/` carries no
+ * A **declared literal**, not the package manifest resolved at run time - and the reason is a defect
+ * this repository has already paid for twice: `assetsRoot()` is one level up from the module, so from
+ * the source tree it is the repository root while from `dist/` it is `dist/` - and `dist/` carries no
  * `package.json`, because the manifest travels beside it rather than inside it. A version that
- * resolves from the source tree and not from the installed package is the two-roots defect wearing
- * a new hat. This surface has never been released, and that is what it says about itself.
+ * resolves from the source tree and not from the installed package is the two-roots defect wearing a
+ * new hat. A literal has no roots at all, so it cannot resolve differently depending on where it is
+ * read from; the cost is that it must be kept in step by hand, which is why
+ * `tests/version-reconciliation.test.ts` reads both manifests and this constant and fails naming each
+ * figure rather than trusting this one.
+ *
+ * **This read `"unreleased"` until 0.6.0, and the word had outlived its fact by one release.** The
+ * comment above it said *"This surface has never been released, and that is what it says about
+ * itself"* - true when written, false the moment v0.5.0 shipped, whose own release notes open *"The
+ * engine gains a fourth way in. A Model Context Protocol surface lands beside the CLI, the CI job and
+ * the VS Code Cockpit."* Nothing read the value, so the string survived a release that falsified it.
+ * It is the same class as the plan document that kept a `deferred` row for a surface that had
+ * shipped one pass earlier, and it is the reason the guard below exists rather than a convention:
+ * *a string that describes a state is a claim about that state, and a claim no program reads is a
+ * claim that only has to look right.*
  */
-export const MCP_SERVER_VERSION = "unreleased";
+export const MCP_SERVER_VERSION = "0.6.0";
 
 /**
  * The shape every tool name has, and the reason it is stricter than the protocol requires.

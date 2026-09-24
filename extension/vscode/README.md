@@ -1,7 +1,8 @@
 # Veridian Cockpit
 
 A thin client for Veridian inside VS Code: run a sandbox validation, read the verdict, open the
-evidence it was reached from. Veridian builds twelve reproducible sandbox worlds - some real, some a
+evidence it was reached from, and show the twin - every run on disk joined into one row by subject.
+Veridian builds twelve reproducible sandbox worlds - some real, some a
 substitute for one - records which limits each world can actually enforce, and decides whether the
 software works. A world that cannot justify a verdict is reported `INCONCLUSIVE` rather than passed,
 so `PASS` is only ever earned. The coding agent stays external and never decides whether it succeeded.
@@ -30,7 +31,7 @@ estimated:
 | Tests | `node --test` | 92 tests, 0 failing |
 | Build | `npm run build` | `out/` - 7 files |
 | Compiled artifact | `npm run smoke:out` | 15 checks, exit 0 |
-| Packaged archive | `npm run package` | `veridian-cockpit-0.5.0.vsix` - 13 files, 125.09 KB |
+| Packaged archive | `npm run package` | `veridian-cockpit-0.6.0.vsix` - 13 files, 125.09 KB |
 | Archive contents | `npm run smoke:vsix` | 35 checks, exit 0 |
 | All of the above but the archive | `npm run gate` | exit 0 |
 

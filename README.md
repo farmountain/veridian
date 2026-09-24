@@ -4,7 +4,8 @@
 
 **The sandbox testing and validation layer for AI coding agents.**
 
-**v0.5.0** - twelve reproducible sandbox worlds, five distribution routes, and four ways to drive them.
+**v0.6.0** - twelve reproducible sandbox worlds, five distribution routes, and four ways to drive them,
+over a run history that is now a queryable digital twin.
 
 Coding agents are good at producing code and have an *environmental* problem: they cannot tell
 whether their code actually works. An agent saying "I believe this is fixed" is not a result.
@@ -52,8 +53,8 @@ and a `Dockerfile` that has never been built is a claim.
 git clone <this-repository-url> veridian
 cd veridian
 npm ci                    # runtime dependency: yaml. dev: typescript, @types/node.
-npm run gate              # tsc --noEmit, then the whole test suite. 2698 tests over 452 suites
-                          # (this tree's own 2606 plus the Cockpit's 92, which
+npm run gate              # tsc --noEmit, then the whole test suite. 2700 tests over 453 suites
+                          # (this tree's own 2608 plus the Cockpit's 92, which
                           # the runner discovers because it walks the tree; the extension has its own
                           # gate as well). The suite itself reports ~11s and the whole gate ~16s.
 npm run acceptance        # Veridian judged by Veridian: its own contract - goal, criteria, world -
@@ -536,6 +537,46 @@ say - a run that stopped on an invalid world, or one that carried on over it - a
 neither says nothing about it rather than printing a zero. Neither population above shows that line;
 the repository's own whole history does, where it reads `1 run(s) stopped on an invalid world, 0
 carried on`.
+
+---
+
+## The run history, as a twin
+
+A run writes a bundle, and a bundle on its own answers only questions about itself. The **run history**
+is those bundles read as one document: every run reached through a single join, keyed on the same
+subject the metrics above already compute - `<goal-id>@<adapter>`. That key is not a new invention
+here; it is the string M1 uses, and reusing it is what stops the join from answering a question the
+metrics refuse.
+
+The **ELI** is that join, in `core/metrics/eli.ts`: one row per run, grouped by subject, with the runs
+that could not be read **named** rather than dropped - because a history that silently holds fewer runs
+than the disk does is a reading that lies about its own coverage. It is reached from the Cockpit as
+**Veridian: Show the twin - every run, joined by subject**. The client re-takes the join rather than
+importing it, and that is a stated cost rather than an oversight: the extension ships `out/`,
+`icon.png` and `LICENSE` and links nothing from `core/`, because it is installed into workspaces where
+no source tree exists. The drift that admits is bounded by a guard - `extension/vscode/src/twin.test.ts`
+pins all five field spellings to the files that own them (`schemas/result.schema.json`,
+`core/metrics/metrics.ts`, `core/evidence/types.ts`), so a rename in any of them fails by name.
+
+**World identity travels in the bundle**, which is what makes the join possible across worlds rather
+than within one: the record carries the adapter, and for a simulated world the declaration
+environment the world stood in for. Two further readings are built on it, and both are **export only**:
+
+- **`dENV`** (`core/metrics/denv.ts`) is a *total* predicate over an environment record: every key is
+  `kept`, `rendered` or **`refused`**, with the refusal naming the rule that refused it. Total rather
+  than permissive, because a key that is neither kept nor refused is a key whose disclosure nobody
+  decided.
+- **`ESI`** (`core/metrics/esi.ts`, `ESI_VERSION`) is the interchange document for one subject -
+  identity plus the environment's exported form, staged at `prepare()` or not at all, so an imported
+  world cannot be observed without having been adopted first.
+
+**And the boundary is enforced somewhere, which it was not before.** `core/environment/isolation.ts`
+resolves a real substrate (`podman`, measured here at `5.7.1`) and the run applies it: the Cockpit
+demo's own output carries `environment.provision.confinement (applied=true reason=confined ...)`. The
+seam is a confinement one world adopts rather than a claim every world makes - an environment whose own
+lifecycle *is* a container it starts and resets is a different deliverable, and
+[`docs/DISTRIBUTION-AND-ENVIRONMENTS.md`](./docs/DISTRIBUTION-AND-ENVIRONMENTS.md) §5 keeps that row
+open and names the world that answers it instead.
 
 ---
 
@@ -1134,7 +1175,7 @@ the demo says so and names `npm run build` rather than quietly judging a stale c
 *a skipped check does not fail, it silently reduces coverage while reporting a green suite.*
 
 **Its expectations move with the version, so a version bump moves them.** `vscode.identity` pins
-`veridian-cockpit 0.5.0`, which is the version in the manifest the demo stages. Bumping the extension
+`veridian-cockpit 0.6.0`, which is the version in the manifest the demo stages. Bumping the extension
 means editing that expectation in the same pass; if you do not, the run will judge the artifact it
 claims to judge only by accident, and `tests/vscode-cockpit-demo.test.ts` fails naming both versions
 rather than letting it through.
@@ -1306,8 +1347,8 @@ acceptance/             Veridian judged by Veridian: `veridian-mvp.yaml` (the go
                         `environment.yaml`. `npm run acceptance` runs it TWICE - a first run that
                         passes and a second that fails is the signature of a world a run inherited
                         rather than built
-tests/                  2698 tests over 452 suites in a root `node --test` run: this tree's own
-                        2606 plus the Cockpit's 92
+tests/                  2700 tests over 453 suites in a root `node --test` run: this tree's own
+                        2608 plus the Cockpit's 92
 
 dist/                   GENERATED by `npm run build`. Never edited, never committed.
 extension/vscode/out/   GENERATED by `npm run build` inside extension/vscode. Same rule.

@@ -1,7 +1,7 @@
 {
   "name": "veridian",
-  "version": "0.5.0",
-  "description": "Veridian - the sandbox testing and validation layer for AI coding agents. Twelve reproducible sandbox worlds, explicit acceptance criteria, the safety boundary each world can really hold, and machine-verifiable evidence; the agents stay external. Ships the `veridian` CLI and the VS Code Cockpit, and the same engine is driven from CI and over a Model Context Protocol surface.",
+  "version": "0.6.0",
+  "description": "Veridian - the sandbox testing and validation layer for AI coding agents. Twelve reproducible sandbox worlds, explicit acceptance criteria, the safety boundary each world can really hold, and machine-verifiable evidence; the agents stay external. Ships the `veridian` CLI and the VS Code Cockpit, and the same engine is driven from CI and over a Model Context Protocol surface. Each run's world identity travels in its evidence bundle, so the run history joins into a queryable twin - one row per run, keyed on the same subject the consistency metric already uses.",
   "type": "module",
   "license": "BSD-2-Clause",
   "repository": {
