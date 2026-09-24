@@ -29,6 +29,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { isAbsolute } from "node:path";
 
 import { confineChild, type ConfinementResult } from "./environment/confinement.ts";
+import { isolateProcess, type IsolationResult } from "./environment/isolation.ts";
 
 /**
  * What a caller asks the runner to *confine* the child to.
@@ -47,6 +48,27 @@ export interface ProcessConfinement {
   readonly allowChildProcess?: boolean;
 }
 
+/**
+ * What a caller asks the runner to *isolate* the child in.
+ *
+ * A second field rather than a widening of {@link ProcessConfinement}, because the two ask different
+ * questions and a world may want either. `confinement` says *run this on the host with an allowlist*
+ * and `isolation` says *run this somewhere the host is not*; the first is cheaper and cannot hold the
+ * network, the second can sever it. A world that named the wrong one would get a real boundary it did
+ * not need or a missing one it did.
+ *
+ * The roots are spelled the same way as the allowance's on purpose. A caller that had to translate its
+ * own paths into container paths would be the second implementation of a rule
+ * {@link ./environment/isolation.ts} already holds, and the two would disagree wherever a backslash was
+ * involved - which is measured rather than imagined.
+ */
+export interface ProcessIsolation {
+  readonly readRoots: readonly string[];
+  readonly writeRoots: readonly string[];
+  /** Sever the network inside the substrate. The one dimension `--permission` cannot hold. */
+  readonly denyNetwork?: boolean;
+}
+
 export interface ProcessRequest {
   readonly command: string;
   readonly args: readonly string[];
@@ -60,6 +82,20 @@ export interface ProcessRequest {
    * because a program that edits the source tree is the actor rather than the application under test.
    */
   readonly confinement?: ProcessConfinement;
+  /**
+   * Ask the runner to isolate the child in a substrate, which is the only way a world can hold a
+   * boundary the host's own permission model cannot.
+   *
+   * **Both fields may be set, and the order they are tried is stated rather than incidental.** The
+   * substrate is tried first, because it is the stronger boundary; when it is applied the host child
+   * does not exist at all, so a permission allowance would be a decision about a process that was
+   * never started. When it is **not** applied the allowance is applied instead, and the result carries
+   * both readings - so a world on a machine with no container runtime gets the boundary it can have
+   * rather than no boundary at all, and its own report can say which of the two it got.
+   *
+   * Omitted means the caller asked for no substrate, and the child is started as declared.
+   */
+  readonly isolation?: ProcessIsolation;
   /** Called for each stdout chunk as it arrives, for readiness patterns. */
   readonly onStdout?: (chunk: string) => void;
   readonly onStderr?: (chunk: string) => void;
@@ -78,6 +114,14 @@ export interface ProcessResult {
    * they answer a boundary question - `runToCompletion` has already consumed it.
    */
   readonly confinement?: ConfinementResult | null;
+  /**
+   * What the runner did with the substrate request, or `null` when there was none.
+   *
+   * Carried on the result for the same reason `confinement` is: the finite-child worlds have no
+   * handle left by the time they answer a boundary question. This is the field a reader needs to
+   * answer *was this run isolated, and by what* from the bundle alone.
+   */
+  readonly isolation?: IsolationResult | null;
 }
 
 export interface ProcessHandle {
@@ -90,6 +134,11 @@ export interface ProcessHandle {
    * either way, so a world that reports `unsupported` can quote why instead of guessing.
    */
   readonly confinement?: ConfinementResult | null;
+  /**
+   * The substrate the child was started in, known synchronously for the same reason `confinement` is:
+   * the decision is made before the process exists. `null` means the request asked for no substrate.
+   */
+  readonly isolation?: IsolationResult | null;
   /** Everything written to stdout so far, concatenated. */
   output(): string;
   /** Everything written to stderr so far. */
@@ -158,14 +207,43 @@ export const nodeProcessRunner: ProcessRunner = {
     };
 
     /**
+     * The substrate decision, made before the confinement decision because it settles it.
+     *
+     * Asked first for the reason the interface states: when a container really starts the child there
+     * is no host process to confine, so asking `confineChild` anyway would produce a *second* reading
+     * about a process that does not exist - and the cheaper mistake, reporting `enforced` from the
+     * allowance while the container held the world, is the overclaim this ordering removes.
+     */
+    const isolation: IsolationResult | null =
+      request.isolation === undefined
+        ? null
+        : isolateProcess({
+            command: request.command,
+            args: request.args,
+            cwd: request.cwd,
+            readRoots: request.isolation.readRoots,
+            writeRoots: request.isolation.writeRoots,
+            env: request.env ?? {},
+            ...(request.isolation.denyNetwork === undefined
+              ? {}
+              : { denyNetwork: request.isolation.denyNetwork }),
+          });
+
+    const substrateHolds = isolation !== null && isolation.applied;
+
+    /**
      * The decision is made **before the process exists**, so it is available synchronously on the
      * handle - which is what lets a world answer a boundary question at any point in its life rather
      * than only after a child has exited. `null` means the request asked for no allowance, and that is
      * a different statement from "the allowance was refused": the first is the caller's choice, the
      * second is a `reason` from `confineChild`.
+     *
+     * Skipped when the substrate holds, and a request that asked for both is therefore reported as
+     * having been held by the substrate with `confinement: null` - which is a fact about this run
+     * rather than a missing reading, because `isolation.reason` names the substrate that took it.
      */
     const confinement: ConfinementResult | null =
-      request.confinement === undefined
+      substrateHolds || request.confinement === undefined
         ? null
         : confineChild({
             command: request.command,
@@ -177,18 +255,29 @@ export const nodeProcessRunner: ProcessRunner = {
               : { allowChildProcess: request.confinement.allowChildProcess }),
           });
 
-    // The vector that is actually started. When the allowance was applied this is the Node
-    // interpreter with the permission flags in front, and the command replacement is not cosmetic:
-    // `wantsShell` below hands a *bare* name to `cmd.exe`, which joins the file and its arguments
-    // into one string and would damage an `--allow-fs-read=D:\a path\...` argument.
-    const command = confinement === null ? request.command : confinement.command;
-    const args = confinement === null ? [...request.args] : [...confinement.args];
+    // The vector that is actually started, from whichever mechanism answered. When the allowance was
+    // applied this is the Node interpreter with the permission flags in front, and the command
+    // replacement is not cosmetic: `wantsShell` below hands a *bare* name to `cmd.exe`, which joins the
+    // file and its arguments into one string and would damage an `--allow-fs-read=D:\a path\...`
+    // argument. A substrate's command is the runtime's own name, which `wantsShell` resolves through
+    // the shell on Windows exactly as it resolves `npm` - and its arguments carry host paths with
+    // spaces, which is why the runtime is named without a directory.
+    const command = substrateHolds
+      ? isolation.command
+      : confinement === null
+        ? request.command
+        : confinement.command;
+    const args = substrateHolds
+      ? [...isolation.args]
+      : confinement === null
+        ? [...request.args]
+        : [...confinement.args];
 
-    /** One place every result is created, so no shape can omit the reading. */
+    /** One place every result is created, so no shape can omit either reading. */
     const finish = (value: ProcessResult): void => {
       if (settled) return;
       settled = true;
-      const stamped: ProcessResult = { ...value, confinement };
+      const stamped: ProcessResult = { ...value, confinement, isolation };
       result = stamped;
       resolveExited(stamped);
       notify();
@@ -197,7 +286,14 @@ export const nodeProcessRunner: ProcessRunner = {
     try {
       child = spawn(command, args, {
         cwd: request.cwd,
-        env: { ...process.env, ...(request.env ?? {}) },
+        // The spawned process's environment, which is **two** things at once under a substrate: the
+        // runtime's own environment - from which `--env=NAME` reads each value - and, when no substrate
+        // holds, the environment the child itself is given. The port translated the path-valued entries
+        // against the mounts that port decided, so a variable naming the sandbox names the mount.
+        env: {
+          ...process.env,
+          ...(substrateHolds ? isolation.env : (request.env ?? {})),
+        },
         // Windows resolves `npm` and other `.cmd` shims only through a shell. Veridian is a Windows
         // -first tool, so this is not optional for a bare name; it costs nothing on POSIX. An absolute
         // path is deliberately excluded - see `wantsShell`.
@@ -211,6 +307,7 @@ export const nodeProcessRunner: ProcessRunner = {
         pid: null,
         exited,
         confinement,
+        isolation,
         output: () => stdoutChunks.join(""),
         error: () => stderrChunks.join(""),
         waitForPattern: async () => false,
@@ -247,6 +344,7 @@ export const nodeProcessRunner: ProcessRunner = {
       pid: spawned.pid ?? null,
       exited,
       confinement,
+      isolation,
       output: () => stdoutChunks.join(""),
       error: () => stderrChunks.join(""),
       async waitForPattern(pattern: string, timeoutMs: number): Promise<boolean> {

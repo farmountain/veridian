@@ -74,8 +74,8 @@ export interface Observation {
  * that was measured and found to have no mechanism on this runtime is a different fact from one
  * whose mechanism exists and was not applied, and a report that merged them would let a future
  * reader believe either. It is how `network` is reported by a world whose subject is a program rather
- * than a front door - `local-process` - because no mechanism exists to hold it there: `node
- * --allow-net` does not exist, measured rather than assumed (`bad option: --allow-net=127.0.0.1`,
+ * than a front door - `local-process` - because for a long time no mechanism existed to hold it there:
+ * `node --allow-net` does not exist, measured rather than assumed (`bad option: --allow-net=127.0.0.1`,
  * exit 9), while `--permission` on the same runtime is accepted (exit 0). It is deliberately not how
  * `local-web` and `local-api` report theirs, and those two answers are not a disagreement. A world
  * whose every request passes a guarded front door - Playwright's route guard, the contract's own
@@ -87,6 +87,16 @@ export interface Observation {
  * theirs passes answer `enforced` and `local-process` answers `unenforceable`. The other nine answer
  * `unsupported`. It was measured rather than reasoned: `tests/boundary-roster.test.ts` derives the
  * split from the adapters themselves, so a thirteenth world cannot join either side in silence.
+ *
+ * **`local-process`'s answer is now conditional, and the condition is a reading.** When a document
+ * declares `process.isolation` and this machine can supply a substrate, a container severs the network
+ * by a flag the interpreter has no equivalent for, so the same world answers `enforced` - and it does
+ * so only after the runner reported that a substrate applied, never on the strength of the document.
+ * The word still means what it meant: the child cannot open a socket. What changed is that the reason
+ * it cannot is a runtime that really passed `--network=none` rather than an absence of any mechanism
+ * at all. `unenforceable` remains the answer for every run where no substrate held, which is why the
+ * world names both words and why the guard above permits that only alongside the read that decides
+ * between them.
  */
 export const BOUNDARY_ENFORCEMENTS = [
   "enforced",
@@ -127,6 +137,20 @@ export interface BoundaryReport {
   readonly network: BoundaryEnforcement;
   readonly filesystemWrite: BoundaryEnforcement;
   readonly crossings: readonly BoundaryCrossing[];
+  /**
+   * Which isolation substrate held this world, or `null` when none did.
+   *
+   * **A reading, not a declaration.** It is the runtime's own name (`podman`, `docker`) only when the
+   * runner actually started the application inside it - so `null` means the child ran as an ordinary
+   * process on this machine, which is the same answer whether the world asked for a substrate and this
+   * machine could not supply one or the world never asked. A reader who needs those two told apart has
+   * the world's own log, which records the reason the port gave; a reader who needs to know *whether
+   * the run was isolated at all* has this field alone, and that is the question it exists to answer.
+   *
+   * Optional because a substrate is a capability a world may not have and not a method it may forget:
+   * absence is written to the bundle as `null` rather than omitted, so the record holds one shape.
+   */
+  readonly substrate?: string | null;
 }
 
 /** The resolved boundary. `EnvironmentPlan.boundary`, so the adapter can see the budget it holds to. */
@@ -843,6 +867,20 @@ export interface ProcessPlan {
   readonly application: { readonly command: string; readonly args: readonly string[] } | null;
   /** Absolute, resolved against `appPath` on the same rule `databasePath` follows. */
   readonly root: string;
+  /**
+   * Whether this world's application runs in a container substrate instead of on this machine.
+   *
+   * **Opt-in, and the default is off on purpose.** `PLAN.md` §42's rule is *"do not prematurely force
+   * every environment into containers"*, and a world that ran in a substrate by default would make
+   * every existing contract's readings about a different machine than the one the operator is sitting
+   * at - which is not a boundary improvement but a change of subject. Declared, it buys the one
+   * boundary the host's permission model cannot hold: `network` stops being `unenforceable`.
+   *
+   * `null` means the world asked for no substrate, which is a different statement from a substrate it
+   * asked for and did not get - the first is the document's choice and the second is a `reason` the
+   * adapter reports.
+   */
+  readonly isolation: { readonly denyNetwork: boolean } | null;
 }
 
 /**

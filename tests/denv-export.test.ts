@@ -442,6 +442,7 @@ const WORLD_KIND_CASES: readonly {
         host: "veridian-local-process",
         application: { command: `${CHECKOUT}\\bin\\node`, args: [`${CHECKOUT}\\cart-build.mjs`, "daemon"] },
         root: `${CHECKOUT}\\sandbox`,
+        isolation: null,
       },
     },
     name: "veridian-local-process",

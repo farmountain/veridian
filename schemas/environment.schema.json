@@ -136,7 +136,15 @@
           "required": ["command"],
           "additionalProperties": false
         },
-        "root": { "type": "string", "minLength": 1, "description": "The directory on this machine the world's own files live in. A sandbox rather than the application directory, on the same reasoning as `posix.root`: this world creates and deletes files to observe what the application writes, and pointing it at the application would delete the code under test on the first iteration. It is required rather than defaulted because every path a criterion names is resolved inside it, so a defaulted root would judge a contract against whichever directory the process happened to be started in." }
+        "root": { "type": "string", "minLength": 1, "description": "The directory on this machine the world's own files live in. A sandbox rather than the application directory, on the same reasoning as `posix.root`: this world creates and deletes files to observe what the application writes, and pointing it at the application would delete the code under test on the first iteration. It is required rather than defaulted because every path a criterion names is resolved inside it, so a defaulted root would judge a contract against whichever directory the process happened to be started in." },
+        "isolation": {
+          "type": ["object", "null"],
+          "description": "Whether this world's application runs in a container substrate rather than directly on this machine. Absent or null is the ordinary case and means no substrate was requested - which the adapter reports as a fact about the document rather than as a missing reading, so 'this world asked for no boundary' stays distinguishable from 'a boundary was asked for and refused'. Present means the substrate is the boundary: the application is started by `podman` or `docker` with a read-only root filesystem, the sandbox mounted at a fixed in-container path, and the network severed by default. It is opt-in because forcing every world into a substrate would change the subject of every existing contract's readings, and the block exists because the two boundaries this world cannot otherwise hold - no network, and no write outside the sandbox - are exactly the two a container holds.",
+          "properties": {
+            "denyNetwork": { "type": "boolean", "default": true, "description": "Whether the substrate passes `--network=none`. Defaults to true, and the default is the block's whole purpose: a world that asked for a substrate and kept the runtime's default network has bought the filesystem half of the boundary while paying the full cost of a container, which is a trade no document asks for by accident. Set it false only to state that egress is part of what is under test." }
+          },
+          "additionalProperties": false
+        }
       },
       "required": ["host", "root"],
       "additionalProperties": false

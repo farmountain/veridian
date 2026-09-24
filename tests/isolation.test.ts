@@ -15,10 +15,12 @@
  */
 
 import assert from "node:assert/strict";
+import { delimiter } from "node:path";
 import { describe, it } from "node:test";
 
 import {
   CONTAINER_ROOT,
+  containerEnv,
   containerPathOf,
   isolateProcess,
   isolationCapability,
@@ -170,5 +172,58 @@ describe("the isolation port against this machine", () => {
     assert.ok(result.reason.length > 0);
     assert.deepEqual(result.mounts, [], "a refusal mounts nothing, so nothing downstream can read a mount " +
       "plan out of a run that never happened");
+  });
+});
+
+describe("the environment a containerised child is given", () => {
+  const mounts = mountsOf(["/host/app"], ["/host/sandbox"]);
+
+  it("rewrites the value that names a mounted directory, so the child can open what it was told about", () => {
+    const env = containerEnv(mounts, {
+      VERIDIAN_PROCESS_ROOT: "/host/sandbox",
+      VERIDIAN_PROCESS_APP: "/host/app",
+    });
+    assert.deepEqual(
+      env,
+      { VERIDIAN_PROCESS_ROOT: `${CONTAINER_ROOT}/rw0`, VERIDIAN_PROCESS_APP: `${CONTAINER_ROOT}/ro0` },
+      "a host path inside a container names a directory the container does not have, so a world that " +
+        "passed this one through would watch its program write into nowhere and report that the " +
+        "application produced no output - an environment failure wearing the application's clothes",
+    );
+  });
+
+  it("leaves a value that is not a path alone, because a flag is not a directory", () => {
+    const env = containerEnv(mounts, { NODE_ENV: "production", MODE: "1", CODEC: "utf8" });
+    assert.deepEqual(
+      env,
+      { NODE_ENV: "production", MODE: "1", CODEC: "utf8" },
+      "`containerPathOf` resolves a relative value against the current directory, so calling it on " +
+        "every value would let a mode be rewritten into a directory name whenever the process " +
+        "happened to be started inside a mount",
+    );
+  });
+
+  it("leaves a path under no mount alone, rather than inventing a container path for it", () => {
+    const env = containerEnv(mounts, { HOME: "/somewhere/else" });
+    assert.deepEqual(
+      env,
+      { HOME: "/somewhere/else" },
+      "the child cannot reach that directory either way, and rewriting it to a path the container " +
+        "does not mount would be a value this port made up",
+    );
+  });
+
+  it("does not rewrite a path list, because a list is not under a mount", () => {
+    const listed = `${mounts[0]?.hostPath ?? ""}${delimiter}${mounts[1]?.hostPath ?? ""}`;
+    const env = containerEnv(mounts, { PATH: listed });
+    assert.equal(
+      env["PATH"],
+      listed,
+      "both entries name mounted directories and neither is *under* a mount, because the whole-segment " +
+        "rule separates on the path separator and not on the list separator - so the one variable whose " +
+        "corruption would be total is the one that survives. **This is a boundary of the rule rather " +
+        "than a feature**: a value that is exactly a mounted directory is rewritten, and a list of such " +
+        "directories is not, and a world that needed its lists translated would have to say so",
+    );
   });
 });

@@ -258,6 +258,67 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  isolation:
+    name: isolation substrate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # The substrate this checks is whatever runtime answers a *server* version - `podman` first,
+      # then `docker` - and this runner has Docker preinstalled with its daemon up, which is why the
+      # job needs no setup step of its own. It is stated rather than assumed because the assertion
+      # below turns on it: a runner image that stopped shipping a runtime has to fail here loudly
+      # rather than skip its way to a green tick.
+      - name: the substrate must be able to refuse what this host allows
+        run: node scripts/probe-isolation.ts
+      # Not the whole gate - the `gate` job runs that on both platforms - but the two suites whose
+      # subject is this seam, plus the refusal that matters most: `# skipped 0`. These tests skip with
+      # a stated reason when no runtime is present, which is honest on a developer's laptop and is a
+      # **defect on a runner that is supposed to have one**, because a skipped boundary check and a
+      # passed boundary check print the same green. The original of this shape in this repository is
+      # the `upload the evidence bundle` step that uploaded nothing for every green build, and the
+      # countermeasure is the same: assert that the thing ran, not that nothing failed.
+      - name: the seam's own suites must run, not skip
+        run: |
+          set +e
+          node --test tests/process-isolation.test.ts tests/isolation.test.ts > isolation.log 2>&1
+          code=$?
+          set -e
+          cat isolation.log
+          grep -E '^# (tests|pass|fail|skipped)' isolation.log
+          if [ "$code" -ne 0 ]; then
+            echo "the isolation suites exited $code"
+            exit 1
+          fi
+          if ! grep -q '^# skipped 0$' isolation.log; then
+            echo "a substrate test skipped on a runner that has a runtime, so the boundary was not measured"
+            exit 1
+          fi
+      # And the world's own reading, end to end: a `local-process` world with the substrate declared
+      # reports which runtime held it and calls its network boundary enforced - which is the one
+      # answer that world has never been able to give on any machine, because `node --allow-net` does
+      # not exist. The `gate` job runs this suite too, off a device where the substrate tests skip;
+      # this step is what turns the skip into a measurement.
+      - name: the world must report the substrate that held it
+        run: |
+          set +e
+          node --test tests/local-process-environment.test.ts > world.log 2>&1
+          code=$?
+          set -e
+          cat world.log
+          grep -E '^# (tests|pass|fail|skipped)' world.log
+          if [ "$code" -ne 0 ]; then
+            exit 1
+          fi
+          if ! grep -q '^# skipped 0$' world.log; then
+            echo "the substrate reading skipped, so the world's network answer was not measured either"
+            exit 1
+          fi
+
   dist:
     name: distribution
     runs-on: ubuntu-latest

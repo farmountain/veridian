@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import { LocalProcessEnvironment, PROCESS_ENV, PROCESS_ENV_NAMES } from "../adapters/local-process/local-process-environment.ts";
 import type { Clock, Logger } from "../core/clarification/index.ts";
 import { confineChild, confinementCapability, type ConfinementResult } from "../core/environment/confinement.ts";
+import { isolateProcess, isolationCapability, type IsolationResult } from "../core/environment/isolation.ts";
 import type { EnvironmentPlan } from "../core/environment/types.ts";
 import { memoryIo } from "../core/io.ts";
 import type { MemoryIo } from "../core/io.ts";
@@ -68,6 +69,17 @@ class FakeHandle implements ProcessHandle {
    * the reading is about, or the reading is untestable.
    */
   readonly confinement: ConfinementResult | null;
+  /**
+   * What the fake runner did about the substrate, on the same rule as `confinement` above.
+   *
+   * The real runner resolves the port **before** the process exists and stamps the reading onto the
+   * handle, so a world can answer *which substrate held this run* without waiting for a child to exit.
+   * A double that omitted this would leave `handle.isolation` undefined and the world would report no
+   * substrate for a request it had just handed over - and, worse, it would make the pair of assertions
+   * about the network arm indistinguishable, because "no substrate" and "a substrate that did not
+   * apply" would both read as `undefined`.
+   */
+  readonly isolation: IsolationResult | null;
   stopped = false;
   exitDelivered = false;
   #settle!: (result: ProcessResult) => void;
@@ -77,11 +89,13 @@ class FakeHandle implements ProcessHandle {
     request: ProcessRequest,
     program: FakeProgram,
     confinement: ConfinementResult | null,
+    isolation: IsolationResult | null,
   ) {
     this.pid = pid;
     this.request = request;
     this.program = program;
     this.confinement = confinement;
+    this.isolation = isolation;
     this.exited = new Promise<ProcessResult>((resolve) => {
       this.#settle = resolve;
     });
@@ -187,13 +201,38 @@ function fakeProcesses(programs: Programs = {}, deliverExitsOnRun = true): FakeP
                 ? {}
                 : { allowChildProcess: request.confinement.allowChildProcess }),
             });
-      // The vector that is really started, which is the confined one when there was an allowance.
-      const command = confinement === null ? request.command : confinement.command;
+      // The substrate, also resolved by the real port - so this double does not decide *whether* a
+      // substrate exists, it asks the same question the product asks and reports the same answer. On a
+      // machine with no runtime the answer is a refusal with a reason, which is exactly the reading the
+      // suite's negative half needs.
+      const isolation =
+        request.isolation === undefined
+          ? null
+          : isolateProcess({
+              command: request.command,
+              args: request.args,
+              cwd: request.cwd,
+              readRoots: request.isolation.readRoots,
+              writeRoots: request.isolation.writeRoots,
+              env: request.env ?? {},
+              ...(request.isolation.denyNetwork === undefined
+                ? {}
+                : { denyNetwork: request.isolation.denyNetwork }),
+            });
+      // The vector that is really started: the substrate's when one applied, otherwise the confined
+      // one when there was an allowance. Precedence is the product's, so the double has to model it
+      // rather than pick the first non-null.
+      const holds = isolation !== null && isolation.applied;
+      const command = holds
+        ? isolation.command
+        : confinement === null
+          ? request.command
+          : confinement.command;
       const index = counts.get(command) ?? 0;
       counts.set(command, index + 1);
       const entry = programFor(programs, command);
       const program = Array.isArray(entry) ? (entry[Math.min(index, entry.length - 1)] ?? {}) : entry;
-      const handle = new FakeHandle((nextPid += 1), request, program, confinement);
+      const handle = new FakeHandle((nextPid += 1), request, program, confinement, isolation);
       launched.push(handle);
       requests.push(request);
       return handle;
@@ -251,6 +290,7 @@ function plan(overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan {
       host: "veridian-local-process",
       application: { command: "node", args: ["provision.mjs"] },
       root: "sandbox",
+      isolation: null,
     },
     data: null,
     mobile: null,
@@ -337,7 +377,7 @@ describe("local-process: the lifecycle it really performs", () => {
   });
 
   it("refuses a process block with no root, because a world with no directory is not a world", async () => {
-    const { subject } = harness(plan({ process: { host: "veridian-local-process", application: null, root: "" } }));
+    const { subject } = harness(plan({ process: { host: "veridian-local-process", application: null, root: "", isolation: null } }));
     await assert.rejects(
       () => subject.create(),
       (error: unknown) => {
@@ -368,7 +408,7 @@ describe("local-process: the lifecycle it really performs", () => {
   });
 
   it("starts no program when the contract declares none, and still reports itself healthy", async () => {
-    const { subject, processes, logger } = harness(plan({ process: { host: "veridian-local-process", application: null, root: "sandbox" } }));
+    const { subject, processes, logger } = harness(plan({ process: { host: "veridian-local-process", application: null, root: "sandbox", isolation: null } }));
 
     const { id } = await subject.create();
     await subject.start(id);
@@ -493,7 +533,7 @@ describe("local-process: the boundary report is derived from what the world did"
 
   it("does not report enforcement for a command the confinement model cannot reach", async () => {
     const { subject, processes } = harness(
-      plan({ process: { host: "veridian-local-process", application: { command: "cmd", args: ["/c", "build.bat"] }, root: "sandbox" } }),
+      plan({ process: { host: "veridian-local-process", application: { command: "cmd", args: ["/c", "build.bat"] }, root: "sandbox", isolation: null } }),
       // `cmd` is not Node, so the runner refuses the allowance by name and `cmd` is what really starts.
       { cmd: { stdout: READY } },
     );
@@ -524,3 +564,107 @@ describe("local-process: the boundary report is derived from what the world did"
     assert.equal(allowed.subject.boundaries().network, "not-requested");
   });
 });
+
+describe("local-process: the substrate it can be held in", () => {
+  /**
+   * The plan, with the substrate requested. A separate helper so the default plan stays unchanged.
+   *
+   * The harness is built with a program registered under the substrate's **own** name, because the
+   * vector the runner starts is the runtime rather than the interpreter - and a double with no program
+   * for that name reads an empty stdout and fails the readiness wait. That is not a convenience of the
+   * test: it is the double having to model the substitution the product makes, and it is the same
+   * reason `programFor` looks a confined command up by its basename.
+   */
+  function isolated(denyNetwork = true): Harness {
+    const environment = plan({
+      process: {
+        host: "veridian-local-process",
+        application: { command: "node", args: ["provision.mjs"] },
+        root: "sandbox",
+        isolation: { denyNetwork },
+      },
+    });
+    const substrate = isolationCapability().substrate;
+    return substrate === ""
+      ? harness(environment)
+      : harness(environment, { node: { stdout: READY }, [substrate]: { stdout: READY } });
+  }
+
+  it("reports no substrate and an unenforceable network before any child exists", async () => {
+    // The invariant that holds whatever this machine has installed, and the one a reading- rather than
+    // declaration-based answer needs to be worth anything: a document that *asked* for a substrate is
+    // not a run that was held in one. Before the first spawn there is nothing to read, so the report
+    // has to say `null` and `unenforceable` - the document's request is not a boundary.
+    const { subject } = isolated();
+    await subject.create();
+    assert.deepEqual(
+      [subject.boundaries().substrate, subject.boundaries().network],
+      [null, "unenforceable"],
+      "a substrate is reported only when the runner watched one apply; anything else is the world " +
+        "reading its own document back to itself, which is the defect this vocabulary exists to remove",
+    );
+  });
+
+  it("offers the substrate the same allowance it offers the interpreter", async () => {
+    const { subject, processes } = isolated();
+    const { id } = await subject.create();
+    await subject.start(id);
+    const [request] = processes.requests;
+    assert.notEqual(request, undefined, "the world has to have asked the runner for something");
+    assert.notEqual(
+      request?.isolation,
+      undefined,
+      "a document that declares `process.isolation` has to reach the runner as a request, or the " +
+        "substrate is a field nothing consults",
+    );
+    assert.deepEqual(
+      request?.isolation?.readRoots,
+      request?.confinement?.readRoots,
+      "the same allowances the interpreter was offered, handed to the substrate as well - a substrate " +
+        "given a different allowance would be a second and quieter policy",
+    );
+    assert.deepEqual(request?.isolation?.writeRoots, request?.confinement?.writeRoots);
+    assert.equal(request?.isolation?.denyNetwork, true, "the default the block means");
+  });
+
+  it(
+    "reports the substrate the runner applied, and calls the network enforced only then",
+    { skip: isolationCapability().available ? false : `no substrate on this machine: ${isolationCapability().reason}` },
+    async () => {
+      const { subject } = isolated();
+      const { id } = await subject.create();
+      await subject.start(id);
+      const report = subject.boundaries();
+      assert.equal(
+        report.substrate,
+        isolationCapability().substrate,
+        "the name in the report is the runtime's own, read off the handle rather than off the document",
+      );
+      assert.equal(
+        report.network,
+        "enforced",
+        "a substrate that really passed `--network=none` is the one mechanism this world has ever " +
+          "had for the network boundary, so the answer has to change when it applies",
+      );
+      assert.equal(report.filesystemWrite, "enforced");
+    },
+  );
+
+  it("keeps `unenforceable` when the document declines the severing, because the flag decides it", async () => {
+    // `denyNetwork: false` is a document saying egress is part of what is under test, and the
+    // substrate then severs nothing. The filesystem boundary still holds, so the two arms have to
+    // disagree - which is the case that makes this pair of fields a reading rather than a copy of one
+    // sentence. It holds on a machine with no runtime as well, where the substrate declined for its
+    // own reason: either way the network answer must not be `enforced`.
+    const { subject } = isolated(false);
+    const { id } = await subject.create();
+    await subject.start(id);
+    assert.equal(
+      subject.boundaries().network,
+      "unenforceable",
+      "the block was declared and the flag was declined, and a report of `enforced` here would be " +
+        "the document's own sentence handed back as a measurement",
+    );
+  });
+});
+

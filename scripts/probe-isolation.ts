@@ -125,3 +125,21 @@ console.log(`  both halves read, which is what makes either one mean something: 
 
 rmSync(root, { recursive: true, force: true });
 rmSync(escaped, { force: true });
+
+/**
+ * The exit code, and the reason this script has one.
+ *
+ * A probe that printed its reading and exited 0 either way would be a check CI could not use: the
+ * job would go green on a machine with no runtime, on a runtime that had stopped, and on a boundary
+ * that was reported but not held - which is precisely the class of defect this whole seam exists to
+ * remove. So the verdict is the exit status, and both halves have to be read: a substrate that
+ * refused the escape *and* broke the permitted work is a broken world rather than a boundary, and
+ * `changed` alone would call it a success.
+ */
+if (!changed || !permitted) {
+  console.error(
+    "\nthe boundary was not observed: either nothing held it, or holding it broke the write it was " +
+      "supposed to permit. Both halves have to be true, and the readings above say which failed.",
+  );
+  process.exitCode = 1;
+}

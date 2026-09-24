@@ -29,8 +29,19 @@ import { BOUNDARY_ENFORCEMENTS, type BoundaryEnforcement } from "../core/environ
  * What separates them is that
  * a world whose every request passes a guarded route (`local-web`'s Playwright guard, `local-api`'s
  * own request guard) really can refuse one and so reports `enforced`; `local-process`'s subject is a
- * program rather than a front door, so it has only the child's own socket to reason about and reports
- * `unenforceable`, because `node --allow-net` does not exist on this runtime.
+ * program rather than a front door, so it has no door of its own - and where it once had *no* answer
+ * but `unenforceable`, because `node --allow-net` does not exist on this runtime, it now has two,
+ * because a container runtime can hold the boundary the interpreter cannot.
+ *
+ * **A world's answer is allowed to be two words when the choice between them is a reading it took.**
+ * That is the shape `local-process` acquired when it adopted the isolation substrate, and it is the
+ * shape this file had to learn to tell apart from a report that simply declares two claims. The
+ * difference is mechanical rather than stylistic: `enforced` **and** `unenforceable` in one arm is a
+ * collapse of the answer into a contradiction when both are literals, and is one answer selected from
+ * a mechanism when the arm consults what the mechanism reported. So the two-word case is now permitted
+ * only alongside a read of `#isolation`, which is the same discipline `DERIVES` already applies to the
+ * *filesystem* arm - and it is applied here rather than relaxed, because the alternative was a guard
+ * that would have refused the corrected code and accepted the incorrect one.
  *
  * **`confines` used to be derived from a call to `confineChild`, and that derivation went stale the
  * moment the mechanism moved.** W1 put the application of an allowance in `core/process.ts`, so the
@@ -208,6 +219,18 @@ const NAMING_UNENFORCEABLE = ROWS.filter((row) => wordsIn(row.networkArm).includ
 const NAMING_ENFORCED = ROWS.filter((row) => wordsIn(row.networkArm).includes("enforced"))
   .map((row) => row.name)
   .sort();
+/**
+ * The worlds whose network answer is *chosen* from a mechanism they read, rather than declared.
+ *
+ * Derived from the arm itself, on the same rule `DERIVES` applies to the filesystem half: a world that
+ * reports what a substrate did has to have read what the substrate said. `#isolation` is the reading
+ * - the runner's own answer, held on the world after the spawn - so an arm that names one and consults
+ * the other is making one claim selected from a measurement, and an arm that names two without
+ * consulting anything is making two claims at once.
+ */
+const CONDITIONAL_NETWORK = ROWS.filter((row) => row.networkArm.includes("#isolation"))
+  .map((row) => row.name)
+  .sort();
 
 describe("the boundary vocabulary's claim about which world answers which way", () => {
   it("walks every file that declares an adapter, so a world cannot escape the split unnamed", () => {
@@ -304,16 +327,34 @@ describe("the boundary vocabulary's claim about which world answers which way", 
     assert.deepEqual(NAMING_UNENFORCEABLE, ["local-process"]);
   });
 
-  it("names `enforced` in exactly the two worlds whose every request passes a guarded front door", () => {
-    assert.deepEqual(NAMING_ENFORCED, ["local-api", "local-web"]);
+  it("names `enforced` in the two worlds with a guarded front door and the one that can hold a substrate", () => {
+    // The third world is new, and it arrived with the isolation substrate rather than with a door: a
+    // container severs the network by a flag the interpreter has no equivalent for, so a world whose
+    // subject is a program can now answer `enforced` **when it read that one held**. Naming it here
+    // rather than loosening the assertion is the point - the set is still exact, and a fourth world
+    // arriving in it has to come and say why.
+    assert.deepEqual(NAMING_ENFORCED, ["local-api", "local-process", "local-web"]);
+    assert.deepEqual(
+      CONDITIONAL_NETWORK,
+      ["local-process"],
+      "exactly the world that can answer either way has to be reading the mechanism that decides",
+    );
   });
 
-  it("never lets one world answer both ways, so the three-way split cannot collapse to two", () => {
+  it("never lets one world answer both ways unless the choice between them is a reading it took", () => {
+    // The rule this holds is narrower than it first read, and the narrowing is the correction rather
+    // than an exemption. Two enforcement literals in one arm is a report that is two claims at once -
+    // which is why the original test existed and why it was written as a flat refusal. But a world
+    // that *selected* its answer from a mechanism reading is making one claim, and the flat refusal
+    // would have called that a contradiction while letting a genuine one through as long as only one
+    // word was spelled. So the question is now the one that actually matters: **what decided?**
     for (const row of ROWS) {
       const words = wordsIn(row.networkArm);
+      const both = words.includes("enforced") && words.includes("unenforceable");
       assert.ok(
-        !(words.includes("enforced") && words.includes("unenforceable")),
-        `${row.name} names both \`enforced\` and \`unenforceable\`, so its answer is two claims at once`,
+        !both || row.networkArm.includes("#isolation"),
+        `${row.name} names both \`enforced\` and \`unenforceable\` without reading the mechanism that ` +
+          "would decide between them, so its answer is two claims at once",
       );
     }
   });

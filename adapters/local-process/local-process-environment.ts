@@ -69,6 +69,7 @@ import { decodeStep } from "../../core/acceptance/plan.ts";
 import type { StepKind } from "../../core/acceptance/steps.ts";
 import type { Clock, Logger } from "../../core/clarification/types.ts";
 import { type ConfinementResult } from "../../core/environment/confinement.ts";
+import type { IsolationResult } from "../../core/environment/isolation.ts";
 import type {
   ProcessCommandRecord,
   ProcessCommandState,
@@ -218,6 +219,7 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
    * two reads it would report `enforced` for a child that was started unconfined.
    */
   #confinement: ConfinementResult | null = null;
+  #isolation: IsolationResult | null = null;
 
   constructor(plan: EnvironmentPlan, options: LocalProcessEnvironmentOptions) {
     this.#plan = plan;
@@ -692,9 +694,25 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
    * therefore starts as declared, exactly as it did before this seam existed.
    */
   boundaries(): BoundaryReport {
+    // The substrate, when one held the child. Read back off the same spawn `#confinement` came from,
+    // so the two mechanisms cannot disagree about which one ran: a world that reported an enforced
+    // network boundary *and* no substrate would be claiming a flag that does not exist.
+    const held = this.#isolation;
+    const substrate = held?.applied === true ? held.substrate : null;
+    // Severed is a separate question from held, and it is the one this field is about. A substrate
+    // that applied with the runtime's default network holds a filesystem boundary and no network one,
+    // so reporting `enforced` here would be the declaration-as-enforcement defect this file's own
+    // header warns about - in the one place the language made it easy to commit.
+    const severed = held?.applied === true && held.denyNetwork;
     return {
-      network: this.#plan.boundary.network === "allow" ? "not-requested" : "unenforceable",
-      filesystemWrite: this.#confinement?.applied === true ? "enforced" : "unsupported",
+      network: severed
+        ? "enforced"
+        : this.#plan.boundary.network === "allow"
+          ? "not-requested"
+          : "unenforceable",
+      filesystemWrite:
+        substrate !== null || this.#confinement?.applied === true ? "enforced" : "unsupported",
+      substrate,
       crossings: [],
     };
   }
@@ -937,6 +955,18 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
         readRoots: [this.#plan.appPath, hostRoot],
         writeRoots: [hostRoot],
       },
+      // The substrate is requested only when the document asked for one, and the same allowances are
+      // offered to it as to the interpreter: the two mechanisms hold the same boundary by different
+      // means, and a substrate given a different allowance would be a second, quieter policy.
+      ...(block.isolation === null
+        ? {}
+        : {
+            isolation: {
+              readRoots: [this.#plan.appPath, hostRoot],
+              writeRoots: [hostRoot],
+              denyNetwork: block.isolation.denyNetwork,
+            },
+          }),
       // Output is read back through `handle.output()`, which is the single source for the text; these
       // callbacks exist so a long run is visible while it is happening rather than only in the bundle.
       onStdout: (chunk) => this.#logger.debug("app.stdout", { chunk: chunk.trimEnd() }),
@@ -946,6 +976,8 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
     // available synchronously and is a reading of something that happened.
     const confinement = handle.confinement ?? null;
     this.#confinement = confinement;
+    const isolation = handle.isolation ?? null;
+    this.#isolation = isolation;
     this.#logger.info("environment.start", {
       command: application.command,
       args: application.args,
@@ -959,6 +991,12 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
       // could otherwise disagree about whether this world confined the program it started.
       confined: confinement?.applied === true,
       confinement: confinement === null ? "no allowance was requested" : confinement.reason,
+      // Which mechanism held it, or why the one that was asked for did not. Both are recorded even
+      // when the other is `null`, because "the document asked for no substrate" and "a substrate was
+      // asked for and this machine could not supply one" are different runs and the reading is where
+      // they are told apart - `environment.json` records only whether one held.
+      isolated: isolation?.applied === true,
+      isolation: isolation === null ? "the document asked for no substrate" : isolation.reason,
     });
     this.#child = handle;
     this.#exit = null;

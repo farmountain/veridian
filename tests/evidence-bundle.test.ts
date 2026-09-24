@@ -87,6 +87,37 @@ const boundary: BoundaryReport = {
 
 const environment: EnvironmentRecord = environmentRecord(plan, null, [], true, boundary);
 
+/**
+ * The substrate is written to the bundle, and *always* written - so the question "was this run held
+ * in a container" is answerable from `environment.json` alone.
+ *
+ * Both halves are asserted because either one alone is compatible with a defect. Writing the name
+ * proves a substrate can be recorded; writing `null` when there was none is what stops a reader from
+ * answering the question out of the `enforcement` fields instead - and those two fields cannot answer
+ * it, because an interpreter on the host and a container both report `filesystemWrite: enforced`.
+ */
+describe("environment.json records the substrate that held the world", () => {
+  it("writes `null` when no substrate held it, rather than omitting the key", () => {
+    assert.equal(
+      "substrate" in environment.boundary,
+      true,
+      "an omitted key invites a reader to infer the answer, and the inference available here - " +
+        "`filesystemWrite: enforced` therefore a container - is wrong for every world that confines a " +
+        "child with an interpreter instead",
+    );
+    assert.equal(environment.boundary.substrate, null);
+  });
+
+  it("writes the runtime's own name when one did", () => {
+    const held = environmentRecord(plan, null, [], true, { ...boundary, substrate: "podman" });
+    assert.equal(held.boundary.substrate, "podman");
+    // The rest of the record is unchanged, so this is an added reading rather than a replaced one and
+    // a reader of the boundary arms loses nothing by its arrival.
+    assert.deepEqual(held.boundary.network, environment.boundary.network);
+    assert.deepEqual(held.boundary.crossings, environment.boundary.crossings);
+  });
+});
+
 const outcome = (overrides: Partial<RunOutcome> = {}): RunOutcome => {
   const criteria = overrides.criteria ?? [criterion()];
   // From the same value the returned outcome carries, so the guards cannot describe a different run

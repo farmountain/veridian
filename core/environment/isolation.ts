@@ -44,7 +44,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, resolve, sep } from "node:path";
+import { delimiter, isAbsolute, join, resolve, sep } from "node:path";
 
 /**
  * The container path each allowance is mounted at.
@@ -101,6 +101,20 @@ export interface IsolationRequest {
    * reason its own evidence did not name.
    */
   readonly denyNetwork?: boolean;
+  /**
+   * The environment the child is to be given, in **host** spelling.
+   *
+   * Stated here, and separate from the environment the runtime process itself is started with, because
+   * a container does **not** inherit the environment of the process that started it: `podman run`
+   * passes through only what `--env` names. A caller that set the variable on the spawn and stopped
+   * there would hand the container nothing, and the program would read `undefined` for the one value
+   * it is told where its sandbox is - measured here, by a child that failed with
+   * `ERR_INVALID_ARG_TYPE: The "path" argument must be of type string ... Received undefined`.
+   *
+   * Values are carried as **names** to the runtime (`--env=NAME`), never as `NAME=value` on the command
+   * line, so a value that is a credential cannot be read out of the process table on any machine.
+   */
+  readonly env?: Readonly<Record<string, string>>;
 }
 
 /** The vector to start, and whether it is isolated. `reason` is stated either way. */
@@ -112,6 +126,25 @@ export interface IsolationResult {
   readonly reason: string;
   /** Which substrate held it, or `null` when none did. The field the bundle records. */
   readonly substrate: string | null;
+  /**
+   * Whether the network was really severed, as opposed to merely declared.
+   *
+   * A reading rather than a copy of the request: it is `true` only when the flag was passed to a
+   * substrate that applied. A world that reported `network: enforced` on the strength of its own
+   * document would be doing exactly what this file exists to prevent - reading a declaration as an
+   * enforcement - and the two differ the moment a document sets `denyNetwork: false` or the machine
+   * has no substrate to pass it to.
+   */
+  readonly denyNetwork: boolean;
+  /**
+   * The environment the container was told to give the child, already translated to container paths.
+   *
+   * Returned rather than left to the caller to recompute, because the mounts are decided in here and a
+   * caller wanting the same translation would have to derive them a second time and could disagree.
+   * The runtime reads each value from **its own** environment, so a caller applies this map to the
+   * spawned process rather than adding it to the vector.
+   */
+  readonly env: Readonly<Record<string, string>>;
   /** What was mounted where. Empty when nothing was applied. */
   readonly mounts: readonly IsolationMount[];
 }
@@ -214,6 +247,45 @@ function findRuntime(): { readonly name: string; readonly version: string } | { 
     failures.push(`${candidate}: ${first}`);
   }
   return { reason: failures.join("; ") };
+}
+
+/**
+ * The runtime's own executable, so that starting it never needs a shell.
+ *
+ * ## Why this is not a convenience
+ *
+ * `core/process.ts` hands a **bare** command name to `cmd.exe` on Windows, because that is the only
+ * way `npm` and every other `.cmd` shim resolves - and it refuses to do so for an absolute path, on a
+ * rule that was paid for once already. The substrate's command is the runtime's name, which is bare,
+ * so without this the entire container vector would be joined into one string by `cmd.exe` **without
+ * quoting** and then re-split by it. Two of those arguments cannot survive that:
+ *
+ * - `--volume=<host path>:<container path>:ro` when the host path contains a space, which on this
+ *   machine it does - `C:\Users\...\AppData\Local\Temp\...` is fine and `C:\Program Files\...` is not;
+ * - `-e <payload>`, whose parentheses are `cmd.exe` metacharacters, and which is exactly how a
+ *   program file is handed to the image's interpreter.
+ *
+ * Neither was observed, because the probe measures the runtime through `spawnSync` and never through
+ * the runner - so this is a hazard rather than a defect found in the wild, and stating it as the
+ * former is the point. A path that `CreateProcess` can start directly is returned (`.exe`/`.com` on
+ * Windows, the plain name elsewhere); a shim that only a shell can resolve is **not** returned,
+ * because the bare name already works and a shell is not something this vector can be run under.
+ */
+function locate(candidate: string): string {
+  const direct = process.platform === "win32" ? [".exe", ".com"] : [""];
+  const dirs = (process.env["PATH"] ?? "").split(delimiter);
+  for (const dir of dirs) {
+    if (dir === "") continue;
+    for (const ext of direct) {
+      const full = join(dir, `${candidate}${ext}`);
+      try {
+        if (existsSync(full)) return full;
+      } catch {
+        // An unreadable `PATH` entry is not a finding about the runtime; the next one is tried.
+      }
+    }
+  }
+  return candidate;
 }
 
 function measure(): IsolationCapability {
@@ -359,6 +431,49 @@ export function containerPathOf(mounts: readonly IsolationMount[], hostPath: str
   return rest === "" ? best.containerPath : `${best.containerPath}/${rest.split(/[\\/]+/u).join("/")}`;
 }
 
+/**
+ * Rewrite the environment a containerised child is given, so its path-valued entries name the mounts.
+ *
+ * ## Why this belongs here rather than in each world
+ *
+ * A world tells its application where its own files are through the environment - `local-process`
+ * passes the sandbox root and the application directory that way, and every criterion's `run` step
+ * carries them. Those values are host paths, and a host path inside a container names a directory the
+ * container does not have. So a world that adopted the substrate without this would hand its program
+ * `C:\...\sandbox` and watch it write into nowhere, and it would report that the application failed to
+ * produce its output - an environment failure wearing the application's clothes.
+ *
+ * The world *could* have done this translation itself, since it knows which of its own names carry
+ * paths. It should not: the mounts are the substrate's business, and a world that had to re-derive
+ * them to describe itself would be a world that has to know how it is being held. The runner knows,
+ * so the runner rewrites.
+ *
+ * ## What decides a rewrite
+ *
+ * A value is rewritten when it is **absolute** and lies **under a mount** - the same two questions
+ * {@link containerPathOf} answers, asked before it is called. Both halves are load-bearing:
+ *
+ * - *absolute* is what keeps a flag from being rewritten. `production`, `1`, `utf8` are values, not
+ *   paths, and a `containerPathOf` call on one would resolve it against the current directory and
+ *   could land inside a mount by accident - rewriting a mode into a directory name;
+ * - *under a mount* is what leaves everything else alone. A `PATH` on Windows is absolute by
+ *   `path.isAbsolute` and is a list, and it is not under any mount, so it survives intact. Nothing
+ *   here claims this is a general solution for path lists: it claims that a single path-valued
+ *   variable naming a directory the container can see must name the container's spelling of it, and
+ *   that is exactly the class of value this rewrites.
+ */
+export function containerEnv(
+  mounts: readonly IsolationMount[],
+  env: Readonly<Record<string, string>>,
+): Record<string, string> {
+  const rewritten: Record<string, string> = {};
+  for (const [name, value] of Object.entries(env)) {
+    const translated = isAbsolute(value) ? containerPathOf(mounts, value) : null;
+    rewritten[name] = translated ?? value;
+  }
+  return rewritten;
+}
+
 /** The basename of a command, without a trailing `.exe`, lowercased - so `NODE.EXE` is `node`. */
 function interpreterOf(command: string): string {
   const base = command.replace(/\\/g, "/").split("/").pop() ?? command;
@@ -394,6 +509,8 @@ export function isolateProcess(request: IsolationRequest): IsolationResult {
     args: request.args,
     reason: "not isolated",
     substrate: null,
+    denyNetwork: false,
+    env: { ...(request.env ?? {}) },
     mounts: [],
   };
   const now = isolationCapability();
@@ -442,11 +559,16 @@ export function isolateProcess(request: IsolationRequest): IsolationResult {
   // world reported an enforced network boundary would be the overclaim this file exists to remove.
   if (request.denyNetwork === true) args.push("--network=none");
   for (const mount of mounts) args.push(`--volume=${mount.hostPath}:${mount.containerPath}:${mount.mode}`);
+  // The names only. `--env=NAME` takes the value from the runtime's own environment, so a secret stays
+  // out of the process table - and a container inherits nothing by default, which is the defect this
+  // loop repairs rather than an optimisation.
+  const environment = containerEnv(mounts, request.env ?? {});
+  for (const name of Object.keys(environment)) args.push(`--env=${name}`);
   args.push(now.image, program, ...translated);
 
   return {
     applied: true,
-    command: now.substrate,
+    command: locate(now.substrate),
     args,
     reason:
       `isolated by ${now.substrate} ${now.version} in ${now.image} with ` +
@@ -455,6 +577,8 @@ export function isolateProcess(request: IsolationRequest): IsolationResult {
       (request.denyNetwork === true ? " and the network severed" : " and the network left as the runtime defaults it") +
       (isInterpreter ? "; the interpreter is the image's own" : ""),
     substrate: now.substrate,
+    denyNetwork: request.denyNetwork === true,
+    env: environment,
     mounts,
   };
 }

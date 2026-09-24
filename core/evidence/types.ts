@@ -61,6 +61,15 @@ export interface BoundaryRecord {
     readonly enforcement: BoundaryEnforcement;
   };
   /**
+   * Which isolation substrate held this world, or `null` when none did.
+   *
+   * Always present, even when it is `null`, because the question *was this run isolated* has to be
+   * answerable from the bundle alone and an omitted key invites a reader to answer it from the
+   * `enforcement` fields instead - which can say a filesystem boundary was enforced by an interpreter
+   * on the host and cannot say that a container held either one.
+   */
+  readonly substrate: string | null;
+  /**
    * Every request the boundary refused, in the order it refused them.
    *
    * Empty means nothing was refused - which is *not* the same as a boundary that held. The reader

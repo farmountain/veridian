@@ -612,6 +612,7 @@ export function environmentRecord(
         policy: plan.boundary.filesystemWrite,
         enforcement: boundary.filesystemWrite,
       },
+      substrate: boundary.substrate ?? null,
       crossings: boundary.crossings.map((entry) => ({ ...entry })),
     },
     transitions: transitions.map((entry) => ({

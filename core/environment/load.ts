@@ -566,7 +566,43 @@ function readProcess(raw: unknown, appPath: string): ProcessPlan | null {
     host,
     application: readApplication(raw["application"]),
     root: resolveSibling({ dir: appPath, path: "", text: "" }, root),
+    isolation: readProcessIsolation(raw["isolation"]),
   };
+}
+
+/**
+ * Whether this world's application runs in a substrate, or `null` when the document asked for none.
+ *
+ * Absent is the ordinary case and means *no substrate was requested*, which the adapter reports as a
+ * fact about the document rather than as a missing reading. Present-but-not-an-object is refused for
+ * the reason every block in this file refuses it: a declaration nobody can read is a document the
+ * operator believes they wrote.
+ *
+ * `denyNetwork` defaults to `true` when the block is present, and the default is the point of the
+ * block. A world that asked for a substrate and kept the runtime's default network has bought the
+ * filesystem half of the boundary while paying the full cost of a container, which is a trade no
+ * document asks for by accident - so severing is what the block means unless it says otherwise.
+ */
+function readProcessIsolation(raw: unknown): { readonly denyNetwork: boolean } | null {
+  if (raw === undefined || raw === null) return null;
+  if (!isPlainObject(raw)) {
+    throw defect(
+      "$.process.isolation",
+      "process.isolation must be an object or null. Present means this world's application runs in a " +
+        "container substrate; absent or null means it runs on this machine. A declaration nobody can " +
+        "read is a document the operator believes they wrote and the runner never saw.",
+    );
+  }
+  const denyNetwork = raw["denyNetwork"];
+  if (denyNetwork !== undefined && typeof denyNetwork !== "boolean") {
+    throw defect(
+      "$.process.isolation.denyNetwork",
+      "denyNetwork must be true or false. It is not a label - it is the flag that decides whether the " +
+        "substrate passes `--network=none`, so a value the loader guessed at would be a boundary the " +
+        "run reported and did not hold.",
+    );
+  }
+  return { denyNetwork: denyNetwork ?? true };
 }
 
 /**
