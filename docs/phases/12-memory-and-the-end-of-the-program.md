@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **blocked here** -- three of its four criteria are met and held by `tests/memory-port.test.ts` and `tests/phase-anchors.test.ts`; the receipt half is not, and the measurement is in the section below |
+| **Status** | **blocked here** -- three of its four criteria are met and held by `tests/memory-port.test.ts` and `tests/phase-anchors.test.ts`; the receipt half is false of an observation history that cannot be rewritten, and the route that would have satisfied it is now measured rather than assumed |
 | **Depends on** | 09 (the memory rules are stated in the same documents the sweep repairs) |
 | **Source** | `docs/GAP-CLOSURE-DESIGN.md` S7 (W7); `AGENTS.md`'s Memory section; `.github/skills/hipcortex-memory/SKILL.md` |
 | **Touches** | `core/memory/**`; `tests/memory-port.test.ts`; `tests/phase-anchors.test.ts`; the memory section of `AGENTS.md` |
@@ -189,23 +189,64 @@ written into a memory record as durable fact. The attribution is the **message's
 the two calls, the verbatim string, the third tool that answered, and nothing else.
 
 The consequence is stated rather than routed around: the observations taken during this program were
-filed with `add_memory`, which makes them **claims rather than receipts**, and this criterion cannot be
-satisfied until `open_intent` answers. A refusal or an unavailability is reported, never skipped and
-never renamed - which is this phase's own fourth item read the other way.
+filed with `add_memory`, which makes them **claims rather than receipts**.
+
+### And that section's closing claim is now refuted, by measuring the same operation with a second instrument
+
+The paragraph that stood here ended *"this criterion cannot be satisfied until `open_intent` answers"*.
+**The operation answers.** It was re-observed over HTTP rather than through the MCP wrapper, on the
+reasoning `AGENTS.md` already records twice over - *a negative result from one tool is a hypothesis, not
+a finding*, and *the microscope can hide the specimen*:
+
+```
+curl.exe -s -X POST http://127.0.0.1:3030/intent/open \
+  -H "Content-Type: application/json" --data-binary @intent.json
+
+health       200
+intent-open  200   {"intent_id":"e558a672-4880-4594-a541-4daaf17f8965","ok":true}
+```
+
+`mcp_hipcortex_accept_receipt` - a **different** wrapper, and not one that reported itself disabled -
+then accepted this pass's own gate reading against that intent and answered `{"ok": true}`. So the
+intent/receipt path is reachable and working on the substrate, and what reports itself unavailable is
+one MCP tool, not the mechanism behind it.
+
+**This pass's environment observation is therefore a receipt rather than a claim.** The observation is
+the command, its exit code and its counts, and the receipt is the reading - not a summary of it.
+
+**What the correction does not do is satisfy the criterion, and that is the part worth being exact
+about.** The criterion quantifies over observations *taken during this program*, and the earlier ones
+were filed with `add_memory`. That is a fact about a history, and no later measurement rewrites it: the
+records exist and they are claims. Filing a receipt for a reading this session did not take would be
+inventing an observation to satisfy a criterion, which is the one repair this repository forbids more
+firmly than the defect it would conceal. So the status stays `blocked here` - for a reason that is now
+*understood* rather than mysterious, and with the durable half done: the route is measured, the next
+observation goes through it, and a fresh session reads the difference rather than re-deriving it.
+
+**A criterion satisfied only by a belief about a tool is a criterion that should have asked the
+substrate.** That is the generalisable half, and it is why this stayed a `blocked here` row rather than
+a silently-passed one: `open_intent`'s availability was never the question - *can an observation be
+filed as a receipt* was, and one HTTP request answered it.
 
 ### Criterion 1 is met
 
 The decision is filed durably: the backlog was split into thirteen phase files, and the split, the
 source documents and the exit condition are recorded as one record whose `target` stands alone. **A
-fresh session can name the next phase from `docs/phases/README.md` and the memory alone**: phase 11,
-depending on 01 and 09, both `built`.
+fresh session can name the next phase from `docs/phases/README.md` and the memory alone**, and the
+alignment probe was re-run rather than quoted: the index now answers **phase 07, depending on 06** - not
+the phase 11 it answered when this paragraph was written - and the same index carries a *What is still
+open, in one place* table naming 07, 08, 12 and the one obligation `DISTRIBUTION-AND-ENVIRONMENTS.md`
+holds. *The probe is the phase's real subject, so it is the one paragraph here that has to be re-run
+rather than corrected when it rots.*
 
 ### What this phase therefore does not claim
 
-Not "the program is closed". Three phases remain open and one of them is this one: 07 is `blocked here`
-on a substrate this machine does not have, 08 is `gated by 07`, and 11 is `next`. The exit condition is
-**aligned, not delivered** - and a program that reported twelve `built` phases over this tree would be
-the defect this phase was written to prevent.
+Not "the program is closed". **Two** phases remain open and one of them is this one: 07 is `blocked here`
+on a substrate this machine does not have, and 08 is `gated by 07`. Phase 11, which this paragraph
+counted as open when it was written, has since closed - it is `built`, its fourteen headings each name a
+command that was run, and the still-open work now has one address in this directory's index. The exit
+condition is **aligned, not delivered** - and a program that reported twelve `built` phases over this tree
+would be the defect this phase was written to prevent.
 
 ## Guards that must still pass
 
