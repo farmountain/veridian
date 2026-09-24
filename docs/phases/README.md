@@ -17,7 +17,7 @@ five files above.
 
 | # | Phase | What it delivers | Status | Depends on |
 |---|-------|------------------|--------|------------|
-| 01 | [Land the working tree](./01-land-the-working-tree.md) | The instrument repairs and world identity reach a commit, with the counts re-measured | **in flight** | -- |
+| 01 | [Land the working tree](./01-land-the-working-tree.md) | The instrument repairs and world identity reach a commit, with the counts re-measured | **built** | -- |
 | 02 | [The ELI join](./02-the-eli-join.md) | One row per run, joined from the bundles already on disk | next | 01 |
 | 03 | [dENV and the export predicate](./03-denv-export-predicate.md) | A total predicate over the record, with a known-present control | planned | 02 |
 | 04 | [The ESI interchange document](./04-the-esi-interchange.md) | Export only: identity plus dENV, byte-stable | planned | 03 |
