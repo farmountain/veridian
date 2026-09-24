@@ -5,11 +5,13 @@ import { nodeIo } from "../core/io.ts";
 
 /**
  * Every `demo:*` script `package.json` declares must be named in the code blocks of `README.md` and
- * `AGENTS.md`.
+ * `docs/BUILD-AND-TEST-COMMANDS.md`.
  *
  * This is the guard the repository calls for under "a roster in prose and a roster in a registry are
  * two lists of the same thing, and only one of them is executable" - and it was written because the
- * drift was already here. `AGENTS.md`'s `Running things:` block listed eleven of the thirteen
+ * drift was already here. The `Running things:` block - `AGENTS.md`'s at the time, and
+ * `docs/BUILD-AND-TEST-COMMANDS.md`'s now that the always-on file is a budget rather than a library -
+ * listed eleven of the thirteen
  * declared scripts and silently omitted **two**: `demo:vscode` and `demo:data` were declared,
  * shipped and documented in `README.md`, and named nowhere in the block a reader consults to learn
  * what can be run. Nothing failed, because a list of names in a document is read by nothing that
@@ -24,8 +26,8 @@ import { nodeIo } from "../core/io.ts";
  * passed over exactly the drift that prompted the file.
  *
  * **It requires both command blocks to name every declared demo, and tolerates exactly one named
- * exemption in `README.md`.** `AGENTS.md` is the hand-off to the next agent and its block is the
- * operational roster, so a script missing from it is the defect. `README.md`'s quickstart block omits
+ * exemption in `README.md`.** `docs/BUILD-AND-TEST-COMMANDS.md` is where the operational roster lives
+ * now, and it is the hand-off to the next agent, so a script missing from it is the defect. `README.md`'s quickstart block omits
  * `demo:no-browser` because that script demonstrates a refusal rather than a pass and is introduced
  * in its own paragraph further down instead - so requiring an identical set of both documents would
  * be requiring a document to say something it means not to say. Draining that into a filter with no
@@ -143,17 +145,17 @@ function demosInWorkflow(body: string): readonly string[] {
 
 const manifest = await repo.readTextFile("package.json");
 const readme = await repo.readTextFile("README.md");
-const agents = await repo.readTextFile("AGENTS.md");
+const commandDoc = await repo.readTextFile("docs/BUILD-AND-TEST-COMMANDS.md");
 const workflow = await repo.readTextFile(".github/workflows/ci.yml");
 
 assert.ok(manifest !== null, "package.json could not be read");
 assert.ok(readme !== null, "README.md could not be read");
-assert.ok(agents !== null, "AGENTS.md could not be read");
+assert.ok(commandDoc !== null, "docs/BUILD-AND-TEST-COMMANDS.md could not be read");
 assert.ok(workflow !== null, ".github/workflows/ci.yml could not be read");
 
 const declared = declaredDemoScripts(manifest);
 const inReadme = commandsIn(readme);
-const inAgents = commandsIn(agents);
+const inCommandDoc = commandsIn(commandDoc);
 const inWorkflow = demosInWorkflow(workflow);
 
 /** The shape both acceptance routes are named with: the bare name, or a `:`-suffixed sibling. */
@@ -241,17 +243,18 @@ describe("the demo rosters name the scripts that exist", () => {
     }
   });
 
-  it("names every declared demo in AGENTS.md's command block", () => {
+  it("names every declared demo in docs/BUILD-AND-TEST-COMMANDS.md's command block", () => {
     assert.deepEqual(
-      declared.filter((name) => !inAgents.includes(name)),
+      declared.filter((name) => !inCommandDoc.includes(name)),
       [],
-      "AGENTS.md's `Running things:` block no longer names every declared demo - the script is " +
-        "declared and shipped, and the document a reader consults does not say it exists",
+      "docs/BUILD-AND-TEST-COMMANDS.md's `Running things:` block no longer names every declared " +
+        "demo - the script is declared and shipped, and the document a reader consults does not " +
+        "say it exists",
     );
   });
 
   it("names no demo the manifest does not declare", () => {
-    const invented = [...inReadme, ...inAgents]
+    const invented = [...inReadme, ...inCommandDoc]
       .filter((name) => name === "demo" || name.startsWith("demo:"))
       .filter((name) => !declared.includes(name))
       .sort();
@@ -358,7 +361,7 @@ describe("the self-acceptance routes are reachable from every place that names t
         source,
         null,
         `the \`${route.name}\` script drives ${route.driver}, which does not exist - so the command ` +
-          "README.md and AGENTS.md hand a reader fails at its first step",
+          "README.md and docs/BUILD-AND-TEST-COMMANDS.md hand a reader fails at its first step",
       );
     }
   });
@@ -375,11 +378,11 @@ describe("the self-acceptance routes are reachable from every place that names t
     }
   });
 
-  it("names every route in AGENTS.md's command block", () => {
+  it("names every route in docs/BUILD-AND-TEST-COMMANDS.md's command block", () => {
     for (const route of acceptanceScripts) {
       assert.ok(
-        inAgents.includes(route.name),
-        `AGENTS.md's \`Running things:\` block never names \`npm run ${route.name}\`, so the ` +
+        inCommandDoc.includes(route.name),
+        `docs/BUILD-AND-TEST-COMMANDS.md's \`Running things:\` block never names \`npm run ${route.name}\`, so the ` +
           "hand-off to the next agent does not carry a contract that judges this repository with " +
           "its own product",
       );

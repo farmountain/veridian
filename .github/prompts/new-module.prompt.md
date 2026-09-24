@@ -13,7 +13,7 @@ Add the module described below to this repository, matching existing conventions
 
 <!--
 PREREQUISITE GUARD — do not skip.
-Veridian is greenfield: the target layout is agreed (AGENTS.md → Layout) but no manifest and
+Veridian is greenfield: the target layout is agreed (`docs/LAYOUT.md`) but no manifest and
 no source exist yet. If there is still no manifest, there is no convention to match — anything
 you generate will be superseded by the first real commit. In that case: STOP. Do not create the
 module. Report the gap instead, and propose the smallest scaffolding that would make it possible.
@@ -37,7 +37,7 @@ Building it is not a scope judgement call — it is the one thing this project h
 2. Read `docs/PLAN.md` for the authoritative design of the area you are touching.
 3. Query memory for prior decisions on this area (see `.github/skills/hipcortex-memory`).
    A past reversal here is the highest-value thing you can find; do not re-litigate it silently.
-4. Read `AGENTS.md` → Layout to find the directory this module belongs in. The agreed homes are
+4. Read `docs/LAYOUT.md` to find the directory this module belongs in. The agreed homes are
    `core/{goal,acceptance,execution,validation,environment,evidence,run}/`, `adapters/local-web/`,
    `validators/playwright/`, `schemas/`, `extension/vscode/`, and `examples/shopping-cart/`.
    If the module fits none of them, that mismatch is a finding — report it before coding.

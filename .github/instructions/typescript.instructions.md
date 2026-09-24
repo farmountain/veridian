@@ -15,7 +15,8 @@ duplicate each other, so read that first and treat this as the language-level de
 > running program. There is a **second** copy - `npm run build` compiles `dist/` - and it exists only
 > because `node_modules` refuses type-stripping (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), which
 > is what makes an installed package possible at all. `dist/` is generated, never edited, never
-> committed, and never the way you run the code. See `AGENTS.md` → `## Distribution`.
+> committed, and never the way you run the code. See `AGENTS.md` → `## Distribution` and the rest of
+> the reasoning in `docs/DISTRIBUTION-AND-ENVIRONMENTS.md`.
 
 ## What the compiler enforces — do not fight it
 
@@ -65,7 +66,7 @@ report will show it, it is ASCII.
 
 **Comments explain why, and this repository's comments are load-bearing.** A non-obvious decision
 carries the defect that produced it, because the next reader's alternative is to "simplify" it back
-into the bug. See `AGENTS.md` → `## Rules this build has paid for` for the register to write in. Do
+into the bug. See `docs/RULES-PAID-FOR.md` for the register to write in. Do
 not restate what the code plainly says; do state the condition that must hold, the failure mode you
 are preventing, and the alternative you rejected.
 

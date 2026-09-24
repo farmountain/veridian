@@ -1651,3 +1651,132 @@ constant renames, and a duplicate - each firing by name and each restored byte f
 34 tests were falsified three ways in the same pass. *A green suite is evidence that nothing has broken
 yet; the evidence that a rule is held is what happens when it is broken on purpose.*
 
+
+---
+
+## The distribution route, as shipped
+
+> Moved verbatim out of `AGENTS.md` so that the always-on instruction file stays a budget rather
+> than a library. Nothing here was rewritten in transit; each entry keeps the measurement that
+> made it a rule.
+
+
+**Three routes ship: a clone, a package, and the Cockpit.** This section used to say the shipped
+model was a clone and the registry path was declined. That reversal is recorded rather than quietly
+dropped, because the reasons it was declined were correct and are now the reasons the build exists.
+The third route is in `extension/vscode/`; the reasoning behind it is in **The third runtime** below,
+and it is the same reasoning one layer out.
+
+Node 22 strips types and runs `.ts` directly - **but not for files under `node_modules`**:
+
+```
+Error [ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING]: Stripping types is currently unsupported for
+files under node_modules
+```
+
+Verified for the import path *and* for the `bin`/main-entry path, while the same `.ts` outside
+`node_modules` runs fine. So `"bin": "./cli/veridian.ts"` works from a checkout - and from
+`npm link` against one - and can never work for anyone who installs the package into `node_modules`.
+**A package must therefore deliver compiled JavaScript**, which is what `npm run build` produces:
+
+- `tsconfig.build.json` extends the base config, turns `noEmit` off, and sets `outDir: "dist"` with
+  `rewriteRelativeImportExtensions`, which is what turns the tree's `.ts` import specifiers into
+  `.js`. Without that flag the build cannot even be configured, because `allowImportingTsExtensions`
+  is only legal alongside `noEmit` or a rewrite.
+- `scripts/copy-assets.mjs` carries `schemas/` into `dist/`, because `SCHEMA_URIS` are
+  package-relative and a distribution carrying code but not its contracts would install cleanly and
+  fail at the first command.
+- `files: ["dist"]` is the allowlist. `bin` points at `./dist/cli/veridian.js`, and `tsc` preserves
+  the shebang, which is the one detail that makes that entry runnable rather than merely present.
+
+The second blocker was a genuine defect and is fixed rather than worked around. The schema set
+resolved through `core/schema/registry.ts` as repo-relative paths (`schemas/goal.schema.json`) while
+`nodeIo`'s root defaulted to `process.cwd()`, so an installed CLI would report a missing goal schema
+sitting inside its own package - the worst kind of error, because it sends the reader to inspect the
+one thing that is not broken. `core/assets.ts` now derives the asset root from `import.meta.url`, so
+one level up is the package root from the source tree *and* from `dist/`. **A caller's files resolve
+against the working directory; Veridian's own files resolve against the module.** Two roots, and
+conflating them is the defect. `tests/assets.test.ts` holds both halves.
+
+What the package deliberately does **not** include is Playwright, and that is still a real
+limitation rather than a detail: an installed Veridian cannot observe a page until its user adds one.
+It degrades honestly (`INCONCLUSIVE`, never `PASS`) and names the command that fixes it. **The route
+is declared rather than documented**: Playwright is an optional peer dependency
+(`peerDependencies` with `peerDependenciesMeta.playwright.optional: true`), so a package manager
+states the requirement at install time while `npm install veridian` still succeeds without it.
+Nothing is installed by the declaration, so the degradation above is unchanged - which is the point,
+because a peer that *was* installed would have made the honest `INCONCLUSIVE` unreachable. The
+version floor is a lower bound (`>=1.40.0`) rather than a pin, because the adapter declares the slice
+of the API it uses structurally and every property in that slice is optional, so a newer Playwright
+fails at `launch()` with a named cause rather than being refused at install time.
+`tests/package-manifest.test.ts` holds the declaration in both places it is written.
+
+Guards, in place of the old `private: true`:
+
+- `prepublishOnly` runs `npm run gate`, so a package whose own tests are red cannot leave the machine.
+- `prepare` runs `npm run build`, so `npm pack`, `npm publish` and a git-URL install all carry a fresh
+  `dist/` without anyone remembering to build first. **`npm ci` runs it too**, which is why a broken
+  build fails at install rather than at test.
+- `npm run smoke:dist` drives the *compiled* CLI from a temporary directory and asserts exit 2. Every
+  test in `tests/` covers `.ts` files that are never shipped, so without this the shipped `.js` is
+  covered by nothing - the exact unverified claim this project refuses to make. CI also runs a full
+  `npm pack` -> install -> run round trip, which is the only check that reads `files` and `bin` the
+  way a consumer does.
+
+`Dockerfile` is a route of its own and is a *distribution* route, not a sandbox environment - "Docker"
+names two unrelated things in this project and only one of them is packaging. It is verified in CI
+because Docker is not installed on this machine, and a Dockerfile that has never been built is a
+claim. A container-the-application adapter is a different thing entirely and is recorded as blocked
+in [`docs/DISTRIBUTION-AND-ENVIRONMENTS.md`](./docs/DISTRIBUTION-AND-ENVIRONMENTS.md).
+
+### The third runtime: `extension/vscode`
+
+The VS Code Cockpit is the fourth route and the third runtime, and **it is compiled for a reason that
+is a fact rather than a preference**: the extension host is not Node's loader. It loads JavaScript, so
+it cannot strip types and cannot run the `.ts` the rest of Veridian runs directly. That is the same
+class of constraint as `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, one runtime further out, and it
+is why `extension/vscode` is the *only* directory in the repository with a build step - and, since the
+phase below, **two** generated artifacts rather than one.
+
+What the phase produced, all measured on this machine:
+
+```
+npx tsc --noEmit    silent (exit 0)
+node --test         72 tests, 0 failing
+npm run build       out/, 6 files
+npm run smoke:out   15 checks, exit 0
+npm run package     veridian-cockpit-0.5.0.vsix, 12 files, 119.98 KB
+npm run smoke:vsix  35 checks, exit 0
+npm run gate        exit 0
+```
+
+- `src/port.ts` declares by hand the slice of the editor API the Cockpit uses, so the *decisions* are
+  testable without an editor; `src/host-boundary.test.ts` makes "only the two host files may import
+  `vscode`" an executable rule, and it was falsified (prepending such an import to an ordinary test
+  fails it, naming the cause and the remedy).
+- `scripts/vscode-stub.mjs` and `scripts/smoke-out.mjs` cover the **compiled** artifact, because
+  `node --test` runs `.ts` and the host runs `out/*.js` - the same gap `npm run smoke:dist` closes for
+  the package. Falsified: a `main` the build does not produce fails the check and exits 1.
+- **The shipping install routes are the development install and a `.vsix`.** The development install
+  is a checkout plus F5, configured in `.vscode/launch.json` and `.vscode/tasks.json`; the packaged
+  route is `npm run package`, and `scripts/smoke-vsix.mjs` reads the archive back because a `.vsix` is
+  a third artifact that no test in either tree can load. The list of what only a real VS Code test
+  host could exercise is written out in [`extension/vscode/README.md`](./extension/vscode/README.md)
+  rather than left implied.
+- `src/packaging.test.ts` holds six facts that are each a way the extension ships broken: that the
+  editor floor admits the module format the build emits, that `@types/vscode` is not ahead of that
+  floor, that the manifest's `files` allowlist covers the entry point the manifest names, that
+  `extension/vscode/LICENSE` is still the repository's licence byte for byte, that the manifest names
+  and allowlists the extension icon, and that the icon is the project's own logo byte for byte. It
+  reads the floor, the `module` setting and the allowlist out of the files rather than restating them.
+- `extension/vscode/out/` and `extension/vscode/veridian-cockpit-<version>.vsix` are generated,
+  never edited, never committed, and ignored by `.gitignore` for the same reason `dist/` is: a
+  generated tree that is not ignored is one `git add .` away from being committed. The archive rule
+  is `*.vsix` rather
+  than one filename, so a second target added to the `package` script cannot arrive unignored.
+
+Consequence for anyone touching the CLI: **the source is still the interface.** Keep `cli/veridian.ts`
+runnable by `node` directly, and never introduce a step between the source tree and the running
+program. The build produces a *second* copy for people who install it; it does not become the way you
+run the code.
+

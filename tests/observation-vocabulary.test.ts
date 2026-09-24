@@ -7,11 +7,12 @@ import { nodeIo } from "../core/io.ts";
  * The documents that enumerate `core/environment/*-observation.ts` must enumerate all of them.
  *
  * This guard exists because the enumeration had drifted in **both** documents, in the same direction
- * and by different amounts: `AGENTS.md`'s `core/environment/` layout entry stopped at
+ * and by different amounts: `docs/LAYOUT.md`'s `core/environment/` entry - `AGENTS.md`'s when this
+ * guard was written, before the always-on file was cut back - stopped at
  * `process-observation.ts` - the tenth family - while `validators/data/` and `validators/mobile/`
  * below it declared the eleventh and the twelfth, and `README.md`'s layering paragraph named eleven
  * of the twelve files. Nothing failed, because a list of file names in a document is read by nothing
- * that could disagree with it - the shape `AGENTS.md` records three times over `db.query`,
+ * that could disagree with it - the shape `docs/RULES-PAID-FOR.md` records three times over `db.query`,
  * `db.rowCount` and `web.visible`.
  *
  * The cost of the drift is specific rather than aesthetic. The chain is what an author building the
@@ -22,16 +23,16 @@ import { nodeIo } from "../core/io.ts";
  *
  * **The question is asked of the enumeration, not of the document, and that was measured rather than
  * assumed.** Every one of the twelve names also appears in a `validators/` row below the chain in
- * `AGENTS.md` - twice over for most of them, and three times for `data` and `mobile` - so a guard
+ * `docs/LAYOUT.md` - twice over for most of them, and three times for `data` and `mobile` - so a guard
  * that asked whether the *document* names all twelve would have gone on passing with the chain
  * missing two families, which is precisely the drift this file was written after. Scoping is
  * therefore what makes this a guard rather than a formality.
  *
  * The scope is expressed per document because the two documents are different kinds of thing:
- * `AGENTS.md`'s enumeration is a layout entry that opens at column zero and continues on indented
+ * `docs/LAYOUT.md`'s enumeration is a layout entry that opens at column zero and continues on indented
  * lines, and `README.md`'s is a prose paragraph that ends at the first blank line. Neither rule
  * restates the other. Within the scope a hyphen-broken token is rejoined before searching, because
- * `AGENTS.md` breaks *inside* a name - `vscode-` and `observation.ts` on consecutive lines, and the
+ * `docs/LAYOUT.md` breaks *inside* a name - `vscode-` and `observation.ts` on consecutive lines, and the
  * same again for `data-` - which is the rule the tree's CRLF entries record one layer out: read the
  * spelling the file actually holds, not the one its author typed.
  */
@@ -59,7 +60,7 @@ interface Enumeration {
 
 const ENUMERATIONS: readonly Enumeration[] = [
   // A layout entry: it opens at column zero and every continuation line is indented.
-  { document: "AGENTS.md", continues: (line) => /^\s/.test(line) && line.trim().length > 0 },
+  { document: "docs/LAYOUT.md", continues: (line) => /^\s/.test(line) && line.trim().length > 0 },
   // A prose paragraph: it runs to the first blank line.
   { document: "README.md", continues: (line) => line.trim().length > 0 },
 ];

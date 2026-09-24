@@ -20,10 +20,10 @@ passes or fails the repository's own gates. You do not fix anything.
 
 ## Approach
 
-1. **Discover the gates.** Read `AGENTS.md` first — it records the intended gate commands.
+1. **Discover the gates.** Read `docs/BUILD-AND-TEST-COMMANDS.md` first — it records the intended gate commands.
    Then confirm them against reality: `package.json` scripts, `pyproject.toml`,
    `Cargo.toml`, `go.mod`, CI workflow files under `.github/workflows/`.
-   The manifest is the source of truth; `AGENTS.md` only tells you where to look.
+   The manifest is the source of truth; `docs/BUILD-AND-TEST-COMMANDS.md` only tells you where to look.
 2. **Establish the baseline.** Record whether the gates pass *before* judging the change, so
    a pre-existing failure is not attributed to it. If a gate already fails, say so and stop —
    the change cannot be meaningfully verified on top of a red baseline.
