@@ -16,6 +16,8 @@ export type {
   RunOutcome,
   WrittenResult,
 } from "./types.ts";
+export { worldIdentity, worldLabel } from "./world-identity.ts";
+export type { WorldIdentity } from "./world-identity.ts";
 
 export {
   RunBundle,

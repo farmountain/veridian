@@ -11,6 +11,7 @@ import {
   type RunOutcome,
   type WrittenResult,
 } from "./types.ts";
+import { worldIdentity, worldLabel } from "./world-identity.ts";
 
 /**
  * Writing the bundle.
@@ -151,6 +152,14 @@ export function serializeEnvironment(record: EnvironmentRecord): Record<string, 
     app_path: record.appPath,
     url: record.url,
     database_path: record.databasePath,
+    world:
+      record.world === null
+        ? null
+        : {
+            kind: record.world.kind,
+            name: record.world.name,
+            detail: record.world.detail === null ? null : { ...record.world.detail },
+          },
     command: record.command,
     args: [...record.args],
     env: record.env,
@@ -185,21 +194,48 @@ export function serializeEnvironment(record: EnvironmentRecord): Record<string, 
  *
  * A criterion that passed while its required screenshot is missing has not been proven, so this is
  * computed from the criteria rather than trusted from a counter someone increments along the way.
+ *
+ * The world is the second question this asks, and it asked of two documents rather than of one: the
+ * record the run held and the environment document the bundle will carry. A record that declares a
+ * world while the written document carries none is an incompleteness, because a run that cannot name
+ * the world it measured is not reproducible - and the silent `null` is exactly how this stayed
+ * invisible. Nothing here reads the criteria to decide it, which is why the entry it produces names
+ * no criterion: a world belongs to the run, not to a criterion's evidence.
+ *
+ * Both arguments are required rather than optional, so that "I have no record in hand" has to be
+ * written at the call site instead of being what a caller gets by forgetting.
  */
-export function evidenceCompleteness(criteria: readonly CriterionResult[]): {
+export function evidenceCompleteness(
+  criteria: readonly CriterionResult[],
+  environment: EnvironmentRecord | null,
+  bundleEnvironment: Record<string, unknown> | null,
+): {
   readonly missing: readonly string[];
   readonly complete: boolean;
 } {
   const missing = criteria.flatMap((criterion) =>
     criterion.missingEvidence.map((kind) => `${criterion.criterionId}:${kind}`),
   );
+  const declared = environment?.world ?? null;
+  if (declared !== null && (bundleEnvironment?.["world"] ?? null) === null) {
+    missing.push(`world:${worldLabel(declared)}`);
+  }
   return { missing, complete: missing.length === 0 };
 }
 
+/**
+ * The `result.json` document.
+ *
+ * `environment` is handed in rather than derived from `outcome.environment` here, because the same
+ * document has to be both written and checked: the writer serializes it once and gives the one value
+ * to this function and to `evidenceCompleteness`, so a reader cannot be told about a world the
+ * bundle does not carry.
+ */
 export function serializeResult(
   outcome: RunOutcome,
   ledger: { readonly artifacts: readonly EvidenceArtifact[]; readonly missing: readonly string[] },
   bundlePath: string,
+  environment: Record<string, unknown> | null,
 ): Record<string, unknown> {
   const complete = ledger.missing.length === 0;
   return {
@@ -231,7 +267,7 @@ export function serializeResult(
       // `serializeCriterion` is: `criterion_id` is the name every other artifact in this directory uses.
       criteria: entry.criteria.map((item) => ({ criterion_id: item.criterionId, status: item.status })),
     })),
-    environment: outcome.environment === null ? null : serializeEnvironment(outcome.environment),
+    environment,
     evidence: {
       bundlePath,
       complete,
@@ -388,9 +424,17 @@ export class RunBundle {
   }
 
   async writeResult(outcome: RunOutcome): Promise<WrittenResult> {
-    const completeness = evidenceCompleteness(outcome.criteria);
     const bundlePath = `${this.#layout.runDir}/`;
-    const result = serializeResult(outcome, { artifacts: this.#artifacts, missing: completeness.missing }, bundlePath);
+    // Serialized once. The document M5 checks and the document the bundle carries are then the same
+    // value by construction rather than by two calls agreeing.
+    const environment = outcome.environment === null ? null : serializeEnvironment(outcome.environment);
+    const completeness = evidenceCompleteness(outcome.criteria, outcome.environment, environment);
+    const result = serializeResult(
+      outcome,
+      { artifacts: this.#artifacts, missing: completeness.missing },
+      bundlePath,
+      environment,
+    );
     const text = json(result);
 
     // Validated only when a schema set is available, so that a test with no schemas still writes a
@@ -549,6 +593,7 @@ export function environmentRecord(
     appPath: plan.appPath,
     url: plan.url,
     databasePath: plan.databasePath,
+    world: worldIdentity(plan),
     command: plan.start.command,
     args: plan.start.args,
     health: plan.health,

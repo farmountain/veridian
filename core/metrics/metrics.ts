@@ -56,6 +56,16 @@ export interface RunSnapshot {
   readonly adapter: string | null;
   /** Every criterion's final status, with what the run recorded about its evidence. */
   readonly criteria: readonly CriterionSnapshot[];
+  /**
+   * The bundle's own `evidence.missing` list, as it was written.
+   *
+   * The list belongs to the run rather than to a criterion: an entry names a criterion's gap
+   * (`AC-002:screenshot`) or a gap the run has and no criterion owns
+   * (`world:cloud:cart-account`, which is a run that cannot name the world it measured). M5 counts
+   * the first through the criteria and the second through this field. A bundle written before this
+   * field existed carries no list at all, and that is read as a run with nothing recorded missing
+   * rather than as a run that is clean. */
+  readonly missingEvidence: readonly string[];
   /** Every trip around the loop, each carrying the criteria *as that iteration saw them*. */
   readonly iterations: readonly IterationSnapshot[];
   /** Resets the environment actually performed, counted from its own recorded transitions. */
@@ -138,6 +148,8 @@ export function parseRunSnapshot(value: unknown): RunSnapshot | null {
 
   const goal = root["goal_id"];
   const adapter = environment?.["adapter"];
+  const evidence = asRecord(root["evidence"]);
+  const missingEvidence = asArray(evidence?.["missing"]).map((entry) => String(entry));
 
   return {
     runId,
@@ -146,6 +158,7 @@ export function parseRunSnapshot(value: unknown): RunSnapshot | null {
     goalId: typeof goal === "string" && goal.length > 0 ? goal : null,
     adapter: typeof adapter === "string" && adapter.length > 0 ? adapter : null,
     criteria,
+    missingEvidence,
     iterations,
     resets,
     environmentValid: asBoolean(root["environmentValid"], false),
@@ -580,15 +593,40 @@ export interface EvidenceReport {
   readonly criteria: number;
   readonly complete: number;
   readonly ratio: number;
-  readonly violations: readonly { readonly runId: string; readonly criterionId: string; readonly missing: readonly string[] }[];
+  /**
+   * One entry per gap. `criterionId` is `null` for a gap the run has and no criterion owns, which is
+   * how a run that cannot name its world is reported without inventing a criterion to blame it on.
+   */
+  readonly violations: readonly {
+    readonly runId: string;
+    readonly criterionId: string | null;
+    readonly missing: readonly string[];
+  }[];
 }
 
-/** M5: every criterion got the evidence its contract required, counted rather than asserted. */
+/**
+ * M5: every criterion got the evidence its contract required, counted rather than asserted.
+ *
+ * The run-level list is read beside the criteria rather than added to them. A bundle records one
+ * `evidence.missing` list holding both kinds of gap, so an entry the criteria already account for is
+ * the same gap counted twice - and the entry that is left over is precisely the one that belongs to
+ * the run: a world identity the record declared and the written document dropped. Subtracting what
+ * the criteria own is what keeps this from being a second reading of the first list.
+ */
 export function evidenceCompleteness(runs: readonly RunSnapshot[]): EvidenceReport {
-  const violations: { runId: string; criterionId: string; missing: readonly string[] }[] = [];
+  const violations: { runId: string; criterionId: string | null; missing: readonly string[] }[] = [];
   let criteria = 0;
   let complete = 0;
   for (const run of runs) {
+    const owned = new Set(
+      run.criteria.flatMap((criterion) =>
+        criterion.missingEvidence.map((kind) => `${criterion.criterionId}:${kind}`),
+      ),
+    );
+    for (const entry of run.missingEvidence) {
+      if (owned.has(entry)) continue;
+      violations.push({ runId: run.runId, criterionId: null, missing: [entry] });
+    }
     for (const criterion of run.criteria) {
       criteria += 1;
       if (criterion.missingEvidence.length === 0) complete += 1;

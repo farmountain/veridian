@@ -4,6 +4,7 @@ import type { Failure } from "../failure.ts";
 import type { RunState } from "../run/types.ts";
 import type { CriterionResult, CriterionStatus } from "../validation/types.ts";
 import type { RollupGuard, Verdict } from "../validation/rollup.ts";
+import type { WorldIdentity } from "./world-identity.ts";
 
 /**
  * The run bundle.
@@ -89,6 +90,21 @@ export interface EnvironmentRecord {
    * empty string, so "this world is not a database" and "nobody filled the field in" stay apart.
    */
   readonly databasePath: string | null;
+  /**
+   * Which world this run measured, as the plan declared it - or `null` when the plan declared none.
+   *
+   * One field holding the world's own kind, name and declared detail, rather than ten top-level
+   * fields beside `url` and `databasePath`, for the reason the plan's own blocks are separate
+   * objects: a thirteenth world must not widen this record by a key, and a reader asking "which
+   * world was this" must have one place to look. `adapter` above names the implementation that
+   * constructed the world; this names the world itself, and they are different questions.
+   *
+   * `null` is a fact about the run and not a gap in the accounting: `evidenceCompleteness` reports a
+   * run whose plan declared a world while its bundle carries none, so a bundle cannot lose its
+   * subject and still be called complete. That is the property `environment.json` had lost - see
+   * `core/evidence/world-identity.ts`.
+   */
+  readonly world: WorldIdentity | null;
   readonly command: string;
   readonly args: readonly string[];
   readonly health: EnvironmentPlan["health"];

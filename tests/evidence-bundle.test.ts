@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { captureReproducibility, environmentRecord } from "../core/evidence/writer.ts";
+import { captureReproducibility, environmentRecord, serializeEnvironment } from "../core/evidence/writer.ts";
 import { RunBundle, bundleLayout, evidenceCompleteness } from "../core/evidence/index.ts";
 import type { EnvironmentRecord, RunOutcome } from "../core/evidence/index.ts";
 import type { ClarificationRecord, ClarificationReport } from "../core/clarification/types.ts";
-import type { EnvironmentPlan } from "../core/environment/types.ts";
+import type { BoundaryReport, EnvironmentPlan } from "../core/environment/types.ts";
 import { memoryIo, nodeIo, type MemoryIo } from "../core/io.ts";
 import { loadSchemaSet, SCHEMA_URIS } from "../core/schema/registry.ts";
 import type { CriterionResult } from "../core/validation/types.ts";
@@ -79,11 +79,13 @@ const criterion = (overrides: Partial<CriterionResult> = {}): CriterionResult =>
   ...overrides,
 });
 
-const environment: EnvironmentRecord = environmentRecord(plan, null, [], true, {
+const boundary: BoundaryReport = {
   network: "enforced",
   filesystemWrite: "unsupported",
   crossings: [],
-});
+};
+
+const environment: EnvironmentRecord = environmentRecord(plan, null, [], true, boundary);
 
 const outcome = (overrides: Partial<RunOutcome> = {}): RunOutcome => {
   const criteria = overrides.criteria ?? [criterion()];
@@ -297,18 +299,78 @@ describe("the run bundle is complete on every terminal path", () => {
 
 describe("evidence completeness decides, it does not advise", () => {
   it("names the criterion and the kind that is missing rather than returning a boolean", () => {
-    const report = evidenceCompleteness([
-      criterion({ missingEvidence: ["screenshot", "trace"] }),
-      criterion({ criterionId: "AC-002" }),
-    ]);
+    const report = evidenceCompleteness(
+      [criterion({ missingEvidence: ["screenshot", "trace"] }), criterion({ criterionId: "AC-002" })],
+      environment,
+      serializeEnvironment(environment),
+    );
 
     assert.deepEqual(report.missing, ["AC-001:screenshot", "AC-001:trace"]);
     assert.equal(report.complete, false);
   });
 
   it("reports a bundle as complete only when every criterion has all of its evidence", () => {
-    assert.deepEqual(evidenceCompleteness([criterion()]), { missing: [], complete: true });
-    assert.equal(evidenceCompleteness([]).complete, true);
+    const document = serializeEnvironment(environment);
+    assert.deepEqual(evidenceCompleteness([criterion()], environment, document), {
+      missing: [],
+      complete: true,
+    });
+    assert.equal(evidenceCompleteness([], environment, document).complete, true);
+    // And a caller with no record in hand says so at the call site: both arguments are required, so
+    // the empty answer has to be written rather than arrived at by forgetting.
+    assert.equal(evidenceCompleteness([], null, null).complete, true);
+  });
+
+  it("counts a world the record declared and the written document dropped", () => {
+    const document = serializeEnvironment(environment);
+    assert.equal(evidenceCompleteness([criterion()], environment, document).complete, true);
+
+    // The check reads the document the bundle will carry rather than the record, so a serializer that
+    // stopped writing the world is an incomplete run - and the entry names the world rather than a
+    // criterion, because no criterion's evidence is what went missing.
+    const dropped = { ...document };
+    delete dropped["world"];
+    const report = evidenceCompleteness([criterion()], environment, dropped);
+    assert.deepEqual(report.missing, ["world:web:http://127.0.0.1:4173"]);
+    assert.equal(report.complete, false);
+
+    // And the case this file exists for: a plan that declares an *account* rather than an address.
+    // The identity named is the account, because that is the one fact saying whose world the run was
+    // taken in - an adapter name is not enough to answer it, which is what the per-world blocks are
+    // for. Asserted here rather than left to the web case, because a branch no fixture reaches is a
+    // branch nothing holds: deleting it moved no test until this block named it.
+    const cloudPlan: EnvironmentPlan = {
+      ...plan,
+      adapter: "sim-cloud",
+      url: null,
+      cloud: {
+        provider: "veridian-cloud",
+        region: "veridian-1",
+        account: "acct-cart",
+        principal: "svc-cart",
+      },
+    };
+    const cloudEnvironment = environmentRecord(cloudPlan, null, [], true, boundary);
+    assert.deepEqual(cloudEnvironment.world, {
+      kind: "cloud",
+      name: "acct-cart",
+      detail: {
+        provider: "veridian-cloud",
+        region: "veridian-1",
+        account: "acct-cart",
+        principal: "svc-cart",
+      },
+    });
+    const cloudDropped = { ...serializeEnvironment(cloudEnvironment) };
+    delete cloudDropped["world"];
+    assert.deepEqual(evidenceCompleteness([criterion()], cloudEnvironment, cloudDropped).missing, [
+      "world:cloud:acct-cart",
+    ]);
+
+    // A world the plan never declared is not a gap: a `local-db` run with no block and no url has
+    // nothing to name, and reporting that as missing would make every such run incomplete.
+    const anonymous = environmentRecord({ ...plan, url: null }, null, [], true, boundary);
+    assert.equal(evidenceCompleteness([criterion()], anonymous, serializeEnvironment(anonymous)).complete, true);
   });
 
   it("does not let a criterion with missing evidence be read as a clean pass in the failure report", async () => {
