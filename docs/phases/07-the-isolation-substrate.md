@@ -198,6 +198,14 @@ found it was itself wrong first.
       block since it was written.
     - Both are recorded in `docs/RULES-PAID-FOR.md` with the readings, because this is now the third
       consecutive CI job in this repository whose **first** execution found a real defect.
+  - **The third execution is the first in which the job and the run agree**, and that agreement is the
+    reading this phase's criterion actually needs. The run for the phase 08 commit is **`success` with
+    all nine jobs green**, `isolation substrate` among them - so the two defects above are settled
+    rather than merely diagnosed, and the sentence *the run's conclusion is `failure`* is a fact about
+    the second run rather than about this job. A job that is green inside a red run is not a green
+    run, which is why the second run's record above is kept as written instead of being upgraded once
+    its defects were fixed: the failure is what the two fixes were for, and a record that quietly
+    becomes green cannot show what it cost.
 
 ## Falsification probe
 

@@ -150,11 +150,16 @@ repository whose acceptance criterion *is* a non-zero exit code, and a table tha
 
 **The A2 row is observed on a different commit from the other thirteen, and that difference is the
 honest part of this table.** `docker` is not on `PATH` here, so the image can only be built where the
-runtime exists - which is why the row names a CI job and a run id rather than a command. That job ran on
-`35423126548`, the last **pushed** commit; the thirteen local rows were taken on the working tree this
-pass. So "built and observed" is true of A2 *for that commit* and not yet for this one. The plan's own
-**Exit** for A2 says the Dockerfile is reverted rather than shipped unrun, so what is owed is a re-run
-after the next push - not a new design, and not a quieter status word.
+runtime exists - which is why the row names a CI job and a run id rather than a command. The obligation
+this doc recorded was *re-take it after the next push*, and it has now been taken: the `container image`
+job ran **success** on the phase 08 commit, and so did the rest of the matrix. The thirteen local rows
+were taken on the working tree this pass, so "built and observed" is true of A2 for a pushed commit
+rather than for this working tree - which is the difference the sentence above was written to keep
+visible, and re-taking it is a push and a re-run rather than a design.
+
+The previous observation is kept beside the new one rather than overwritten, because a row that names
+one run and quietly loses the previous one cannot be distinguished from a row that was never observed
+twice: the job was first seen on run `35423126548`, the last pushed commit at that time.
 
 ### Phase A1 - npm install route (built and observed)
 

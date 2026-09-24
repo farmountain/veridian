@@ -233,20 +233,35 @@ filed as a receipt* was, and one HTTP request answered it.
 The decision is filed durably: the backlog was split into thirteen phase files, and the split, the
 source documents and the exit condition are recorded as one record whose `target` stands alone. **A
 fresh session can name the next phase from `docs/phases/README.md` and the memory alone**, and the
-alignment probe was re-run rather than quoted: the index now answers **phase 07, depending on 06** - not
-the phase 11 it answered when this paragraph was written - and the same index carries a *What is still
-open, in one place* table naming 07, 08, 12 and the one obligation `DISTRIBUTION-AND-ENVIRONMENTS.md`
-holds. *The probe is the phase's real subject, so it is the one paragraph here that has to be re-run
-rather than corrected when it rots.*
+alignment probe was re-run rather than quoted.
+
+**The probe's answer has now moved twice, and the second move is the one that closes the program's
+phase list.** When this paragraph was first written the index answered **phase 11**; when it was first
+corrected it answered **phase 07, depending on 06**. Re-run after 07 and 08 landed, it answers **phase
+12 itself, `blocked here`** -- the only phase in the thirteen with an unmet criterion -- beside **one**
+obligation that is not a phase: keeping the `isolation` CI job true. `docs/DISTRIBUTION-AND-ENVIRONMENTS.md`'s
+A2 re-run was the second such obligation when this paragraph was written, and it has since been taken
+rather than restated. There is no `next` row in the table at all, and that is a fact about the
+remaining work rather than an omission: `next` is defined as *nothing blocks it*, and what is left is
+blocked on something the tree states.
+
+Two of the three moves were the correction of a stale sentence and one was a real landing, so the probe
+is worth the sentence it costs: *the probe is the phase's real subject, so it is the one paragraph here
+that has to be re-run rather than corrected when it rots.*
 
 ### What this phase therefore does not claim
 
-Not "the program is closed". **Two** phases remain open and one of them is this one: 07 is `blocked here`
-on a substrate this machine does not have, and 08 is `gated by 07`. Phase 11, which this paragraph
-counted as open when it was written, has since closed - it is `built`, its fourteen headings each name a
-command that was run, and the still-open work now has one address in this directory's index. The exit
-condition is **aligned, not delivered** - and a program that reported twelve `built` phases over this tree
-would be the defect this phase was written to prevent.
+Not "the program is closed". **One** phase remains open, and it is this one: every other phase in the
+thirteen is `built`. Two of them carried the open work when this paragraph was last written, and both
+have since landed - 07 is `built`, its substrate measured rather than promised, and 08 is `built`, with
+the import staged at `prepare()` and its own suite falsified by disabling the refusal. Phases 11 and 13,
+which earlier versions of this paragraph counted as open, closed before that. So the tree's own account
+is: twelve phases `built`, one `blocked here`, and the blocker is a criterion about a history that
+cannot be rewritten rather than a piece of work nobody has done. The exit condition is **aligned, not
+delivered** - and a program that reported thirteen `built` phases over this tree would be the defect
+this phase was written to prevent. **The count is the claim, so it is the count that has to be
+re-taken**: the earlier version of this paragraph said *two*, and the only thing that made it false was
+another phase landing.
 
 ## Guards that must still pass
 
