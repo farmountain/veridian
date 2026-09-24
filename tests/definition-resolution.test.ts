@@ -12,6 +12,7 @@ import { hasPointer, parentOf } from "../core/clarification/pointer.ts";
 import { ambiguityId } from "../core/clarification/types.ts";
 import { resolveDefinition } from "../core/definition.ts";
 import { DefinitionError } from "../core/goal/index.ts";
+import { resolveSibling } from "../core/goal/load.ts";
 import { memoryIo, nodeIo, type MemoryIo } from "../core/io.ts";
 import { loadSchemaSet, type SchemaSet } from "../core/schema/index.ts";
 import { ValidatorRegistry } from "../core/validation/registry.ts";
@@ -213,8 +214,68 @@ describe("DEFINE resolves a contract through the ambiguity protocol", () => {
     assert.equal(outcome.kind, "resolved");
     if (outcome.kind !== "resolved") return;
 
-    assert.equal(outcome.acceptancePath, "shopping-cart/acceptance.yaml");
-    assert.equal(outcome.environmentPath, "shopping-cart/environment.yaml");
+    // The rule is "joined onto the goal file's directory", and the file's directory is the port's own
+    // root - so the answer is absolute, and it is the same absolute path the port itself would build.
+    // Asserting the resolved form rather than the literal keeps this a comparison between two
+    // independent things: the loader's join and the port's `resolve`.
+    assert.equal(outcome.acceptancePath, io.resolve("shopping-cart/acceptance.yaml"));
+    assert.equal(outcome.environmentPath, io.resolve("shopping-cart/environment.yaml"));
+  });
+
+  /**
+   * The join has two questions and this is the one that was answered with a POSIX-only test.
+   *
+   * `resolveSibling` stood a reference on its own only when it began with `/`, so an absolute path
+   * spelled the way this platform spells one - `D:/repo/examples/shopping-cart/app` - was *joined*
+   * onto the document's directory instead. Nothing about the result looked wrong: it was a path, in
+   * a message, naming a directory the reader could not visit. The child was started there, could not
+   * find its script, and exited without printing, so the run blamed the application.
+   *
+   * These cases are written against the *reference* spelling rather than against a Windows-only
+   * expectation, because the second half of the bug is that the two spellings of "absolute" were
+   * treated as one. The UNC case is included to show it needs no clause of its own: a normalised
+   * `//server/share` is rooted POSIX-fashion and was already correct.
+   */
+  describe("resolveSibling stands a rooted reference on its own", () => {
+    const source = { path: "D:/repo/contract/goal.yaml", dir: "D:/repo/contract", text: "" };
+
+    it("joins a relative reference onto the document's directory", () => {
+      assert.equal(resolveSibling(source, "app"), "D:/repo/contract/app");
+      assert.equal(resolveSibling(source, "./app"), "D:/repo/contract/app");
+    });
+
+    it("replaces the directory when the reference is absolute in drive-letter spelling", () => {
+      assert.equal(resolveSibling(source, "D:/repo/examples/shopping-cart/app"), "D:/repo/examples/shopping-cart/app");
+      // The backslash spelling is the same reference once this function has normalised it.
+      assert.equal(resolveSibling(source, "D:\\repo\\examples\\shopping-cart\\app"), "D:/repo/examples/shopping-cart/app");
+      // A drive other than the document's own is still rooted, not a child of the document.
+      assert.equal(resolveSibling(source, "C:/other/app"), "C:/other/app");
+    });
+
+    it("replaces the directory when the reference is absolute in POSIX spelling", () => {
+      assert.equal(resolveSibling(source, "/srv/app"), "/srv/app");
+    });
+
+    it("treats a UNC path as rooted, and collapses its doubled separator", () => {
+      // The first clause of `standsAlone` answers this one: `\\server\share\app` is normalised to
+      // `//server/share/app` and therefore begins with `/`. What it does **not** get is preservation
+      // of the second separator - the collapse below skips every empty segment on purpose, which is
+      // what folds `//`, `./` and a trailing `/` alike, so the result is `/server/share/app`.
+      //
+      // Asserted as the behaviour rather than endorsed: for a genuine UNC path that leading pair is
+      // load-bearing, so this normalisation is lossy in a way a POSIX path's is not. It is recorded
+      // here because it is a limit of the shared collapse rather than a decision anyone made about
+      // UNC, and nothing in this tree declares a UNC path today - so the case is unreachable, and a
+      // reader meeting one later should find this note rather than a silent single slash.
+      assert.equal(resolveSibling(source, "\\\\server\\share\\app"), "/server/share/app");
+    });
+
+    it("never leaves a drive letter stranded in the middle of a result", () => {
+      // The shape the defect produced, asserted against rather than described: a second drive letter
+      // appearing after the first separator.
+      const joined = resolveSibling(source, "D:/x/app");
+      assert.equal((joined.match(/[A-Za-z]:/g) ?? []).length, 1, `one drive letter, saw "${joined}"`);
+    });
   });
 
   it("decodes the contract into a plan the executor cannot misread", async () => {
@@ -456,8 +517,20 @@ describe("DEFINE resolves the environment through the same conversation", () => 
     if (outcome.kind !== "resolved") return;
 
     // `app: .` is relative to the environment file, not to the process working directory.
-    assert.equal(outcome.environment.appPath, "shopping-cart");
-    assert.equal(outcome.environmentPath, "shopping-cart/environment.yaml");
+    assert.equal(outcome.environment.appPath, io.resolve("shopping-cart"));
+    assert.equal(outcome.environmentPath, io.resolve("shopping-cart/environment.yaml"));
+
+    // Absolute, and that is the half this test did not ask before - it asserted the relative
+    // `shopping-cart` and so agreed with the defect it should have caught. `appPath` is handed to the
+    // child as its `cwd` *and* to `--permission` as a read root, and only the first of those tolerates
+    // a relative value: `spawn` resolves it against the process working directory, while the
+    // permission model compares absolute paths and refused every read, so the app answered 404 for
+    // every path and the run ended ENVIRONMENT_FAILURE. The `cwd` appearing correct is what made it
+    // look like an application fault.
+    assert.ok(
+      outcome.environment.appPath.startsWith(io.cwd),
+      `appPath must be rooted at ${io.cwd}, not relative: ${outcome.environment.appPath}`,
+    );
   });
 
   it("derives the start command from the application's own manifest when the file omits it", async () => {

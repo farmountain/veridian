@@ -448,12 +448,23 @@ export class EnvironmentManager {
         // Every branch names a cause the manager actually observed, and "expected 200" is printed
         // only when a 200 was in fact expected - so a database world is never told it failed an HTTP
         // check it never had.
+        //
+        // `startedIn` is the half the status code cannot carry. A 404 from a program that was refused
+        // every read is indistinguishable, in the code alone, from a 404 from a program that served a
+        // directory with nothing in it - and the two send a reader to different places. Measured on
+        // this tree: a goal named relatively produced `appPath` = `examples/shopping-cart/app`, the
+        // permission model refused every read because it compares absolute paths, and this line
+        // reported `expected 200 ... received 404` - which reads as an application fault and sent the
+        // reader to inspect a server that was working. Naming the directory makes it a fact the
+        // operator can check against their own command line, which is where the fault actually was.
+        const startedIn =
+          plan.appPath === "" ? "" : ` (started in ${plan.appPath})`;
         const detail =
           url === null
-            ? `${where} never became ready`
+            ? `${where} never became ready${startedIn}`
             : statusCode === null
-              ? `no response from ${url}`
-              : `expected ${String(expectStatus)} from ${url}, received ${statusCode}`;
+              ? `no response from ${url}${startedIn}`
+              : `expected ${String(expectStatus)} from ${url}, received ${statusCode}${startedIn}`;
         const patternDetail =
           plan.health.readyPattern !== null && patternSeen === false
             ? `; stdout never matched /${plan.health.readyPattern}/`

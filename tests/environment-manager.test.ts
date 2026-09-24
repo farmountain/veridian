@@ -213,6 +213,38 @@ describe("PREPARE drives the lifecycle in order and records it", () => {
     assert.match(result.failure.message, /127\.0\.0\.1:4173\/health/);
   });
 
+  /**
+   * The status code alone cannot tell two different faults apart, and the two send a reader to
+   * different places.
+   *
+   * Measured on this tree: a goal named relatively produced a relative application directory, the
+   * permission model refused every read because it compares absolute paths, and the server answered
+   * 404 for every path. The message said `expected 200 ..., received 404` - which reads as a broken
+   * application, so the reader went to inspect a server that was working. Naming the directory turns
+   * it into a fact the operator can check against their own command line, which is where the fault
+   * actually was.
+   */
+  it("names the directory the child was started in, so a 404 does not read as an application fault", async () => {
+    const adapter = fakeAdapter({
+      probes: [{ ok: null, statusCode: 404, message: null, patternSeen: null }],
+    });
+    const subject = manager(adapter);
+
+    const result = await subject.prepare(plan({ appPath: "D:/repo/examples/shopping-cart/app" }));
+
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.failure.kind, "ENVIRONMENT_FAILURE");
+    assert.ok(
+      result.failure.message.includes("received 404"),
+      `the observed status is still reported: ${result.failure.message}`,
+    );
+    assert.ok(
+      result.failure.message.includes("(started in D:/repo/examples/shopping-cart/app)"),
+      `the directory the child was given must be named: ${result.failure.message}`,
+    );
+  });
+
   it("cleans up a half-started world so the next run does not inherit a held port", async () => {
     const adapter = fakeAdapter({ failAt: "deploy" });
     const subject = manager(adapter);

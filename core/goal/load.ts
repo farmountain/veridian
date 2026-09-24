@@ -1,3 +1,5 @@
+import { isAbsolute, join } from "node:path";
+
 import { parse as parseYaml } from "yaml";
 
 import type { ReadonlyIoPort } from "../io.ts";
@@ -26,6 +28,33 @@ export function dirOf(path: string): string {
   return index === -1 ? "." : normalised.slice(0, index);
 }
 
+/**
+ * Whether a reference is rooted in its own right, so it replaces the base instead of joining it.
+ *
+ * **Two predicates, not one.** This is the join's question - "does this reference stand on its own?"
+ * - and it is not the same question as the collapse's `rooted` flag further down, which asks "was
+ * there a leading separator that the collapse must not eat?". A drive-letter path answers *yes* to
+ * the first and *no* to the second, because `D:/x` has no empty first segment to preserve. Treating
+ * them as one predicate is what cost this defect: the comment below reasoned carefully about Windows
+ * drive letters while only the collapse was reading it, and the join was left testing
+ * `startsWith("/")` - a POSIX-only spelling of "absolute".
+ *
+ * The consequence was measurable and looked nothing like a path bug. An environment document naming
+ * `app: D:/repo/examples/shopping-cart/app` - the natural way to write an absolute path here - had
+ * that reference *joined* onto the document's own directory, producing
+ * `D:/all_projects/Veridian/.scratch/vgap/D:/all_projects/Veridian/examples/shopping-cart/app`. The
+ * child was then started in a directory that does not exist, so `node serve.mjs` could not find its
+ * script, exited without printing, and the run reported
+ * `the application exited with code null before printing /shopping-cart listening on .../` with
+ * `stderr:` empty - a message that names the application for a fault in the join, which is the same
+ * shape as the relative-directory defect this function's caller was repaired for one pass earlier.
+ *
+ * A UNC path needs no case of its own: `\\server\share` is normalised to `//server/share` before
+ * this is called, so it starts with `/` and is already answered by the first clause.
+ */
+const standsAlone = (reference: string): boolean =>
+  reference.startsWith("/") || /^[A-Za-z]:\//.test(reference);
+
 /** Join a relative reference onto a source's directory, collapsing `.` and `..`. */
 export function resolveSibling(source: SourceRef, relative: string): string {
   const dir = source.dir.replace(/\\/g, "/");
@@ -45,19 +74,20 @@ export function resolveSibling(source: SourceRef, relative: string): string {
    * never returns `""` and `dirOf` spells "no directory" as `"."` - which this test removes the need
    * to special-case, because `./sandbox` and `sandbox` collapse alike where `/sandbox` does not.
    */
-  const combined = reference.startsWith("/") || dir === "" ? reference : `${dir}/${reference}`;
+  const combined = standsAlone(reference) || dir === "" ? reference : `${dir}/${reference}`;
   /**
-   * Whether the result is rooted decides whether the root survives the collapse below.
+   * Whether the result carries a leading separator the collapse must not eat.
    *
-   * An absolute POSIX path splits into an empty first segment, and skipping empty segments - which
-   * is what collapses `//`, `./` and a trailing `/` - would delete the root along with them, turning
+   * Deliberately *not* {@link standsAlone}: this is the second of the two questions above. An
+   * absolute POSIX path splits into an empty first segment, and skipping empty segments - which is
+   * what collapses `//`, `./` and a trailing `/` - would delete the root along with them, turning
    * `/home/x/acceptance.yaml` into the relative `home/x/acceptance.yaml`. That path is then resolved
    * against the process cwd, so the file is reported missing while it sits in plain sight, and the
    * reader is sent to inspect the one thing that is not broken.
    *
-   * Windows never had the problem: `D:/x/acceptance.yaml` has no empty first segment, so the root
-   * is a drive letter and survives. That asymmetry is why this lasted - the tree was developed on
-   * one platform, where the shape of a path hides the difference between the two.
+   * A drive-letter path needs nothing here: `D:/x/acceptance.yaml` has no empty first segment, so its
+   * drive letter is an ordinary part and survives the join below untouched - and folding it into this
+   * test would prefix it into `/D:/x/acceptance.yaml`, which is the opposite of the repair.
    */
   const rooted = combined.startsWith("/");
   const parts: string[] = [];
@@ -145,7 +175,36 @@ export async function loadDocument(
   const errors = schemas.get(options.schemaUri).validatePartial(parsed);
   if (errors.length > 0) throw new DefinitionError(path, errors);
 
-  return { raw: parsed, source: { path, dir: dirOf(path), text }, schemaUri: options.schemaUri };
+  /**
+   * The directory is the port's own root joined onto the caller's spelling, so a document named
+   * relatively still yields an **absolute** directory - and everything resolved against it is
+   * absolute too.
+   *
+   * Joining the two spellings without this was a defect that produced a pass-shaped failure, and it
+   * was measured in both directions before it was fixed. `appPath` is `resolveSibling(source, app)`,
+   * a string join, so `--goal examples/shopping-cart/goal.yaml` - which is the *documented default*
+   * spelling, since `--goal` defaults to a bare `goal.yaml` - produced the relative
+   * `examples/shopping-cart/app`. Two consumers take that path and only one of them tolerates it:
+   * `spawn`'s `cwd` resolves a relative value against the process working directory and landed in the
+   * right place, while `--permission`'s `readRoots` compares **absolute real paths**, so the child's
+   * every read was refused `ERR_ACCESS_DENIED`, the server answered 404 for every path, and the run
+   * ended `ENVIRONMENT_FAILURE - expected 200 from http://127.0.0.1:4317/, received 404`. The same
+   * command with an absolute goal path passed. So the relative spelling named a directory that
+   * genuinely existed and could not be read, and the failure line blamed the application.
+   *
+   * Fixed here rather than in the adapter, because this is the one place that decides which directory
+   * a document is in, and because every caller - the command line, the extension, the metrics reader
+   * and each other surface - reaches its paths through this function. An adapter-level repair would
+   * have left `cwd` correct only by the accident of where the process happened to be started, which is
+   * the outcome the loader's own comment beside `appPath` already says it exists to prevent.
+   *
+   * `path` is deliberately left as the caller spelled it: it is what the operator typed, so an error
+   * or a report quoting it sends the reader back to their own command line. `dir` is the resolved
+   * one, because a directory is a thing to be joined onto rather than a thing to be shown.
+   */
+  const dir = dirOf(isAbsolute(path) ? path : join(io.cwd, path));
+
+  return { raw: parsed, source: { path, dir, text }, schemaUri: options.schemaUri };
 }
 
 export async function loadGoalDocument(

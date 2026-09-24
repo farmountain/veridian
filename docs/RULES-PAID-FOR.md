@@ -2004,3 +2004,54 @@ reads a variable.*
   that was not verified, and the earlier one had the same signature - *a suite that is green after a
   restore and a suite that was green all along are the same output* - so the rule is now: **restore with
   the tool that cannot half-succeed, and assert the restore by reading the bytes back.**
+- **A path handed to the operating system must be absolute, because one consumer of it tolerates a
+  relative spelling and another silently refuses it.** `appPath` is built by `resolveSibling`, which is a
+  *string join*, so a goal named relatively produced the relatively-spelled
+  `examples/shopping-cart/app`. Two consumers take that value and they disagree: `spawn`'s `cwd` resolves
+  a relative path against the process working directory and therefore landed in the **right** directory,
+  while `--permission`'s `readRoots` compares **absolute real paths**, so every read the child made was
+  refused `ERR_ACCESS_DENIED`, the server answered 404 for every path, and the run ended
+  `ENVIRONMENT_FAILURE - expected 200 from http://127.0.0.1:4317/, received 404`. The same command with an
+  absolute goal path passed. So the failure was a pass-shaped lie in two directions at once: a directory
+  that genuinely existed was reported unreachable, and the message named the application for a fault that
+  was in the spelling of the argument. **What made it expensive is that the documented default is the
+  broken spelling** - `--goal` defaults to a bare `goal.yaml`, and the demos pass absolute paths because
+  they build them with `fileURLToPath`, so every demo was green while the CLI's own default was not.
+  Fixed in `loadDocument` rather than in an adapter, because that is the single place that decides which
+  directory a document is in and every caller reaches its paths through it; an adapter-level repair would
+  have left `cwd` correct only by the accident of where the process was started, which is the outcome the
+  loader's own comment beside `appPath` already claimed to prevent. Two consequences worth keeping.
+  *A guard can fire on a comment.* `tests/mcp-demo.test.ts`'s door rule forbids the token `\bmcp\b`
+  anywhere under `core/`, and the repair's own explanatory comment named the surface - so the change
+  failed the suite for a reason that had nothing to do with the code, in the exact shape this register
+  already records for phase 08 (*a guard written as a regular expression over a source file's whole text
+  cannot pass when that file's own prose uses the word the guard forbids*). *An assertion that pins the
+  buggy spelling is a test that agrees with the defect.* `tests/definition-resolution.test.ts` asserted
+  the relative `"shopping-cart"` while its own comment stated the correct rule, so it passed for as long
+  as the defect existed; it now asserts the port's own resolved path and, separately, that the value is
+  rooted at the port's cwd.
+- **An absolute path has two spellings on Windows, and code written on one platform tests for the
+  other - so a second defect of the *same* shape was waiting one line below the first.** The repair
+  above made `source.dir` absolute, and the probe written to exercise it then failed in a new way:
+  `cwd=D:/all_projects/Veridian/.scratch/vgap/D:/all_projects/Veridian/examples/shopping-cart/app`. The
+  document had declared `app: D:/repo/examples/shopping-cart/app` - the natural way to spell an absolute
+  path here - and `resolveSibling` had **joined** it onto the document's directory instead of letting it
+  stand alone, because its join test was `reference.startsWith("/")`. The collapse four lines later used
+  the same word, `rooted`, for a *different* question ("did a leading separator survive the join?"), and
+  its comment reasoned carefully about Windows drive letters while only the collapse was reading it. Two
+  questions had been given one name, so the one that reasoned about drive letters was the one that could
+  not act on them. The failure looked nothing like a path bug: the child was started in a directory that
+  does not exist, `node serve.mjs` could not find its script, exited without printing, and the run
+  reported `the application exited with code null before printing /shopping-cart listening on .../` with
+  `stderr:` empty. **The general rule: a string that is handed to the operating system must be absolute
+  in the spelling of the platform it will be used on, and "is this rooted?" is two questions - so give
+  the two predicates two names.** Both are now named: `standsAlone` for the join, `rooted` for the
+  collapse, with the drive-letter case explicitly excluded from the second and the reason written down.
+  Two further things this cost. *A probe written to exercise a repair is a new measurement, not a
+  formality* - the second defect was found by the first repair's own probe, and would have shipped had
+  the repair been verified only by the suite, which was green in both directions. And *the first probe
+  of the message half was invalid for a reason worth keeping*: it wrote `app: "D:\..."` into YAML, where
+  `\e` is an escape and the parse failed with `Invalid escape sequence` - but the error line it printed
+  named the environment file as `D:/all_projects/Veridian/.scratch/vgap/environment.yaml`, **absolute,
+  resolved from a relative goal path**, so the repair announced itself inside the failure of the probe
+  meant to test something else.
