@@ -21,9 +21,10 @@
 
 import * as vscode from "vscode";
 
-import { readLastSummary } from "../bundle.ts";
+import { listRunIds, readJson, readLastSummary, runDirOf } from "../bundle.ts";
 import { systemRunner } from "../cli.ts";
 import { createCockpit } from "../cockpit.ts";
+import { listTwin } from "../twin.ts";
 import { createVscodePort } from "./vscode-port.ts";
 import { existsSync } from "node:fs";
 
@@ -43,6 +44,17 @@ export function activate(context: vscode.ExtensionContext): void {
     runner: systemRunner(),
     exists: (path) => existsSync(path),
     summarise: readLastSummary,
+    // Composed here rather than in `twin.ts`, so the surface module stays free of `node:fs` and its
+    // import list stays a fact a test can hold - see `docs/phases/05-the-cockpit-twin-surface.md`.
+    twin: (paths) =>
+      listTwin(
+        {
+          readJson,
+          listRunIds: () => listRunIds(paths),
+          runDir: (runId) => runDirOf(paths, runId),
+        },
+        paths,
+      ),
   });
 
   cockpit.registerAll();

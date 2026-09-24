@@ -22,6 +22,8 @@ import type { BrowserChoice, CliCommand, CliRoute, CliRunner, CliSettings } from
 import { isAbsolutePath, planInvocation, resolveCli } from "./cli.ts";
 import type { BundlePaths, RunSummary } from "./bundle.ts";
 import { bundlePaths, describeVerdict, readLastSummary } from "./bundle.ts";
+import type { TwinReading } from "./twin.ts";
+import { renderTwin } from "./twin.ts";
 import { join } from "node:path";
 
 /**
@@ -78,6 +80,12 @@ export interface CockpitDeps {
   readonly exists: (path: string) => boolean;
   /** Injected so the summary path is tested without writing a bundle. */
   readonly summarise: (paths: BundlePaths) => Promise<RunSummary | null>;
+  /**
+   * Injected for the same reason as `summarise`, and because the twin surface reads *every* bundle
+   * rather than the last one - so a test of the panel that hit the real disk would depend on how
+   * many runs happen to be on the machine running it.
+   */
+  readonly twin: (paths: BundlePaths) => Promise<TwinReading>;
 }
 
 /** What a Cockpit provides to whoever activated it. */
@@ -97,6 +105,7 @@ const COMMAND_IDS: readonly string[] = [
   "veridian.validate",
   "veridian.metrics",
   "veridian.showResult",
+  "veridian.showTwin",
   "veridian.openFailure",
 ];
 
@@ -379,6 +388,29 @@ export function createCockpit(deps: CockpitDeps): Cockpit {
     port.openPath(paths.lastResult);
   }
 
+  /**
+   * The twin panel: every run on disk, joined by subject and shown as rows.
+   *
+   * The whole of this function is *show the reading*. It does not filter to the last run - the point
+   * of the join is that one run tells you a verdict and several tell you whether the verdict holds -
+   * and it does not summarise, rank or total the verdicts it found. The one thing it adds is the
+   * state directory, because that is the fact a reader needs in order to check the rows against the
+   * files, and the Cockpit is a client of those files rather than their author.
+   */
+  async function showTwin(): Promise<void> {
+    const root = port.workspaceRoot;
+    if (root === null) {
+      port.showErrorMessage("Veridian needs an open folder.");
+      return;
+    }
+    const paths = bundlePaths(stateDirOf(root, readSettings(port).stateDir));
+    output.show(true);
+    log("");
+    for (const line of renderTwin(await deps.twin(paths))) log(line);
+    log("");
+    log(`state directory: ${paths.stateDir}`);
+  }
+
   function openFailure(): void {
     const root = port.workspaceRoot;
     if (root === null) {
@@ -411,6 +443,9 @@ export function createCockpit(deps: CockpitDeps): Cockpit {
       }),
       port.registerCommand("veridian.showResult", async () => {
         await showResult();
+      }),
+      port.registerCommand("veridian.showTwin", async () => {
+        await showTwin();
       }),
       port.registerCommand("veridian.openFailure", async () => {
         openFailure();

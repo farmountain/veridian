@@ -23,6 +23,7 @@ import { commandIds, createCockpit } from "./cockpit.ts";
 import type { Cockpit } from "./cockpit.ts";
 import { createFakePort } from "./fake-port.ts";
 import type { FakePort } from "./fake-port.ts";
+import type { TwinGroup, TwinReading, TwinRow } from "./twin.ts";
 
 // ---------------------------------------------------------------------------------------------
 // Harness
@@ -33,8 +34,10 @@ interface Harness {
   readonly cockpit: Cockpit;
   readonly runs: Invocation[];
   readonly summaries: BundlePaths[];
+  readonly twinReads: BundlePaths[];
   setOutcome(outcome: CliOutcome): void;
   setSummary(summary: RunSummary | null): void;
+  setTwin(reading: TwinReading): void;
 }
 
 const PASSING: RunSummary = {
@@ -62,6 +65,8 @@ function harness(options: { root?: string | null; activeFile?: string | null; se
   const summaries: BundlePaths[] = [];
   let outcome: CliOutcome = { code: 0, signal: null, stderr: "" };
   let summary: RunSummary | null = null;
+  let reading: TwinReading = { groups: [], unreadable: [] };
+  const twinReads: BundlePaths[] = [];
 
   const runner: CliRunner = {
     async run(invocation, onLine): Promise<CliOutcome> {
@@ -82,6 +87,10 @@ function harness(options: { root?: string | null; activeFile?: string | null; se
       summaries.push(paths);
       return await Promise.resolve(summary);
     },
+    twin: async (paths): Promise<TwinReading> => {
+      twinReads.push(paths);
+      return await Promise.resolve(reading);
+    },
   });
 
   return {
@@ -89,11 +98,15 @@ function harness(options: { root?: string | null; activeFile?: string | null; se
     cockpit,
     runs,
     summaries,
+    twinReads,
     setOutcome: (value) => {
       outcome = value;
     },
     setSummary: (value) => {
       summary = value;
+    },
+    setTwin: (value) => {
+      reading = value;
     },
   };
 }
@@ -305,6 +318,7 @@ test("a runner that throws still refreshes the dashboard and reports the failure
       seen.push(paths);
       return await Promise.resolve(null);
     },
+    twin: async () => await Promise.resolve({ groups: [], unreadable: [] }),
   });
   cockpit.registerAll();
   await port.invoke("veridian.init");
@@ -323,6 +337,65 @@ test("an unrecognised exit code is reported as unrecognised rather than as succe
   await h.port.invoke("veridian.init");
   assert.match(h.port.lines.join("\n"), /unrecognised exit code 42/);
   assert.match(h.port.information[0] ?? "", /unrecognised exit code 42/);
+});
+
+// ---------------------------------------------------------------------------------------------
+// The twin surface
+// ---------------------------------------------------------------------------------------------
+
+const ROW: TwinRow = {
+  runId: "run-1",
+  goal: "shopping-cart",
+  adapter: "local-web",
+  world: { kind: "web", name: "shopping-cart" },
+  verdict: "FAIL",
+  state: "COMPLETED",
+  iteration: 2,
+};
+
+const TWIN: TwinReading = {
+  groups: [{ subject: "shopping-cart@local-web", rows: [ROW, { ...ROW, runId: "run-2", verdict: "PASS" }] }],
+  unreadable: [],
+};
+
+test("the twin command shows the runs it was handed, and reads the state directory once", async () => {
+  const h = activated();
+  h.setTwin(TWIN);
+  await h.port.invoke("veridian.showTwin");
+
+  const text = h.port.lines.join("\n");
+  assert.match(text, /1 subject\(s\), 2 run\(s\)/);
+  assert.match(text, /shopping-cart@local-web {2}\(2 run\(s\)\)/);
+  assert.match(text, /run-1 {2}FAIL {2}COMPLETED {2}iteration 2 {2}web\/shopping-cart/);
+  assert.match(text, /run-2 {2}PASS {2}COMPLETED {2}iteration 2 {2}web\/shopping-cart/);
+  assert.match(text, /state directory: .*\.veridian/);
+  // One read of the whole history, not one per row: the panel is a client of the files, and a client
+  // that read the disk once per line would show a history that can change under it while it renders.
+  assert.equal(h.twinReads.length, 1);
+});
+
+test("the twin panel names the bundles it could not read instead of quietly counting fewer runs", async () => {
+  const h = activated();
+  h.setTwin({
+    groups: [{ subject: "shopping-cart@local-web", rows: [ROW] }],
+    unreadable: ["run-9: result.json is absent, is not JSON, or names no verdict"],
+  });
+  await h.port.invoke("veridian.showTwin");
+
+  const text = h.port.lines.join("\n");
+  assert.match(text, /1 subject\(s\), 1 run\(s\)/);
+  assert.match(text, /bundles that could not be read:/);
+  assert.match(text, /run-9: result\.json is absent/);
+});
+
+test("the twin command refuses without an open folder, and does not read the history", async () => {
+  const h = activated({ root: null });
+  h.setTwin(TWIN);
+  await h.port.invoke("veridian.showTwin");
+
+  assert.equal(h.port.errors.length, 1);
+  assert.match(h.port.errors[0] ?? "", /open folder/);
+  assert.equal(h.twinReads.length, 0);
 });
 
 test("metrics reports its own exit codes, because it judges no application", async () => {

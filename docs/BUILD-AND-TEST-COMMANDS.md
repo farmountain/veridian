@@ -18,8 +18,8 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 2625 tests over 438 suites, ~6-8s. No directory argument.
-                           # 2625 = the root's own 2553 + the Cockpit's 72, because the runner walks
+node --test                # the whole suite. 2645 tests over 438 suites, ~6-8s. No directory argument.
+                           # 2645 = the root's own 2553 + the Cockpit's 92, because the runner walks
                            # the tree and reaches extension/vscode/src/*.test.ts. The inclusion is
                            # measured rather than assumed: a test title that exists only in the
                            # Cockpit appears twice in this run. Neither figure is
@@ -45,18 +45,18 @@ npm ci                     # install. Dev only: typescript, @types/node, @types/
                            # node:zlib by hand rather than with a zip library.
 npm run gate               # typecheck, test, build, smoke:out - in that order.
                            # npx tsc --noEmit  -> silent
-                           # node --test       -> 72 tests, 0 failing
-                           # npm run build     -> out/, 6 files
+                           # node --test       -> 92 tests, 0 failing
+                           # npm run build     -> out/, 7 files
                            # npm run smoke:out -> loads the compiled entry point, 15 checks
 npm run smoke:out          # alone: resolve the manifest's `main`, activate it twice under a
                            # recording double of `vscode` (scripts/vscode-stub.mjs), and assert the
-                           # registered commands equal the six the manifest declares. Exit 1 if the
+                           # registered commands equal the seven the manifest declares. Exit 1 if the
                            # compiled file the manifest names is not there.
 npm run package            # vsce package --no-dependencies
                            # The archive lands at veridian-cockpit-<version>.vsix - `vsce` takes the
                            # name and the version out of the manifest it packages, so the filename
                            # cannot claim a version the extension inside it does not have.
-                           # 12 files, 119.98 KB, at the extension root. Deliberately NOT in `gate`:
+                           # 13 files, 125.09 KB, at the extension root. Deliberately NOT in `gate`:
                            # a packaging tool's output is not part of the source tree's contract,
                            # and making the local gate depend on `vsce` would make every local run
                            # need it. CI runs it, and runs the check below against it.
@@ -69,7 +69,7 @@ npm run smoke:vsix         # read that archive back as a zip and assert what it 
 ```
 
 **`npm run smoke:out` exists for the same reason `npm run smoke:dist` does, one runtime further out.**
-`node --test` runs `.ts`; the extension host runs `out/*.js`; so the six files that ship are covered by
+`node --test` runs `.ts`; the extension host runs `out/*.js`; so the seven files that ship are covered by
 nothing in this tree. It was falsified rather than trusted - pointing `main` at a path the build does
 not produce makes it fail naming that path and exit 1. It is also only *necessary*, never sufficient:
 `scripts/vscode-stub.mjs` is a recording double, and `extension/vscode/README.md` names what only a

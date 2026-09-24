@@ -144,7 +144,7 @@ Ordering note: this is deliberately *after* A, not because A is more valuable bu
 stable way to locate and start Core, and A1 is what makes Core locatable from outside its own
 directory tree.
 
-**Built:** `extension/vscode/` - six commands, four settings, a status-bar dashboard, and a hand-written
+**Built:** `extension/vscode/` - seven commands, four settings, a status-bar dashboard, and a hand-written
 `src/port.ts` that declares the slice of the editor API the Cockpit uses so that every *decision* is
 testable without an editor. The extension has no runtime dependency; `@types/vscode` is types only.
 
@@ -160,7 +160,7 @@ rather than asserted, in the note after the gate table below:
 |------|---------|--------|
 | Typecheck | `npx tsc --noEmit` | silent (exit 0) |
 | Decisions, headless | `node --test` | 72 tests, 0 failing |
-| Build | `npm run build` | `out/` - 6 files |
+| Build | `npm run build` | `out/` - 7 files |
 | **Compiled artifact** | `npm run smoke:out` | 15 checks, exit 0 |
 | Package | `npm run package` | `veridian-cockpit-0.5.0.vsix` - 12 files, 119.98 KB |
 | **Packaged archive** | `npm run smoke:vsix` | 35 checks, exit 0 |
@@ -174,7 +174,7 @@ import them - and it was falsified rather than trusted: prepending an import of 
 another test file fails it, naming the cause and the remedy.
 
 The fourth row is the same move `npm run smoke:dist` makes for the npm package. `node --test` runs
-`.ts` and the extension host runs `out/*.js`, so the six files that actually ship were covered by
+`.ts` and the extension host runs `out/*.js`, so the seven files that actually ship were covered by
 nothing. `scripts/smoke-out.mjs` resolves the manifest's `main`, aliases `vscode` to a recording
 double (`scripts/vscode-stub.mjs`), loads the compiled entry point, calls `activate`, and asserts the
 registered commands equal the six the manifest declares. It was falsified too: pointing `main` at a
@@ -1745,7 +1745,7 @@ What the phase produced, all measured on this machine:
 ```
 npx tsc --noEmit    silent (exit 0)
 node --test         72 tests, 0 failing
-npm run build       out/, 6 files
+npm run build       out/, 7 files
 npm run smoke:out   15 checks, exit 0
 npm run package     veridian-cockpit-0.5.0.vsix, 12 files, 119.98 KB
 npm run smoke:vsix  35 checks, exit 0

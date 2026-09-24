@@ -59,6 +59,11 @@
         "category": "Veridian"
       },
       {
+        "command": "veridian.showTwin",
+        "title": "Veridian: Show the twin - every run, joined by subject",
+        "category": "Veridian"
+      },
+      {
         "command": "veridian.openFailure",
         "title": "Veridian: Open the last failure report",
         "category": "Veridian"

@@ -27,7 +27,7 @@
  * of raising, and the caller decides what to say.
  */
 
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 /** The three run-level verdicts. `INCONCLUSIVE` is never a synonym for `PASS`. */
@@ -193,6 +193,31 @@ export function bundlePaths(stateDir: string): BundlePaths {
     lastFailure: join(stateDir, "latest-failure.md"),
     runsDir: join(stateDir, "runs"),
   };
+}
+
+/** The directory one run's files live in. One expression, so two readers cannot spell it differently. */
+export function runDirOf(paths: BundlePaths, runId: string): string {
+  return join(paths.runsDir, runId);
+}
+
+/**
+ * The run ids under `runs/`, oldest first, or an empty list when there is no `runs/` directory.
+ *
+ * The discipline is `core/metrics/history.ts`'s `listRuns`, restated here because the Cockpit may
+ * not import it, and pinned against it by `twin.test.ts` rather than trusted to stay in step:
+ * a run id is a timestamp with a suffix (`run-20260914-071916-b92031`), so **name order is
+ * chronological order** and no mtime has to be read to learn what the directory already says. A
+ * machine that has never run the product has nothing to list, and that is an empty history rather
+ * than an error.
+ */
+export async function listRunIds(paths: BundlePaths): Promise<readonly string[]> {
+  let entries: readonly string[];
+  try {
+    entries = await readdir(paths.runsDir);
+  } catch {
+    return [];
+  }
+  return entries.filter((entry) => entry.startsWith("run-")).sort();
 }
 
 /** Read and parse a JSON file, or `null` if it is absent or is not JSON. */

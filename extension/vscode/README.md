@@ -27,10 +27,10 @@ estimated:
 | Gate | Command | Result |
 |------|---------|--------|
 | Typecheck | `npx tsc --noEmit` | silent (exit 0) |
-| Tests | `node --test` | 72 tests, 0 failing |
-| Build | `npm run build` | `out/` - 6 files |
+| Tests | `node --test` | 92 tests, 0 failing |
+| Build | `npm run build` | `out/` - 7 files |
 | Compiled artifact | `npm run smoke:out` | 15 checks, exit 0 |
-| Packaged archive | `npm run package` | `veridian-cockpit-0.5.0.vsix` - 12 files, 119.98 KB |
+| Packaged archive | `npm run package` | `veridian-cockpit-0.5.0.vsix` - 13 files, 125.09 KB |
 | Archive contents | `npm run smoke:vsix` | 35 checks, exit 0 |
 | All of the above but the archive | `npm run gate` | exit 0 |
 
@@ -109,7 +109,7 @@ verifies.
 
 ## The commands
 
-All six are in the `Veridian` category and appear in the command palette.
+All seven are in the `Veridian` category and appear in the command palette.
 
 | Command | What it does |
 |---------|--------------|
@@ -118,12 +118,31 @@ All six are in the `Veridian` category and appear in the command palette.
 | `veridian.validate` | Runs a validation against the goal |
 | `veridian.metrics` | Measures M1..M5 over the runs on disk |
 | `veridian.showResult` | Opens the last verdict in the editor |
+| `veridian.showTwin` | Shows every run on disk, joined by subject `<goal>@<adapter>` |
 | `veridian.openFailure` | Opens the last failure report |
 
 `validate` and `clarify` need a goal; the extension looks for a configured `veridian.goal`, then for
 an open `goal.yaml`/`goal.yml`, and refuses with a message naming the problem if neither exists. It
 never invents a goal. `showResult` and `openFailure` never error: an operator asking to see a report
 that does not exist yet gets told that, not a failure.
+
+### The twin surface, and what it is not
+
+`showTwin` reads every bundle under the state directory, joins the runs by subject, and prints the
+rows. It is the **ELI** - `docs/DIGITAL-TWIN-PLAN.md` W1, built in `core/metrics/eli.ts` - as a
+client sees it, and it decides nothing: no threshold, no comparison between runs, and no verdict of
+its own. Each row prints the verdict `result.json` recorded, passed through.
+
+That last property is held by a test rather than by care. `src/twin.test.ts` reads
+**`src/twin.ts`'s imports** - the list must be exactly a path joiner and the bundle reader - and
+asserts the module contains **no verdict literal at all**, on the reasoning that a panel comparing a
+run against `"PASS"` is a panel that has started deciding. It also pins the four spellings the join
+depends on against the files that own them, so a rename in `result.schema.json` or in
+`core/metrics/metrics.ts` fails that guard by name instead of making the panel quietly report `?@?`.
+
+What it therefore does **not** do: it does not import `core/`, and it does not run the CLI. The
+Cockpit is a client of the bundle and the command line - see `src/bundle.ts` and `src/cli.ts` for why,
+and `src/twin.ts` for the one cost that choice carries.
 
 The dashboard sits in the status bar and reads `Veridian: PASS (3 criteria, iteration 3)`,
 `Veridian: FAIL (1 failed, 0 undecided, iteration 2)`, or `Veridian: no run yet`. A run that ended
@@ -160,7 +179,7 @@ repository cannot reach at all:
 2. **The compiled artifact** - `npm run smoke:out`. `node --test` runs `.ts`; the extension host runs
    `out/*.js`, and nothing else here covers those files. This script resolves the manifest's `main`,
    aliases `vscode` to `scripts/vscode-stub.mjs`, loads the real compiled entry point, calls
-   `activate`, and asserts that the commands it registers are exactly the six the manifest declares.
+    `activate`, and asserts that the commands it registers are exactly the seven the manifest declares.
    It was falsified rather than trusted: pointing `main` at a path the build does not produce makes it
    fail, naming the manifest as the cause. Its two dashboard checks were fixed and re-falsified in the
    same way. They used to wait a single turn of the loop for the refresh - which does not await itself -
