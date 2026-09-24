@@ -20,10 +20,13 @@ instructions file for this workspace �?do not add a second one
 > account**: a real HTTP server speaking a provider's own routes over loopback, holding buckets,
 > objects, queues, secrets and principals and deciding every permission question with the account's
 > own evaluator, judged as `svc-cart` rather than as an account root, with no cloud account, no
-> session, no provider API and no outbound socket anywhere in the loop. It is one of three worlds that
+> session, no provider API and no outbound socket anywhere in the loop. It is one of **two** worlds that
 > perform a `call` step, so a criterion can put its own request to the account rather than infer the
-> account's answer from the application's traffic - `local-api` does it for every criterion, and
-> `sim-data` for the ones that ask the broker a question of its own.
+> account's answer from the application's traffic - `local-api` is the other, and it does it for every
+> criterion. A third world reaches the same end by a different route: `sim-data` performs **no** `call`
+> step and lets a criterion put its own request to the broker on a `run` step's behalf, read back by the
+> `data.probe` validator. The distinction is the one this file states below - `call` is a step kind
+> *and* a validator name, and only the step kind is counted here.
 > `sim-container` is the seventh and the fifth simulated one, and its subject is a **container
 > runtime**: a real application process really provisioning images and containers through commands it
 > really issues, answered in process by a store of image and container records beside a register of
@@ -80,8 +83,8 @@ instructions file for this workspace �?do not add a second one
 > reading carries `simulated` - and nothing is emulated: no emulator, no image and no booted system
 > anywhere in the loop. It adds no step kind: the application provisions with the `run` steps the
 > second world introduced, and three of its criteria use one.
-> `npx tsc --noEmit` is silent and `node --test` reports 2693 passing tests over 451 suites -
-> Veridian's own 2601 plus the 92 the VS Code Cockpit contributes, which the root runner discovers
+> `npx tsc --noEmit` is silent and `node --test` reports 2698 passing tests over 452 suites -
+> Veridian's own 2606 plus the 92 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Five distribution routes ship - a clone, an npm package, the Cockpit (as
 > a development install and as a `.vsix`), the extension marketplaces that `.vsix` is published to,
 > and a container image - and there is still **no

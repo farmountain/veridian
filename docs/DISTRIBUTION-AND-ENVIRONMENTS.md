@@ -506,11 +506,16 @@ re-derivation of the ordering rules. That split is the same one `sim-os` makes b
   hardening contract judged as one would report a pass for permissions no ordinary workload gets.
   `svc-reader` is a second identity and a different question: an account the *program itself* creates,
   which criteria ask about without the run having to run as it.
-- **This is the only world that performs a `call` step**, the sixth step kind and the only one that
-  puts the criterion's own request to the world rather than reading a request the application made. The
-  other four adapters refuse it by name, and the cloud plan - and only the cloud plan - admits it, so a
-  contract whose meaning depends on asking the world directly cannot drift onto a world where that
-  question has no answer.
+- **This world introduced the `call` step**, the sixth step kind and the only one that puts the
+  criterion's *own* request to the world rather than reading a request the application made. **It is
+  one of two worlds that perform it**: `local-api` reuses the same kind rather than inventing one, and
+  every other adapter refuses it by name - so a contract whose meaning depends on asking the world
+  directly cannot drift onto a world where that question has no answer. `sim-data` reaches the same end
+  by a different route and performs no `call` step at all: a criterion there puts its own request to the
+  broker **on a `run` step's behalf**, read back by the `data.probe` validator. *A count that says
+  "only" is a roster, and this one was unguarded* - the sentence read *"the only world"* while `local-api`
+  performed the same kind, which is the drift `tests/simulated-surfaces.test.ts` catches for surfaces and
+  nothing catches for step kinds.
 
 **Acceptance:** four deliberate defects, twenty-seven criteria, the same `FAIL` -> repair -> `PASS`
 descent, and a bundle whose reading names each surface standing in for something. Measured in §7.
@@ -608,14 +613,17 @@ it, and the hole would only be discovered by the first user who pointed Veridian
 **What makes it different from `local-web`, which is also real.** Three things, and each one is a
 capability rather than a detail.
 
-1. **The contract makes the requests, not the application.** This is the only world that performs a
-   `call` step. In every other world a criterion infers the service's answer from traffic the
+1. **The contract makes the requests, not the application.** This is one of **two** worlds that perform
+   a `call` step - `sim-cloud` introduced the kind, and this world reuses it rather than inventing one.
+   In every world that performs no `call` step a criterion infers the service's answer from traffic the
    application generated; here the criterion puts its own `GET /health` to the service and reads the
    status line, the headers, the byte count and a pointer into the body. So a criterion can ask a
    question the application never asks - a request the application would never make, against a route
    it never uses - which is what makes an HTTP contract about an interface rather than about a session.
    `call` is the sixth world's step kind, reused rather than reinvented, and `local-api` adds no kind of
-   its own.
+   its own. This paragraph read *"the only world that performs a `call` step"* while naming `sim-cloud`
+   as the world the kind came from - a contradiction inside one paragraph, and the reason a roster claim
+   has to be counted rather than recalled.
 2. **No page, so no browser.** `browser.enabled` is `false` in the environment document and there is no
    Playwright anywhere in the loop. The reading is `api.http` and the only evidence kind is `json`.
 3. **Three target grammars in one family.** A bare 1-based position addresses one exchange
@@ -662,9 +670,10 @@ table.
 **What makes it different from `local-api`, which is also real.** Two things, and the first is the
 sharpest distinction in the series.
 
-1. **There is no socket, so there is no `call`.** `local-api` is the only world whose contract can put
-   its own request to its subject. This world has nowhere to put one, so a criterion acts in it with
-   `run` and reads the result - which is why the world that adds the least capability is the one that
+1. **There is no socket, so there is no `call`.** `local-api` and `sim-cloud` are the two worlds whose
+   contract can put its own request to its subject through a `call` step, and `sim-data` does it through
+   `run`; this world has nowhere to put one, so a criterion acts in it with `run` and reads the result -
+   which is why the world that adds the least capability is the one that
    shows the step register was never the frame around the worlds; the worlds are the frame around the
    step register.
 2. **Two target grammars in one family, chosen by the *validator* rather than by the spelling.** `app`
@@ -1302,7 +1311,7 @@ three - and a `chown` for a system that expresses the same intent as an ACL.
 | Observation vocabulary | built | `core/environment/cloud-observation.ts`, so no validator imports an adapter. The sixth family needed **no core change** beyond this and the name registration - the fourth sample of that claim. It is also the first observation vocabulary that carries an *action* grammar, because a `call` step needs one the substitute and the validators share. |
 | Validator family | built | `validators/cloud/` - eleven validators, 59 tests, including a contract-coverage case that reads `examples/sim-cloud/acceptance.yaml` and asserts every registered name is reachable from the demo. Falsified by replacing a comparison rather than trusted. |
 | Judged as a named account | built | The loader refuses `root`, `account-root`, `owner`, `administrator` and `admin`. Every policy in an account yields to an account root, so a hardening contract judged as one would report a pass for permissions no ordinary workload gets. |
-| The `call` step | built | The sixth step kind, and the only one that puts the criterion's *own* request to the world rather than reading a request the application made - so a criterion can ask the account a question the application never asked. The other four adapters refuse it by name; the cloud plan, and only the cloud plan, admits it. |
+| The `call` step | built | The sixth step kind, introduced **here**, and the only one that puts the criterion's *own* request to the world rather than reading a request the application made - so a criterion can ask the account a question the application never asked. **Two worlds perform it**: `local-api` reuses the kind for every criterion, and every other adapter refuses it by name. `sim-data` performs no `call` step and lets a criterion put its own request to the broker on a `run` step's behalf instead. |
 | Demo | built | `examples/sim-cloud/` - four deliberate defects, twenty-seven criteria, `npm run demo:cloud`, exit 0. Iteration 1 `FAIL`s seven criteria (`AC-003`, `AC-005`, `AC-009`, `AC-011`, `AC-013`, `AC-026`, `AC-027`); iterations 2-4 remove six, four and two; iteration 5 is `PASS` on all twenty-seven with `27/27 mandatory criteria passed, environment valid, no safety violation, evidence complete.` |
 | Regression tests | built | `tests/sim-cloud-demo.test.ts` (19), `tests/cloud-observation.test.ts` (32), `validators/cloud/cloud-validators.test.ts` (59), `adapters/sim-cloud/cloud-port.test.ts` (103), plus a `cloud` case in `tests/environment-gaps.test.ts` and the `cloud` roster entry in `tests/readme-rosters.test.ts`. |
 

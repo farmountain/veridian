@@ -1773,6 +1773,24 @@ reads a variable.*
   file's text is a guard over everything the file says - including the sentences that explain the rule
   - so read the file's imports, exports or AST rather than its words.*
 
+  **The same shape recurred on a document, and the second occurrence is what turns it into a method.**
+  `tests/call-step-roster.test.ts` was written to catch the `call` step roster, which had rotted in three
+  places at once - `AGENTS.md` calling `sim-cloud` *"one of **three** worlds that perform a `call` step"*
+  and naming `sim-data` as the third, and `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` calling two different
+  worlds *"the only world that performs a `call` step"* in two different sections. Its first draft
+  asserted the **absence** of those absolutes, and it failed immediately **on the correction**: the
+  paragraph that repairs the first one quotes it, so a regex over the document matches the sentence
+  explaining that the sentence was wrong. Loosening the pattern is the move that turns a guard into
+  decoration, so instead the question was **changed to one the defect fails and the correction passes** -
+  a **count**. *"Only one world"* states no number at all, so the old text cannot satisfy a check that a
+  stated count must equal the derived one, while the corrected text states `two` and can. The general
+  form is worth more than either instance: *when a guard has to forbid something the corrected document
+  must also quote, do not search for the words - find a positive question whose answer the defect cannot
+  produce.* Both halves of that guard were then probed: changing the `call` marker in
+  `sim-cloud-environment.ts` fires three assertions, because the derived count feeds both documents; and
+  changing the document's `**Two worlds perform it**` to `Three` fires exactly one, naming
+  *"the `call` step row of §7 says 3 worlds perform a `call` step, and 2 do: local-api, sim-cloud"*.
+
 - **A guard that holds where a decision *lives* is not a guard that holds what the decision *does*,
   and only the second is the acceptance criterion.** Phase 08's suite was written with a roster over
   `core/environment/manager.ts`: it asserted the pair `plan.imported !== null && plan.adopted === null`
@@ -1890,6 +1908,28 @@ reads a variable.*
   figure after a `(`. A search is a measurement, and an unstated search is a count with no reader, one
   level up. *When a finding is a count, the rule that records it is a count too* - and the author of a
   rule is the least likely person to notice that the rule has the defect it is about.
+- **A guard that holds a figure to agreement across every site that states it will hold a *record* to a
+  *reading*, and that makes the record wrong the moment the tree moves.** `tests/docs-roster.test.ts`
+  carried a `COUNT_SITES` list - the documents whose present-tense totals are compared with each other -
+  and it named four: `AGENTS.md`, `README.md` twice, `docs/BUILD-AND-TEST-COMMANDS.md`, and
+  **`docs/phases/13-the-always-on-budget.md`**. The first four are live readings. The fifth is the
+  closing line of a phase file, which is a measurement of **the moment that phase closed**, and it was in
+  a list whose whole purpose is to force every member to state today's figure. So adding five tests in
+  `tests/call-step-roster.test.ts` moved the total from `2693 / 451` to `2698 / 452`, and the only way to
+  satisfy the guard was to rewrite a sentence recording what was true on the day phase 13 closed - which
+  is the audit trail the same file's doc block says these lists exist to protect, and which it protects
+  for `docs/RULES-PAID-FOR.md` and `docs/DIGITAL-TWIN-DESIGN.md` by name while the phase file sat inside
+  the wrong half. The repair is the register's own earlier rule applied one document over: the phase
+  file's line now reads *"exited 0 at **2693** tests over **451** suites when this phase closed"*, and it
+  leaves the list - **a figure needs a unit, a state and the right list** - while the three live sites
+  were re-measured to `2698 / 452` together, which is the case the guard cannot catch and says so. The
+  distinction that decides every future member is *present tense vs. past moment*, not *is the figure
+  correct*, because both are correct and only one may be kept current. Its sibling in this same pass:
+  `README.md` had said the gate was *"about seven seconds"* on the line for **`npm run gate`**, while the
+  figure belonged to **the suite** - the suite reports `~11s` and the whole gate, typecheck included,
+  measures `~16s` - so the adjective was right about one command and attached to another. That is the
+  `sim-data` evidence-kind defect one document out again: *a figure beside a command is a claim about
+  that command, and two commands that share a line have two figures.*
 - **A conclusion stated as a consequence of a probe's readings can outlive the readings without any of
   them becoming false - which is why the conclusion has to be re-checked, not just the readings.**
   `docs/ISOLATION-AND-MCP-PLAN.md` §3.1 refused the isolation substrate with *"a substrate that supplies

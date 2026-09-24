@@ -62,8 +62,12 @@ and the two indexes that guards read.
   of that shape are recorded four times over (`db.query`, `db.rowCount`, `web.visible`, the observation
   vocabulary). `## Distribution` therefore merges into the existing
   `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` rather than becoming `docs/DISTRIBUTION.md`.
-- **The guards are green at the figures above**: `npm run gate` exits 0 at **2693** tests over **451**
-  suites, `npm run acceptance` prints `exit 0 - PASS` for both of its runs.
+- **The guards are green at the figures above**: `npm run gate` exited 0 at **2693** tests over
+  **451** suites *when this phase closed*, and `npm run acceptance` printed `exit 0 - PASS` for both
+  of its runs. The figure is anchored on purpose: this file is a record of one moment, not a live
+  reading, so it must not be rewritten every time a later phase adds a test - the live sites are
+  `AGENTS.md`, `README.md` twice and `docs/BUILD-AND-TEST-COMMANDS.md`, and
+  `tests/docs-roster.test.ts` holds those four in agreement with each other.
 
 ## What this phase does
 

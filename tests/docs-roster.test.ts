@@ -37,9 +37,9 @@ import { nodeIo } from "../core/io.ts";
  * flat, and directories are matched as directories, and the two rules are stated rather than implied.
  *
  * **And the counts are prose this file does not pin.** Four sites in the tree state the suite total in
- * the present tense (`AGENTS.md`, `README.md` twice, `docs/BUILD-AND-TEST-COMMANDS.md`, and the phase
- * 13 file). What is asserted below is that they **agree with each other**, which catches the
- * half-updated figure - one site moved and the others not. What no test in this tree can catch is the
+ * the present tense (`AGENTS.md`, `README.md` twice, and `docs/BUILD-AND-TEST-COMMANDS.md`). What is
+ * asserted below is that they **agree with each other**, which catches the half-updated figure - one
+ * site moved and the others not. What no test in this tree can catch is the
  * day all of them move together and none of them is re-measured, because *a count cannot be pinned by
  * a test that itself changes the count*; that case is repaired by re-taking the measurement, and the
  * four sites are named here so the next pass knows where to take it.
@@ -53,12 +53,18 @@ import { nodeIo } from "../core/io.ts";
  * is deliberately not in this list. `docs/RULES-PAID-FOR.md` and `docs/DIGITAL-TWIN-DESIGN.md` both
  * carry older totals and both are right to - they are records of past measurements, and rewritng them
  * would destroy the audit trail the register exists to be.
+ *
+ * `docs/phases/13-the-always-on-budget.md` was in this list and was removed, because a phase file
+ * records the moment the phase closed and a live figure cannot be asked of a past moment. It is the
+ * defect the register already carries in the other direction - a figure whose *unit* or *state* was
+ * left unstated, so a later pass freshens a number that should have been anchored. That file's line
+ * now says `exited 0` and `when this phase closed`, which is the same treatment phase 08's line
+ * already had (and which is why phase 08 was never in this list).
  */
 const COUNT_SITES = [
   "AGENTS.md",
   "README.md",
   "docs/BUILD-AND-TEST-COMMANDS.md",
-  "docs/phases/13-the-always-on-budget.md",
 ] as const;
 
 const repo = nodeIo();
