@@ -1791,6 +1791,29 @@ reads a variable.*
   changing the document's `**Two worlds perform it**` to `Three` fires exactly one, naming
   *"the `call` step row of §7 says 3 worlds perform a `call` step, and 2 do: local-api, sim-cloud"*.
 
+- **A tool-availability error is evidence about the client's visible registry, and the strongest
+  available proof is a sibling answering in the same breath.** `AGENTS.md` carries this rule at length
+  and this register did not, so it is written here because it was paid for three more times in one
+  verification pass - twice on `mcp_karm_kakeya_a_karm_substrate_health` and once on
+  `mcp_hipcortex_get_live_beliefs` - each reporting the same verbatim string, *"Tool <name> is
+  currently disabled by the user, and cannot be called"*, and **each answered normally on the next
+  invocation in the same session.** The strongest reading comes from the second occurrence, because the
+  two facts are simultaneous rather than successive: while `mcp_hipcortex_get_live_beliefs` reported
+  itself disabled, `mcp_hipcortex_cognitive_report` returned a full document **and**
+  `mcp_hipcortex_open_intent` plus `accept_receipt` returned `{"ok": true}` from the *same server in the
+  same window*. A message that says one tool is unavailable while its siblings in the same process
+  answer **cannot be a statement about the process**, and the words *"by the user"* are the message's own
+  attribution and nothing anyone measured. What worked, measured twice: call an activation/resolution
+  step for the tool's group and re-invoke - not as a workaround but because the first invocation is not
+  a measurement, so re-invoking is how the measurement gets taken. *The operational cost of believing
+  this string is a false report about a person; the cost of disbelieving it is one retry.* Two further
+  details worth keeping: the string's grammar invites the inference (*by* whom?) and the reasoning is
+  cheap to check against an unrelated tool in the same family, which is why the check is *always*
+  available and there is no case where the honest course is to report the disablement. And the trap has
+  now been met on **three different servers** (KARM, HipCortex, and the Playwright/`--browser none`
+  instance already recorded), so it is a property of the client that hosts tools rather than of any one
+  MCP implementation.
+
 - **A guard that holds where a decision *lives* is not a guard that holds what the decision *does*,
   and only the second is the acceptance criterion.** Phase 08's suite was written with a roster over
   `core/environment/manager.ts`: it asserted the pair `plan.imported !== null && plan.adopted === null`
