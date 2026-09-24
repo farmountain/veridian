@@ -20,8 +20,8 @@ five files above.
 | 01 | [Land the working tree](./01-land-the-working-tree.md) | The instrument repairs and world identity reach a commit, with the counts re-measured | **built** | -- |
 | 02 | [The ELI join](./02-the-eli-join.md) | One row per run, joined from the bundles already on disk | **built** | 01 |
 | 03 | [dENV and the export predicate](./03-denv-export-predicate.md) | A total predicate over the record, with a known-present control | built | 02 |
-| 04 | [The ESI interchange document](./04-the-esi-interchange.md) | Export only: identity plus dENV, byte-stable | planned | 03 |
-| 05 | [The Cockpit twin surface](./05-the-cockpit-twin-surface.md) | A thin client over the join, with no validation logic | deferred | 02, 03, 04 |
+| 04 | [The ESI interchange document](./04-the-esi-interchange.md) | Export only: identity plus dENV, byte-stable | built | 03 |
+| 05 | [The Cockpit twin surface](./05-the-cockpit-twin-surface.md) | A thin client over the join, with no validation logic | next | 02, 03, 04 |
 | 06 | [Network enforcement](./06-network-enforcement.md) | The one boundary dimension enforced nowhere becomes enforced somewhere | next | 01 |
 | 07 | [The isolation substrate](./07-the-isolation-substrate.md) | A real substrate behind the seam that already exists | **blocked here** | 06 |
 | 08 | [Import into a prepared world](./08-import-into-a-prepared-world.md) | An imported world enters through `prepare()` or not at all | gated by 07 | 04, 07 |

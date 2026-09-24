@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | planned |
-| **Depends on** | 03 (there is nothing worth exporting until the predicate says what may leave) |
+| **Status** | built |
+| **Depends on** | 03 (there is nothing worth exporting until the predicate says what may leave) -- landed |
 | **Source** | `docs/DIGITAL-TWIN-PLAN.md` S4 (W3); `docs/DIGITAL-TWIN-DESIGN.md` S6 |
-| **Touches** | a new interchange writer beside the ELI; a new test; `schemas/` only if the document gets a schema |
+| **Touches** | `core/metrics/esi.ts` (the writer, beside the ELI); `tests/esi-interchange.test.ts`; no `schemas/` entry, see below |
 | **Acceptance** | AC-7 of `docs/DIGITAL-TWIN-PLAN.md` S4; AC-8 belongs to phase 08 |
 
 ## Why this phase exists
@@ -54,6 +54,35 @@ of the phase:
   to the source's, and a dENV reading of zero refused keys reaching the document.
 - Exporting the same bundle twice produces identical bytes, and reordering the input record's keys does
   not change the output.
+
+### What was measured, and one correction to this phase's own words
+
+`AC-7`'s "byte-identical to the source's" cannot be true of the document as the phase first described
+it, because dENV is what makes the export an export: a `database` world's name and a `process` world's
+command line are *rendered* and *refused* respectively, so the exported identity block is deliberately
+not byte-equal to the raw bundle. The claim that can be true - and the one now asserted - is that the
+**round trip** is lossless: `parseEsi(exported.json).world` is byte-identical to the block the exporter
+wrote. Both halves are in the suite, and the second is asserted only for a kind where rendering is a
+no-op (`web`), which is the one place the two readings coincide.
+
+Both of the phase's falsification probes were run, each against a file whose line ending was detected
+and printed (`CRLF`), with the harness **not** restoring the file before the suite:
+
+| Probe | What was patched | Observed |
+|-------|------------------|----------|
+| Order | `canonicalJson`'s key sort removed | `the ESI is byte-stable` fails, **1** subtest |
+| Predicate's reach | `exportDocument(raw)` replaced with a pass-through | `nothing the predicate refused reaches the ESI` fails, **2** subtests |
+
+The second is the seam between phases 03 and 04, and it fires in both directions asked of it: the
+sibling assertion ("the app name is in the artifact") still passes, so it is the *escape* being
+detected rather than an empty document.
+
+**No schema was added,** which this phase's `Touches` row left open. A schema's job is to be read by a
+validator, and this document has no reader in this tree: the import half is phase 08, the Cockpit
+surface is phase 05, and `core/schema/registry.ts` resolves schemas for the *contracts* the engine
+loads. A schema nothing validates against is the capability list this repository has paid for five
+times - a claim beside the code rather than derived from it - so the document's shape is held by
+`parseEsi`'s parsing and by the roster guard on `esi.ts`'s exports instead.
 
 ## Falsification probe
 

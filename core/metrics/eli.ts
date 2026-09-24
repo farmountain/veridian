@@ -128,16 +128,7 @@ const declaredWorld = (value: unknown): Pick<WorldIdentity, "kind" | "name"> | n
 };
 
 /**
- * The world one run measured, labelled - or `null`.
- *
- * `Pick<WorldIdentity, "kind" | "name">` rather than a whole `WorldIdentity`, because the join reads
- * a label and nothing else: reconstructing a full identity here would mean deciding what to write
- * for `detail`, which is a field this row does not report. A missing file, unparseable JSON and a
- * record with no `world` all answer the same way, because they are the same fact about the bundle -
- * it does not name a world - and three different return values would be three vocabularies for it.
- */
-/**
- * Where one run's environment document lives - **one expression**, so the two readers below cannot
+ * Where one run's environment document lives - **one expression**, so the readers below cannot
  * disagree about it.
  *
  * It is a function rather than a line repeated at two call sites because the two callers ask
@@ -156,6 +147,23 @@ const readEnvironment = async (io: IoPort, stateDir: string, runId: string): Pro
   } catch {
     return null;
   }
+};
+
+/**
+ * One run's `environment.json`, parsed - or `null` when it is absent, unparseable, or not an object.
+ *
+ * Exported because a third reader wants the same document: the interchange writer needs the whole
+ * thing rather than the `world` block, and a second path expression is a second chance for two
+ * readers to look in different places for the same file.
+ */
+export const readRunEnvironment = async (
+  io: IoPort,
+  stateDir: string,
+  runId: string,
+): Promise<Readonly<Record<string, unknown>> | null> => {
+  const parsed = await readEnvironment(io, stateDir, runId);
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  return parsed as Record<string, unknown>;
 };
 
 /**

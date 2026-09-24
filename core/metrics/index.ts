@@ -39,5 +39,15 @@ export type { HistoryMetrics, RunHistory } from "./history.ts";
 export { listRuns, measureRunHistory, readRunHistory } from "./history.ts";
 export type { EliEnvGroup, EliEnvPair, EliEnvReport, EliGroup, EliReport, EliRow } from "./eli.ts";
 export { groupEliRows, listEliEnvDeltas, listEliRows } from "./eli.ts";
-export type { EnvDifference, EnvExport, ExportDecision, ExportRule, RefusedKey } from "./denv.ts";
-export { EXPORT_DECISIONS, EXPORT_RULES, envDelta, exportEnvironment, ruleFor } from "./denv.ts";
+export type { EnvDifference, EnvExport, ExportDecision, ExportRule, RefusedKey, RenderedKey } from "./denv.ts";
+export {
+  EXPORT_DECISIONS,
+  EXPORT_RULES,
+  canonicalJson,
+  envDelta,
+  exportDocument,
+  exportEnvironment,
+  ruleFor,
+} from "./denv.ts";
+export type { EsiDocument, EsiExport, EsiRefusal, EsiRendering, EsiRun, EsiWorld } from "./esi.ts";
+export { ESI_VERSION, esiForSubject, listEsi, parseEsi } from "./esi.ts";

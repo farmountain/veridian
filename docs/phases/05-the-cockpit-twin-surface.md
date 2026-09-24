@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | deferred -- deliberately last of the twin work, and not blocked |
-| **Depends on** | 02, 03, 04 (there is nothing to render until the join, the predicate and the document exist) |
+| **Status** | next -- its three dependencies have landed, and nothing else blocks it |
+| **Depends on** | 02, 03, 04 (there is nothing to render until the join, the predicate and the document exist) -- all three built |
 | **Source** | `docs/DIGITAL-TWIN-PLAN.md` S4 (W4); `extension/vscode/README.md` |
 | **Touches** | `extension/vscode/src/**` and the manifest; **no** root-tree file |
 | **Acceptance** | AC-9 of `docs/DIGITAL-TWIN-PLAN.md` S4 |

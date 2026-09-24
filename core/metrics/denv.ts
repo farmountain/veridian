@@ -406,7 +406,19 @@ const RENDERERS: Readonly<Record<string, (value: unknown, record: ExportRecord) 
  * with an unreachable default is a registry nothing is checking.
  */
 export function exportEnvironment(record: EnvironmentRecord): EnvExport {
-  const serialized = serializeEnvironment(record);
+  return exportDocument(serializeEnvironment(record));
+}
+
+/**
+ * The export over a document that is already serialized - which is the shape a reader has when the
+ * document came off disk.
+ *
+ * It exists because an export path has two callers and only one of them holds an `EnvironmentRecord`.
+ * A bundle's `environment.json` is a document, and the interchange writer reads documents; a test
+ * holds a record. Routing the second through the first is what keeps them from being two predicates:
+ * `exportEnvironment` is now one line, and there is nowhere for the two to disagree.
+ */
+export function exportDocument(serialized: Readonly<Record<string, unknown>>): EnvExport {
   const document: Record<string, unknown> = {};
   const log: ExportRecord = { refused: [], rendered: [] };
 
@@ -442,11 +454,11 @@ export interface EnvDifference {
  * once. That failure would read as a world that did not come back, which is the one reading this
  * function exists to make trustworthy.
  */
-const canonical = (value: unknown): string => {
+export const canonicalJson = (value: unknown): string => {
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  return `{${entries.map(([key, member]) => `${JSON.stringify(key)}:${canonical(member)}`).join(",")}}`;
+  return `{${entries.map(([key, member]) => `${JSON.stringify(key)}:${canonicalJson(member)}`).join(",")}}`;
 };
 
 /**
@@ -475,7 +487,7 @@ export function envDelta(
     if (!ruleFor(key).resource) continue;
     const was = before[key];
     const now = after[key];
-    if (canonical(was) !== canonical(now)) differences.push({ key, before: was, after: now });
+    if (canonicalJson(was) !== canonicalJson(now)) differences.push({ key, before: was, after: now });
   }
   return differences;
 }
