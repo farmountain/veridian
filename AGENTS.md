@@ -80,8 +80,8 @@ instructions file for this workspace — do not add a second one
 > reading carries `simulated` - and nothing is emulated: no emulator, no image and no booted system
 > anywhere in the loop. It adds no step kind: the application provisions with the `run` steps the
 > second world introduced, and three of its criteria use one.
-> `npx tsc --noEmit` is silent and `node --test` reports 2568 passing tests over 426 suites -
-> Veridian's own 2496 plus the 72 the VS Code Cockpit contributes, which the root runner discovers
+> `npx tsc --noEmit` is silent and `node --test` reports 2569 passing tests over 426 suites -
+> Veridian's own 2497 plus the 72 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Five distribution routes ship - a clone, an npm package, the Cockpit (as
 > a development install and as a `.vsix`), the extension marketplaces that `.vsix` is published to,
 > and a container image - and there is still **no
@@ -928,8 +928,8 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 2568 tests over 426 suites, ~8s. No directory argument.
-                           # 2568 = the root's own 2496 + the Cockpit's 72, because the runner walks
+node --test                # the whole suite. 2569 tests over 426 suites, ~8s. No directory argument.
+                           # 2569 = the root's own 2497 + the Cockpit's 72, because the runner walks
                            # the tree and reaches extension/vscode/src/*.test.ts. The inclusion is
                            # measured rather than assumed: a test title that exists only in the
                            # Cockpit appears twice in this run. Neither figure is
@@ -2269,6 +2269,29 @@ port had none, which is why the defect reached a demo run.
   as though it were the program's. *A movement that is not attributable in full
   is not a movement to describe loosely: name the part you measured, say what the remainder is, and
   let the arithmetic that does not reconcile be the evidence that something else moved.*
+  **A fifteenth movement is the first this record can attribute to a single assertion, and the first
+  whose cause is the guard rather than the world it guards.** `tests/phases-roster.test.ts` grew from
+  **9** tests to **10** over the same **1** suite - the sixth question, that every phase file carries a
+  `## Context budget` heading with both a `**Read:**` and a `**Do not read:**` line - and the root run
+  now reports **2569** tests over **426** suites with this tree's own at **2497** (the Cockpit's **72**
+  re-measured by running its own `node --test` rather than assumed - 72 tests, `# suites` still **0** -
+  so all 426 of the root run's suites are this tree's own rather than the 354 a subtraction would have
+  produced). The arithmetic is exact and is stated as exact: 2568 + 1 = 2569, one assertion, one test,
+  one unit. Which is precisely the case this record exists to distrust, so both figures were **taken**
+  by running `node --test` on both trees and the decomposition was proved the way the seventh through
+  fourteenth were - a title that exists only in the Cockpit *("the manifest and the Cockpit declare the
+  same commands")* appears **twice** in the root run's own output. Two things are stated rather than
+  left to inference. The fourteenth movement's remainder of **three** unattributed tests is
+  **untouched** by this one: adding one assertion that happens to be countable says nothing about three
+  that were never measured when they were written, and folding them into a figure that now reconciles
+  would be exactly the comfortable total that movement refused. And the wall-clock figure **did not
+  move** - this pass read `# duration_ms 8044.4786`, which rounds to the `~8s` both sites already
+  carried - so it was re-taken and found *correct* rather than re-taken and changed, which is a
+  different outcome for the same procedure and one worth being able to tell apart. The four live prose
+  sites were corrected in the same pass: `AGENTS.md`'s status banner and its build block, `README.md`'s
+  quickstart and its layout table. *A count that moves by one is the count most likely to be corrected
+  by addition instead of by measurement - and the only reason this entry exists is that here, addition
+  would have produced the same number.*
 - **A document that names what a world *substitutes* is making a claim about a `*_SIMULATED_SURFACES`
   constant, and a claim nothing reads drifts.** `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` §5 recorded
   `sim-posix` as substituting *"Kali's attack network"*, and `POSIX_SIMULATED_SURFACES` says the
@@ -3160,7 +3183,13 @@ already has a style is a second rulebook rather than a description.
   phase file on disk has a row, whether every row names a file, whether every row's status is the word
   its own phase file states, whether every status is a word the document itself **declares** (parsed
   from the document rather than restated in the test), and whether the byte total it prints is the
-  arithmetic of the files it names. *"Nothing guards this" and "the guard you named guards something
+  arithmetic of the files it names - five questions of the table, and a sixth asked of the phase files
+  themselves rather than of the table: that each carries a `## Context budget` heading with **both** a
+  `**Read:**` and a `**Do not read:**` line. The sixth is a question of *shape* rather than of
+  agreement, because a budget has nothing to agree with, and it is asked because a file naming only
+  what to read is a file whose reader fills the window with the first list and never reaches the
+  second - which is the failure the directory was built to prevent, and therefore the one thing in it
+  worth checking rather than trusting. *"Nothing guards this" and "the guard you named guards something
   else" look identical from a sentence and are different facts - so read a guard's selection before the
   document that cites it, and make a nested document's guard read the nested document.*
 
