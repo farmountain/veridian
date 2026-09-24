@@ -100,8 +100,10 @@ outlives it. That is the ladder working as designed - `ASK` is for gaps no rule 
 
 ### Phase A1 - npm install route (built here)
 
-The design is not new; `AGENTS.md` `## Distribution` already specified it while declining it, which
-makes this the lowest-uncertainty phase in the list.
+The design is not new; `## The distribution route, as shipped` at the foot of this document already
+specified it while declining it - that section was `AGENTS.md`'s `## Distribution` until the always-on
+file was cut back to the invariants it must hold - which makes this the lowest-uncertainty phase in the
+list.
 
 - Compile `cli/`, `core/`, `adapters/`, `validators/` to `dist/` with `tsc -p tsconfig.build.json`,
   `rewriteRelativeImportExtensions` turning the `.ts` import specifiers into `.js`.
