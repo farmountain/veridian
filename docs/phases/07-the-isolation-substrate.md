@@ -182,6 +182,22 @@ found it was itself wrong first.
     reading that makes the port's runtime-agnosticism a measurement rather than a claim: it tries
     `podman` then `docker`, reads a **server** version, and resolves the runtime to an executable so
     the vector never passes through a shell.
+  - **That same run failed as a run, and both failures were this phase's subject.** The `isolation`
+    job is green in run `35958249177` and the run's conclusion is `failure`, because both `gate` jobs
+    failed - one defect each, and neither platform could see the other's:
+    - `gate (ubuntu-latest)`: `docs/DIGITAL-TWIN-PLAN.md: says 12270, is 12078` and four more, each one
+      byte per line smaller. The five differences summed to 2,875 - the line count of the five
+      documents - so a stated byte total was a reading of a `CRLF` checkout compared against an `LF`
+      one. `tests/phases-roster.test.ts` now counts with `\r\n` normalised to `\n`, and
+      `docs/phases/README.md` states `208,025 bytes` in that unit.
+    - `gate (windows-latest)`: `'docker' !== ''` from `tests/isolation.test.ts`'s capability
+      assertion, which required `substrate` to be empty whenever the boundary did not hold. That
+      runner has Docker in Windows-container mode - it answers a server version, cannot run a Linux
+      image, and so reached a branch that needs no runtime to answer and cannot be reached here or
+      there. The field means *the runtime that answered*, and the port has said so in its own doc
+      block since it was written.
+    - Both are recorded in `docs/RULES-PAID-FOR.md` with the readings, because this is now the third
+      consecutive CI job in this repository whose **first** execution found a real defect.
 
 ## Falsification probe
 

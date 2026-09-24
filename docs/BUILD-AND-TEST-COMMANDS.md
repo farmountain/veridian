@@ -311,10 +311,16 @@ is the `upload the evidence bundle` step that uploaded nothing for every green b
 executed and did not measure what its name says. **It has since run twice, and the first run is the half
 worth keeping:** run `35958111544` failed in step 6 on `not ok 2 - translates a Windows path's
 separators`, because a Windows behaviour was asserted on every platform - and because a failed step
-skips its successors, the world-level step never executed either. Run `35958249177` is green with
-`# pass 19` and `# pass 18`, both `# skipped 0`, against `podman 4.9.3` on `ubuntu-latest` - a
-different runtime and version from this machine's `5.7.1`, which is what makes the port's
-runtime-agnosticism a measurement.
+skips its successors, the world-level step never executed either. The job's **second** execution lives
+in run `35958249177`, which is green for the job with `# pass 19` and `# pass 18`, both `# skipped 0`,
+against `podman 4.9.3` on `ubuntu-latest` - a different runtime and version from this machine's `5.7.1`,
+which is what makes the port's runtime-agnosticism a measurement. That run is **not** green as a whole,
+and the reason belongs here beside the job: both `gate` jobs failed in it, on two defects neither
+platform could see alone - `gate (ubuntu-latest)` on
+`docs/DIGITAL-TWIN-PLAN.md: says 12270, is 12078` (a byte total taken in `CRLF` and compared in `LF`),
+and `gate (windows-latest)` on `'docker' !== ''` (an assertion about a field whose branch this machine
+cannot reach). Both are held by `tests/phases-roster.test.ts` and `tests/isolation.test.ts` now, and
+both are written up in `docs/RULES-PAID-FOR.md`.
 
 **Both of those last two jobs have now run, and that is why they can be cited.** They were added and
 pushed in one commit, which means they existed for a short window as exactly the thing this file

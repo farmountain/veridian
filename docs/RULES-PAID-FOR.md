@@ -1696,3 +1696,54 @@ names** had to move into the port, because the mounts are the port's and a world
 them to describe itself would be a world that has to know how it is being held. *A spawn's `env` option
 is the runtime's environment, not the container's, and the difference is invisible until the container
 reads a variable.*
+
+- **A byte total is a reading of the checkout until the line endings are normalised, and the difference
+  is the line count.** `docs/phases/README.md` opened by stating that its five source documents total
+  `210,900 bytes`, and `tests/phases-roster.test.ts` re-measured them and passed - on Windows. Run
+  `35958249177`'s `gate (ubuntu-latest)` failed the same assertion with five disagreements, each one
+  exactly one byte per line smaller than the document claimed:
+  `docs/DIGITAL-TWIN-PLAN.md: says 12270, is 12078`, and 58,650 against 57,965 for
+  `docs/ISOLATION-AND-MCP-PLAN.md`. The five differences summed to **2,875**, which is the line count
+  of those documents - so the arithmetic was never wrong and the *unit* was. `core.autocrlf` is `true`
+  here: the index holds `LF`, this checkout holds `CRLF`, and `git ls-files --eol` reports
+  `docs/RULES-PAID-FOR.md` as `w/mixed`, so two readings of one file on one machine can disagree while
+  no word of it changes. The count is now taken of the content with `\r\n` normalised to `\n`, which is
+  the ending the index holds - and the guard's message says so, because a reader who sees a disagreement
+  has to know which of the two things moved. *A count that moves with a checkout setting is a
+  measurement of the checkout, and it will agree with the document on exactly one platform.* The
+  related half is that the assertion passed here for a reason it was not written for: this machine's
+  number and the document's number were both CRLF, so they agreed about a unit neither of them named.
+
+- **A probe that changes a value no assertion consults is not a probe - and the first version of this
+  one did exactly that, from the other side of the mistake this register already records.** Two new
+  assertions in `tests/isolation.test.ts` guard the unavailable reading of the isolation port, and the
+  probe written to falsify them edited `unavailable()`'s default `substrate` from `""` to `"docker"` -
+  the shape that would name a runtime with no version. The suite stayed at `# pass 14 / # fail 0`, which
+  reads as a guard with no teeth. It is not: **the podman machine was running on this machine**, so
+  `isolationCapability()` answered `available: true` and returned from the branch above the assertions.
+  The default parameter is consulted only on the path where no runtime answered at all, which cannot
+  happen here while a runtime is up. The earlier form of this mistake edited an assertion's *needle* and
+  weakened the question; this one edited a *default* that the code path in force never reads, so the
+  probe changed a value and measured nothing. The probe that works forces the state the assertion lives
+  in - `VERIDIAN_ISOLATION_IMAGE=veridian/does-not-exist:never`, the lever `scripts/probe-isolation.ts`
+  already uses - and perturbs a value that state really returns: dropping the version in the factory
+  fired *"a runtime is named together with the version it gave back"*, and naming a flag fired *"the
+  flags this port applies are named only once a probe watched them hold a boundary"*, one named subtest
+  each, `# fail 1`. *Before trusting a green probe, ask which state the assertion is in and whether the
+  machine can reach it - and restore with `git checkout --` followed by a `git status --porcelain`
+  reading, because a probe whose file was never restored reports the reverse of what happened.*
+
+- **An assertion whose branch is unreachable on the machine that runs it is an assertion only the second
+  platform checks - and that is a reason to run the second platform, not to trust the first.** The
+  assertion `gate (windows-latest)` falsified required `IsolationResult`-style semantics of
+  `IsolationCapability.substrate`: *empty whenever the boundary did not hold*. The field's own doc block
+  had said `Empty when none answered` since it was written, and every path in `measure()` that found a
+  runtime passes `found.name` on - deliberately, because a reader has to tell "nothing answered" from
+  "docker answered and the boundary did not hold". On this machine no runtime was up, so `substrate`
+  was `""` and the assertion passed - for the wrong reason, having never reached the state it was about.
+  `ubuntu-latest` has no runtime either and passed the same way. `windows-latest` runs Docker in
+  Windows-container mode: it answers a server version, cannot run a Linux image, and produced
+  `'docker' !== ''`. The replacement states what is true in every state and keeps teeth - a runtime is
+  named together with the version it gave back, and the flag list is non-empty exactly when the boundary
+  was measured to hold. *A test that passes on one platform because its branch is unreachable has not
+  been tested, and the platform that can reach it is the instrument that finds the difference.*

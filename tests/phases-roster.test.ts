@@ -195,10 +195,33 @@ const sizes = [...readme.slice(0, readme.indexOf("## The phases")).matchAll(
   stated: Number((match[2] ?? "").replaceAll(",", "")),
 }));
 
+/**
+ * What each document is, counted in bytes - with its line endings normalised first.
+ *
+ * The normalisation is not a detail, it is the difference between a measurement of the document and a
+ * measurement of the checkout. `core.autocrlf` is `true` for this repository, so the index holds `LF`
+ * and a Windows checkout holds `CRLF`: the same document is a different number of bytes on each, and
+ * this guard read 210,900 on Windows and 208,025 on `ubuntu-latest`. Run `35958249177`'s
+ * `gate (ubuntu-latest)` failed on exactly that, naming five files that were each *one byte per line*
+ * smaller than the document claimed:
+ *
+ * ```
+ * docs/DIGITAL-TWIN-PLAN.md: says 12270, is 12078
+ * docs/ISOLATION-AND-MCP-PLAN.md: says 58650, is 57965
+ * ```
+ *
+ * The five differences summed to 2,875, which is the line count of the five documents - so the
+ * arithmetic was never wrong and the *unit* was. `docs/RULES-PAID-FOR.md` is even checked out
+ * `w/mixed` here, meaning two readings of one file on one machine can disagree while no word of it
+ * changes. A total that moves with a checkout setting is a reading of the checkout.
+ *
+ * So the count is taken of the document's content, in the ending the index holds it in, and a reader
+ * comparing two readings of this number is comparing the documents.
+ */
 const measured = new Map<string, number>();
 for (const { file } of sizes) {
   const text = (await repo.readTextFile(file)) ?? "";
-  measured.set(file, new TextEncoder().encode(text).length);
+  measured.set(file, new TextEncoder().encode(text.replaceAll("\r\n", "\n")).length);
 }
 
 describe("the phase index in docs/phases/README.md", () => {
@@ -328,9 +351,12 @@ describe("the phase index in docs/phases/README.md", () => {
     assert.deepEqual(
       wrong.map(({ file, stated, actual }) => `${file}: says ${String(stated)}, is ${String(actual)}`),
       [],
-      "the header paragraph's byte counts have moved since they were taken. This is the same claim " +
-        "the document's own refusal is about - a count recalled rather than taken - and a document " +
-        "saying a byte total is a measurement nobody re-runs unless something reads it.",
+      "the header paragraph's byte counts have moved since they were taken. The count above is of " +
+        "the document's content with `CRLF` normalised to `LF`, because the same file is a different " +
+        "number of bytes in each checkout and a figure that moves with `core.autocrlf` is a reading " +
+        "of the checkout rather than of the document. This is the same claim the document's own " +
+        "refusal is about - a count recalled rather than taken - and a document saying a byte total " +
+        "is a measurement nobody re-runs unless something reads it.",
     );
   });
 

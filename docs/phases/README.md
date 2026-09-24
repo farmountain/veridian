@@ -1,9 +1,9 @@
 # The phase program
 
-The remaining work in this repository is documented across **five** files totalling **210,900 bytes**
-(measured: `docs/DIGITAL-TWIN-PLAN.md` 12,270; `docs/DIGITAL-TWIN-DESIGN.md` 27,169;
-`docs/ISOLATION-AND-MCP-PLAN.md` 58,650; `docs/INSTRUMENT-AND-PROMPT-PLAN.md` 34,247;
-`docs/GAP-CLOSURE-DESIGN.md` 78,564). None of those five is wrong, and none of them is redundant. The
+The remaining work in this repository is documented across **five** files totalling **208,025 bytes**
+(measured: `docs/DIGITAL-TWIN-PLAN.md` 12,078; `docs/DIGITAL-TWIN-DESIGN.md` 26,788;
+`docs/ISOLATION-AND-MCP-PLAN.md` 57,965; `docs/INSTRUMENT-AND-PROMPT-PLAN.md` 33,726;
+`docs/GAP-CLOSURE-DESIGN.md` 77,468). None of those five is wrong, and none of them is redundant. The
 problem is arithmetic: carrying all five at once is tens of thousands of tokens before a line of code
 has been read, and a context window spent on the plan is a window with nothing left for the work.
 

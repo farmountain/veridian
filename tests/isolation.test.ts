@@ -158,21 +158,46 @@ describe("the isolation port against this machine", () => {
       "a capability report whose reason is empty leaves a caller unable to say why it did not isolate, " +
         "and `unsupported` with no reason is the shrug this vocabulary exists to remove",
     );
-    if (!capability.available) {
-      assert.equal(
-        capability.substrate,
-        "",
-        "a substrate is only named when the probe watched one hold a boundary: naming one on an " +
-          "unavailable reading would be the claim-beside-the-code this port refuses",
-      );
-    } else {
+    if (capability.available) {
       assert.equal(capability.reason, "measured");
+      assert.ok(
+        capability.substrate.length > 0,
+        "an available reading has to name the runtime that held the boundary, because the bundle " +
+          "records that name and a world held by an unnamed substrate is one no run history explains",
+      );
       assert.ok(
         capability.mechanism.length > 0 && capability.image.length > 0,
         "an available reading has to name the image it ran and the flags it proved, or nothing " +
           "downstream can report what held the world",
       );
     }
+
+    /*
+     * These two replace one assertion this test carried, which `gate (windows-latest)` falsified on run
+     * `35958249177`: it required `substrate` to be `""` whenever `available` was false, with the
+     * reasoning that naming a runtime there would be a claim the probe had not earned. That reads
+     * `substrate` as *the substrate that held it*, and that field is `IsolationResult.substrate`. This
+     * one is the runtime's own name for itself, and every path in `measure()` that got as far as
+     * finding one passes it on - which is the point, because a reader has to be able to tell "nothing
+     * answered" from "docker answered and the boundary did not hold". The machine here has no runtime,
+     * so the old assertion passed here for a reason it was not written for, and reached the branch it
+     * tests only on a runner: `ubuntu-latest` has none either and passed, while `windows-latest` has
+     * Docker in Windows-container mode - which answers a server version, cannot run a Linux image, and
+     * produced `'docker' !== ''`.
+     */
+    assert.equal(
+      capability.substrate === "",
+      capability.version === "",
+      "a runtime is named together with the version it gave back: a name with no version, or a " +
+        "version with no name, would be half a reading of one runtime presented as a whole one",
+    );
+    assert.equal(
+      capability.available,
+      capability.mechanism.length > 0,
+      "the flags this port applies are named only once a probe watched them hold a boundary, because " +
+        "a mechanism list beside `available: false` would be a claim about the machine standing " +
+        "beside the answer that it was not measured",
+    );
   });
 
   it("states a reason and applies nothing when the working directory is outside every allowance", () => {
