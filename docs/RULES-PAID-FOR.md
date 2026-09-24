@@ -1890,3 +1890,23 @@ reads a variable.*
   figure after a `(`. A search is a measurement, and an unstated search is a count with no reader, one
   level up. *When a finding is a count, the rule that records it is a count too* - and the author of a
   rule is the least likely person to notice that the rule has the defect it is about.
+- **A conclusion stated as a consequence of a probe's readings can outlive the readings without any of
+  them becoming false - which is why the conclusion has to be re-checked, not just the readings.**
+  `docs/ISOLATION-AND-MCP-PLAN.md` §3.1 refused the isolation substrate with *"a substrate that supplies
+  network isolation therefore cannot be built or falsified on this machine"*, and its support was two
+  measurements: `docker` is not on `PATH`, and `node --permission --allow-net` answers
+  `bad option: --allow-net` at exit 9. **Both are still true today** - the `--allow-net` reading was
+  re-taken this pass and gives the same message and the same exit 9 - and the conclusion was false:
+  phase 07 built the substrate **and falsified it on this machine**, because
+  `core/environment/isolation.ts` tries `podman` *before* `docker` and podman answers a server version at
+  `5.7.1`. The probe asked *is the tool I had in mind installed* rather than *which runtime would
+  answer*, so the member that mattered was outside its population and its absence was invisible. This is
+  a different failure from a stale figure and a more durable one: a stale figure announces itself as old,
+  while a false conclusion wearing two true readings announces itself as *measured*. **Re-run the
+  readings and you reproduce the confidence; re-run the conclusion and you find the gap** - so the check
+  is to ask what question the probe answered, and whether that question is the one the conclusion needs.
+  Its downstream cost is why this is a rule rather than a note: `docs/DISTRIBUTION-AND-ENVIRONMENTS.md`
+  §5's blocked table carried a row reading *no runtime here* that rested on this paragraph, so one
+  unexamined conclusion propagated into a second document and survived a correction that re-framed that
+  very table without re-reading its reasons. *A conclusion is a citation, and a citation is only as good
+  as the question behind it.*

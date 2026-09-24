@@ -112,6 +112,14 @@ pass as W1" - a statement about *that pass*, not about either item.
 
 ### 3.1 E1 - the isolation substrate
 
+> **Discharged and built.** The plan below specified the contract and deferred the substrate to a
+> CI-proven phase. It landed as **phase 07** - the port is `core/environment/isolation.ts`, the world
+> that adopted it is `local-process`, and the job is `isolation` in the CI workflow - and it was
+> built **and falsified on this machine**, not only in CI. The blocker paragraph is kept beneath this
+> note in the form it took, because the way it was wrong is the point: it measured `docker` and
+> `node --permission`, both truthfully, and **never measured `podman`**, which answers here. Read the
+> block for the two readings it took and not for the conclusion it drew from them.
+
 **The seam is not what is missing.** `EnvironmentAdapter` is the seam, and it has been proven twelve
 times over: twelve worlds, four of them entirely real, and - per `core/environment/`'s layout row - a
 validator family that needed no core change to exist, ten times running. `PLAN.md` §42 already assigns
@@ -140,9 +148,26 @@ machine, and a substitution with no way to be refused is the one thing §6 of
 > A file implementing `EnvironmentAdapter` whose methods return empty observations is worse than no
 > file: it makes the adapter list look complete while every criterion against it is `INCONCLUSIVE`.
 
-So E1's plan specifies the contract and defers the substrate **to a CI-proven phase**, which is the
+**Both of that paragraph's readings are still true, and the conclusion drawn from them was false -
+which is the part worth keeping.** `docker` really is absent from `PATH` here, and
+`node --permission --allow-net` really does answer `bad option: --allow-net` at exit 9. What the probe
+never did was look for the runtime that answers *in place of* `docker`: `core/environment/isolation.ts`
+tries `podman` **first**, and on this machine it answers a server version at `5.7.1` with the mechanism
+`run --read-only --network --volume --workdir`. So the sentence *"cannot be built or falsified on this
+machine"* was falsified by phase 07 doing exactly that - a real container ran, and a refusal happened
+inside it that would not have happened without it. *A conclusion stated as a consequence of a probe's
+readings can outlive the readings without any of them becoming false* - and the missing member was
+invisible because the probe asked whether the tool it had in mind was installed, rather than which
+runtime would answer. The same omission then appeared in the §5 blocked table of
+`DISTRIBUTION-AND-ENVIRONMENTS.md`, which rested on this paragraph for its *no runtime here* reason.
+
+So E1's plan specifies the contract and deferred the substrate **to a CI-proven phase**, which is the
 `Dockerfile` precedent exactly: *"Docker cannot be exercised on this machine at all, which is precisely
-why the job has to exist."*
+why the job has to exist."* **The deferral was honoured rather than dropped:** phase 07 landed the port,
+adopted it in one world, made the bundle record which substrate held it, and added the `isolation` CI
+job - so the CI-proven half exists, and the substrate was additionally falsified locally once `podman`
+was found. What remains of E1 is the standing obligation every `built` item carries - keeping it true -
+and it is named as such in the phase index's open table.
 
 **The design, stated once.** An `IsolationPort` is a port in the same shape as `ProcessRunner`: a
 request naming what to confine and how, a result reporting whether it was applied and by what, and a
