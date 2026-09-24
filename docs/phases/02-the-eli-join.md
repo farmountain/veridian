@@ -2,18 +2,21 @@
 
 | | |
 |---|---|
-| **Status** | next -- nothing blocks it |
+| **Status** | built |
 | **Depends on** | 01 (the world identity has to be in the bundle before anything can join on it) |
 | **Source** | `docs/DIGITAL-TWIN-PLAN.md` S4 (W1); `docs/DIGITAL-TWIN-DESIGN.md` S1-S2 |
-| **Touches** | a new `core/evidence/eli.ts` (or `core/metrics/eli.ts`); a new test; `cli/veridian.ts` only if a verb is added |
+| **Touches** | a new `core/metrics/eli.ts`, beside the `subjectOf` it keys on rather than in `core/evidence/` (which would make the evidence layer import the metrics layer); a new test; no CLI verb, because the function is not yet called from the command line |
 | **Acceptance** | AC-3 and AC-4 of `docs/DIGITAL-TWIN-PLAN.md` S4 |
 
 ## Why this phase exists
 
 The runs on disk are already a ledger. `.veridian/runs/<run-id>/` holds `environment.json`,
-`result.json`, the per-criterion observations and the execution log, and two readers already walk it:
-`core/run/history.ts` (`listRuns`, `readRunHistory`) reads the history, and `core/metrics/history.ts`
-reads the *reading* off disk for M1..M5. What is missing is a single view a reader can ask a question
+`result.json`, the per-criterion observations and the execution log, and one module already walks it:
+`core/metrics/history.ts` enumerates the runs (`listRuns`), parses a `RunSnapshot` off each bundle
+(`readRunHistory`), and M1..M5 are computed over those snapshots. This paragraph first named a second
+reader beside it -- `core/run/history.ts` -- and there is no such file: `core/run/` holds `id.ts`,
+`index.ts`, `state-machine.ts` and `types.ts`, and the two names were one module written twice.
+What is missing is a single view a reader can ask a question
 of -- "every run of this goal against this world, with what each one concluded" -- without writing the
 join by hand each time.
 
@@ -80,6 +83,42 @@ asserting a property of the fixture rather than of the join. This is exactly the
 `docs/INSTRUMENT-AND-PROMPT-PLAN.md` S3A records: the first version of the mixed-population test used
 three runs with *identical* signatures, so removing the comparison gate left every assertion passing.
 
+**Measured, when the probe was run.** The first version of the probe patched `groups.get(row.subject)`
+alone and reported `MISSED` against a working join. `groupEliRows` wrote its key out three times, so
+the surviving `groups.set(row.subject, ...)` kept the map keyed on the subject and the patch's only
+effect was that each later run of a subject *overwrote* its bucket instead of appending to it. One
+test noticed (`puts two runs of one goal against one adapter in a single group`) and the AC-4
+assertion did not -- the reverse of what a probe is for, and the shape this repository has paid for
+before: a probe aimed at the wrong part of the thing it tests reports the reverse of what happened.
+The key is now computed once (`const key = row.subject;`), and patching that one expression to
+`row.adapter ?? "?"` fires six names including
+`keeps two different goals apart even when one adapter judged both`. So the AC-4 assertion is
+load-bearing, and the fault was in the probe rather than in the fixture.
+## Measured against this repository's own history
+
+The suite proves the join over a fixture; this is the same call over `.veridian/runs/`, which is the
+population the phase exists to make askable. `listEliRows(nodeIo(), ".veridian")` reported:
+
+| Reading | Figure |
+|---------|--------|
+| rows | 165 |
+| groups | 14 |
+| unreadable bundles | 7 |
+| distinct subjects | 14 |
+
+The arithmetic closes, and that is the check rather than the numbers: the runs directory holds **172**
+directories, and `165 + 7 = 172`, so no bundle is both a row and an unreadable report, and none is
+neither. `groups` equals `distinct subjects` equals **14**, which is AC-4's positive half over real
+data; the count of groups holding more than one `goalId` is **0**, which is its negative half -- no
+two goals are merged by this key anywhere in the history.
+
+The world label is present on **6** rows and absent on **159**, and the third acceptance criterion is
+about exactly that split, so it was measured rather than assumed. Every one of the 172 bundles has a
+parseable `environment.json`, and **6** of them carry a `world` key - the six written since phase 01
+landed. So the absent labels are not a reader failing to render a field that is there; they are 166
+bundles that predate the field, and `null` is the reading for each. The two figures agree from both
+ends: `6` with a key is `6` labelled rows, and `166` without is `159` absent-labelled rows plus the `7`
+whose *result* is unreadable.
 ## Guards that must still pass
 
 | Guard | Holds |
@@ -91,7 +130,8 @@ three runs with *identical* signatures, so removing the comparison gate left eve
 ## Context budget
 
 **Read:** `docs/DIGITAL-TWIN-PLAN.md` S4's W1 block only; `core/metrics/metrics.ts`'s `subjectOf`;
-`core/run/history.ts`; `core/metrics/history.ts`.
+`core/metrics/history.ts`, which is where `listRuns` and `readRunHistory` actually live (there is no
+`core/run/history.ts`).
 
 **Do not read:** `docs/DIGITAL-TWIN-DESIGN.md` beyond S2 (the recommendation), and nothing of
 `docs/ISOLATION-AND-MCP-PLAN.md`. The twin's import half is phase 08 and its isolation is phase 07.

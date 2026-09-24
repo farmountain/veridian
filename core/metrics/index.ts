@@ -31,8 +31,11 @@ export {
   parseRunSnapshot,
   resetReproducibility,
   resultConsistency,
+  subjectOf,
   successMetrics,
   worldValidityAtExit,
 } from "./metrics.ts";
 export type { HistoryMetrics, RunHistory } from "./history.ts";
 export { listRuns, measureRunHistory, readRunHistory } from "./history.ts";
+export type { EliGroup, EliReport, EliRow } from "./eli.ts";
+export { groupEliRows, listEliRows } from "./eli.ts";

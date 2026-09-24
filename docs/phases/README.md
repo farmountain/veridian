@@ -18,7 +18,7 @@ five files above.
 | # | Phase | What it delivers | Status | Depends on |
 |---|-------|------------------|--------|------------|
 | 01 | [Land the working tree](./01-land-the-working-tree.md) | The instrument repairs and world identity reach a commit, with the counts re-measured | **built** | -- |
-| 02 | [The ELI join](./02-the-eli-join.md) | One row per run, joined from the bundles already on disk | next | 01 |
+| 02 | [The ELI join](./02-the-eli-join.md) | One row per run, joined from the bundles already on disk | **built** | 01 |
 | 03 | [dENV and the export predicate](./03-denv-export-predicate.md) | A total predicate over the record, with a known-present control | planned | 02 |
 | 04 | [The ESI interchange document](./04-the-esi-interchange.md) | Export only: identity plus dENV, byte-stable | planned | 03 |
 | 05 | [The Cockpit twin surface](./05-the-cockpit-twin-surface.md) | A thin client over the join, with no validation logic | deferred | 02, 03, 04 |
@@ -55,7 +55,7 @@ and currently unclaimed, which is a fact about the remaining work rather than an
 
 ## How to run a phase
 
-1. Read this file. Read **one** phase file. Do not read the other eleven.
+1. Read this file. Read **one** phase file. Do not read the other twelve.
 2. Load the tree the same way, because a window spent on the repository is a window not spent on the
    work. Two practices, both paid for here:
    - **Never read `AGENTS.md` whole.** It is the largest file in the tree and most passes need none

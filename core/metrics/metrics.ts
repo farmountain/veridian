@@ -205,8 +205,14 @@ export interface ConsistencyReport {
  * bundle that did not carry the field: absent is a subject nothing can be compared against, and it is
  * deliberately not equal to a real one, so a population mixing the two is refused rather than
  * quietly split.
+ *
+ * Exported because the ELI (`./eli.ts`) groups runs by this same string, and a second implementation
+ * of it in that file would be a second answer to "what is a subject" - two answers that agree until a
+ * world arrives that only one of them was written for. Importing the one function is what makes the
+ * two readers *unable* to disagree rather than merely unlikely to, which is the property
+ * `tests/run-metrics.test.ts` asserts.
  */
-const subjectOf = (run: RunSnapshot): string => `${run.goalId ?? "?"}@${run.adapter ?? "?"}`;
+export const subjectOf = (run: RunSnapshot): string => `${run.goalId ?? "?"}@${run.adapter ?? "?"}`;
 
 /** A run's result, in the only form that can be compared: which criteria, which status, which trip. */
 const signature = (run: RunSnapshot): string =>
