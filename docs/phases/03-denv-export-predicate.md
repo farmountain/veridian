@@ -1,0 +1,103 @@
+# Phase 03 -- dENV and the export predicate
+
+| | |
+|---|---|
+| **Status** | planned |
+| **Depends on** | 02 (the ELI names the rows; dENV says which of them may leave) |
+| **Source** | `docs/DIGITAL-TWIN-PLAN.md` S4 (W2) |
+| **Touches** | wherever the ELI lands (`core/evidence/eli.ts` or `core/metrics/eli.ts`); a new test |
+| **Acceptance** | AC-6 of `docs/DIGITAL-TWIN-PLAN.md` S4 |
+
+## Why this phase exists
+
+An ELI row is a reading of a run, and a run's own files can contain things that must not travel: the
+absolute path of the operator's checkout, the command line that started it, the environment a repair
+agent inherited. `docs/DIGITAL-TWIN-PLAN.md` calls the per-row decision that keeps those out **dENV**,
+and it is carried on the shape the boundary work already uses -- a **declared-versus-measured** pair --
+rather than on a vocabulary of its own. This tree has eleven worlds and exactly one vocabulary for "what
+this world said it would do" beside "what it was measured doing"; a second one for exports would drift
+from it.
+
+The reason this is a phase rather than a paragraph is the word **total**. A predicate that refuses a
+named list of keys is not a predicate: it is a list, and the list is right up until a bundle carries a
+key nobody thought of. The requirement in the plan is that the predicate is **total over the record** --
+defined for every key, including ones invented after it was written -- so a new field is refused by
+default rather than exported by default.
+
+## What is already true
+
+- `core/environment/boundary.ts`'s vocabulary pairs each *declared* policy with the enforcement
+  *measured* for it, and `environment.json` writes the pair. That is the shape W2 reuses.
+- `core/evidence/writer.ts` already has the serialization seam: `serializeEnvironment` writes a fixed
+  key set, and `environmentRecord()` builds it. Anything that leaves the process already passes through
+  one function, which is what makes a total predicate expressible at all.
+- The tree already knows what a rejection looks like from the other direction:
+  `core/environment/confinement.ts` refuses a request that leaves the allowed roots and records the
+  refusal rather than silently resolving it. A refused export should record the same way -- a refusal
+  is an observation, not an absence.
+
+## What this phase does
+
+1. **Write the predicate as a totality, not a blacklist.** For every key in the record, the predicate
+   answers one of: *exports as itself*, *exports in a rendered form*, or *does not export*, with the
+   reason. A key it has no rule for is refused. The stub for an unknown key must be reachable in the
+   test; a default branch no fixture reaches is a branch nothing holds.
+2. **Make the refusal visible without making it fatal.** A refused value never reaches an artifact --
+   that is the acceptance criterion -- and the fact that it was refused is itself recordable, on the
+   same argument that gives `sim-cloud` a `refusalBody`: *a status code is a verdict; the body is the
+   evidence*.
+3. **Prove the totality with a known-present control.** See the probe below. This is the half of the
+   phase that decides whether the predicate is real.
+
+## Acceptance criterion
+
+- **AC-6** -- the export predicate is **total** over the record: it answers for every key, and it
+  refuses a named key set whose members are chosen *because* they are present in the fixture.
+- A refused value never reaches an artifact. Asserted by building a record that **does** carry a
+  refused key, exporting it, and reading the exported document for the key's value -- not by reading the
+  predicate's source.
+- The refusal path is reachable: the fixture contains at least one key the predicate refuses, and the
+  test asserts it is present in the input as its positive control.
+
+## Falsification probe
+
+The dangerous version of this test asks whether the exported document lacks a key. That assertion
+passes for a predicate that refuses everything, for a serialiser that wrote nothing, and for a fixture
+that never had the key -- three different defects, one green line.
+
+So the control is explicit and it must be able to fail:
+
+1. Assert the offending key **is** present in the record before export. (Positive control. If this
+   fails, the probe measured a fixture, not a predicate.)
+2. Export.
+3. Assert the key's value is absent from the exported document, **and** that a known-good sibling key's
+   value **is** present. (The sibling is what stops "refused everything" from passing.)
+
+Then move the admitted/refused boundary -- make a key that was refused admitted -- and expect step 3's
+second half to fail. A guard that cannot fail is the thing this tree has paid for four times over.
+
+## Guards that must still pass
+
+| Guard | Holds |
+|-------|-------|
+| `tests/boundary-roster.test.ts` | That declared-versus-measured is still one vocabulary across twelve worlds |
+| `tests/evidence-bundle.test.ts` | The bundle's own completeness readings, which share the serialization seam |
+| `tests/simulated-surfaces.test.ts` | That a world's declared surfaces and the document's table agree |
+
+## Context budget
+
+**Read:** `docs/DIGITAL-TWIN-PLAN.md` S4's W2 block; `core/environment/boundary.ts`;
+`core/evidence/writer.ts`.
+
+**Do not read:** the twelve `*-observation.ts` files. dENV is a decision about keys, and the per-world
+readings are phase 02's input as a projection, not this phase's subject.
+
+## Refusals
+
+- **No new vocabulary for "may leave".** The declared-versus-measured pair already exists; a second one
+  would answer the same question in a second spelling.
+- **No export of an absolute host path.** A bundle already records the world's **own** spelling of a
+  root beside the accession it resolved to, precisely because a field that is both an input to the agent
+  and an output of the recording is two fields in one slot. An export keeps the declaration.
+- **No "redact by default and log what was redacted" shortcut.** Redaction without a reason string is
+  the empty refusal body this tree already rejected once.

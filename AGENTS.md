@@ -80,8 +80,8 @@ instructions file for this workspace — do not add a second one
 > reading carries `simulated` - and nothing is emulated: no emulator, no image and no booted system
 > anywhere in the loop. It adds no step kind: the application provisions with the `run` steps the
 > second world introduced, and three of its criteria use one.
-> `npx tsc --noEmit` is silent and `node --test` reports 2556 passing tests over 425 suites -
-> Veridian's own 2484 plus the 72 the VS Code Cockpit contributes, which the root runner discovers
+> `npx tsc --noEmit` is silent and `node --test` reports 2568 passing tests over 426 suites -
+> Veridian's own 2496 plus the 72 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Five distribution routes ship - a clone, an npm package, the Cockpit (as
 > a development install and as a `.vsix`), the extension marketplaces that `.vsix` is published to,
 > and a container image - and there is still **no
@@ -928,8 +928,8 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 2556 tests over 425 suites, ~9s. No directory argument.
-                           # 2556 = the root's own 2484 + the Cockpit's 72, because the runner walks
+node --test                # the whole suite. 2568 tests over 426 suites, ~8s. No directory argument.
+                           # 2568 = the root's own 2496 + the Cockpit's 72, because the runner walks
                            # the tree and reaches extension/vscode/src/*.test.ts. The inclusion is
                            # measured rather than assumed: a test title that exists only in the
                            # Cockpit appears twice in this run. Neither figure is
@@ -2242,6 +2242,33 @@ port had none, which is why the defect reached a demo run.
   and had been carried from a smaller suite for three movements. *A movement whose cause is a repair to
   the thing that measures the suite is the one movement whose figures are most likely to be quoted
   without being taken.*
+  **A fourteenth movement is the first whose contribution is attributable and whose *remainder* is
+  not, and the record says which is which rather than folding the second into the first.**
+  `tests/phases-roster.test.ts` contributes **9** tests over **1** suite - measured by the run that
+  exercised it, which reported 9 tests over 1 suite - and the root run now reports **2568** tests over
+  **426** suites with this tree's own at **2496** (the Cockpit's **72** re-measured by running its own
+  `node --test` rather than assumed - 72 tests, `# suites` still **0** - so all 426 of the root run's
+  suites are this tree's own rather than the 354 a subtraction would have produced). The subtraction
+  is what refuses the comfortable total: 2568 - 9 = **2559**, which is **three** above the figure the
+  thirteenth movement recorded (**2556**) and **one** above the figure the live prose was carrying
+  (**2558**) - so the live prose had *already* drifted two above its own record before this pass
+  touched it, and the remaining three arrived with work that is uncommitted in this tree and was
+  never measured at the moment it was written. That half is stated rather than absorbed, for the
+  reason the fifth movement records: *a figure that is re-measured is corrected, and a figure whose
+  movement is not measured is only ever restated.* The decomposition was proved the way the seventh
+  through thirteenth were: a title that exists only in the Cockpit *("the manifest and the Cockpit
+  declare the same commands")* appears **twice** in the root run's own output *and* **twice** in the
+  Cockpit's own. The four live prose sites were corrected in the same pass - `AGENTS.md`'s status
+  banner and its build block, `README.md`'s quickstart and its layout table - and the wall-clock
+  figure beside them moved from `~7s` to `~8s` on the strength of the run's own
+  `# duration_ms 7750.3582`, which is the second time that figure has been re-taken by measurement
+  and the first time it has been corrected *downward* - and `npm run gate` then re-measured it at
+  `7551.3687` in the same pass, which is *why* the figure is written as a rounded `~8s` rather than as
+  either reading: two invocations of one suite that differ by 200 ms are two samples of one duration,
+  and a record that quoted either as though it were the duration would be quoting a machine's schedule
+  as though it were the program's. *A movement that is not attributable in full
+  is not a movement to describe loosely: name the part you measured, say what the remainder is, and
+  let the arithmetic that does not reconcile be the evidence that something else moved.*
 - **A document that names what a world *substitutes* is making a claim about a `*_SIMULATED_SURFACES`
   constant, and a claim nothing reads drifts.** `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` §5 recorded
   `sim-posix` as substituting *"Kali's attack network"*, and `POSIX_SIMULATED_SURFACES` says the
@@ -3119,3 +3146,36 @@ already has a style is a second rulebook rather than a description.
   that grows by reusing a word has to have each use read at its own definition - carrying the meaning of
   one across to the other produced three false "only the cloud plan admits `call`" claims in this
   repository's documentation, each of which read as complete.*
+
+- **A document that credits a guard with coverage is a claim about that guard's *selection*, and the
+  selection is where the claim fails.** `docs/phases/README.md` closed by naming
+  `tests/docs-roster.test.ts` as what keeps the phase index current, and that guard cannot see the
+  directory at all: its selection reads the **top level** of `docs/` - one `readDirSync` on one
+  directory - and its row parser's character class contains no `/`, so it is flat-only in **both**
+  halves, able neither to list a nested file nor to parse a nested row. The guard is not the defect.
+  Its subject is `docs/`, it was written for a flat directory, and it does exactly what it says; the
+  sentence beside it was the thing that was true of nothing. The replacement is a guard of its own
+  (`tests/phases-roster.test.ts`) filed where the reader was looking, and the reason it is a file and
+  not a row is that a nested document's questions are not the flat one's: this one asks whether every
+  phase file on disk has a row, whether every row names a file, whether every row's status is the word
+  its own phase file states, whether every status is a word the document itself **declares** (parsed
+  from the document rather than restated in the test), and whether the byte total it prints is the
+  arithmetic of the files it names. *"Nothing guards this" and "the guard you named guards something
+  else" look identical from a sentence and are different facts - so read a guard's selection before the
+  document that cites it, and make a nested document's guard read the nested document.*
+
+- **A scope-collapse probe must break the scope's identifying marker, not a cell beside it.** The guard
+  over the phase index asks its questions of the twelve-row table, and its control asserts the scope did
+  not collapse to nothing while a second asserts the walk began at the table. The probe written to
+  falsify that control edited **cell 4** of the header row - and it would have reported `MISSED` against
+  a **working** guard, because the guard recognises its table from **cells 0 and 1** alone, so a header
+  whose later cells are nonsense is still the same scope. Deleting the header row outright is what
+  collapses it, and under that probe the control fires. The same lesson is written at the walk itself:
+  the phase files are selected by `/^\d{2}-[\w.-]+\.md$/` rather than by a hand-kept list, and the
+  declared vocabulary is parsed out of the document rather than restated in the test, so the guard has
+  nothing to fall behind. *This is the same shape as the CRLF anchor that never matched, the
+  column-zero `not ok` scrape, the probe that restored the file before running the suite, and the
+  substring needle: **a probe aimed at the wrong part of the thing it tests reports the reverse of what
+  happened**, and the only way to know is to check that the probe changed the state its assertion
+  reads. A probe that edits a neighbouring cell is a probe that measures the guard's tolerance rather
+  than its scope.*
