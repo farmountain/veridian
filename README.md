@@ -4,7 +4,7 @@
 
 **The sandbox testing and validation layer for AI coding agents.**
 
-**v0.6.0** - twelve reproducible sandbox worlds, five distribution routes, and four ways to drive them,
+**v0.6.1** - twelve reproducible sandbox worlds, five distribution routes, and four ways to drive them,
 over a run history that is now a queryable digital twin.
 
 Coding agents are good at producing code and have an *environmental* problem: they cannot tell
@@ -1175,7 +1175,7 @@ the demo says so and names `npm run build` rather than quietly judging a stale c
 *a skipped check does not fail, it silently reduces coverage while reporting a green suite.*
 
 **Its expectations move with the version, so a version bump moves them.** `vscode.identity` pins
-`veridian-cockpit 0.6.0`, which is the version in the manifest the demo stages. Bumping the extension
+`veridian-cockpit 0.6.1`, which is the version in the manifest the demo stages. Bumping the extension
 means editing that expectation in the same pass; if you do not, the run will judge the artifact it
 claims to judge only by accident, and `tests/vscode-cockpit-demo.test.ts` fails naming both versions
 rather than letting it through.

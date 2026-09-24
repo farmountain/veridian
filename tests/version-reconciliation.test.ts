@@ -27,7 +27,7 @@ import { MCP_SERVER_VERSION } from "../mcp/protocol.ts";
  * test only runs the demo - it does not read the contract against the manifest, so a bump that
  * half-moved would have to fail at demo-run time to be noticed at all.
  *
- * **What this asks is agreement, not correctness.** Nothing here can know that `0.6.0` is the right
+ * **What this asks is agreement, not correctness.** Nothing here can know that `0.6.1` is the right
  * release; it asserts that the six sites state the *same* figure, which is the failure that actually
  * happened and the one a bump introduces. A version is the clearest case in this tree of a figure
  * that cannot be pinned by the test that changes it - so the same note `tests/docs-roster.test.ts`

@@ -2,7 +2,7 @@
   "name": "veridian-cockpit",
   "displayName": "Veridian Cockpit",
   "description": "The Veridian Cockpit - the VS Code client for Veridian. Run a sandbox validation, read the verdict, open the evidence it was reached from, and show the twin: every run on disk joined into one row by subject. Veridian builds twelve reproducible sandbox worlds - some real, some a substitute for one - records which limits each world can actually enforce, and decides whether the software works; a world that cannot justify a verdict is reported INCONCLUSIVE rather than passed. The same engine is behind the veridian CLI, a CI job and a Model Context Protocol surface, so this is one client of it rather than the only way in. The coding agent stays external and never decides whether it succeeded.",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "type": "module",
   "license": "BSD-2-Clause",
   "repository": {

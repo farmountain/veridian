@@ -135,7 +135,7 @@ export const MCP_SERVER_NAME = "veridian";
  * *a string that describes a state is a claim about that state, and a claim no program reads is a
  * claim that only has to look right.*
  */
-export const MCP_SERVER_VERSION = "0.6.0";
+export const MCP_SERVER_VERSION = "0.6.1";
 
 /**
  * The shape every tool name has, and the reason it is stricter than the protocol requires.

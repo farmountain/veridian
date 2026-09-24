@@ -324,7 +324,7 @@ gate`, so a package whose own tests are red cannot leave the machine, where `pri
 - **A version is written in four files and reconciled by nothing.** The extension's `package.json`,
   this repository's root `package.json`, and each of their `package-lock.json` root entries carry the
   same figure by convention and no mechanism, so the marketplace's version and the CLI's reported
-  `veridianVersion` can drift apart silently. They are all `0.6.0` as this is written. **This entry
+  `veridianVersion` can drift apart silently. They are all `0.6.1` as this is written. **This entry
   used to claim the check was `npm run package`, and that was wrong about its own subject** - what
   `package` proves is narrower: the archive is named `veridian-cockpit-<manifest version>.vsix`
   because the `package` script passes no `--out`, so the *filename and the manifest it packaged*
@@ -1842,7 +1842,7 @@ npx tsc --noEmit    silent (exit 0)
 node --test         92 tests, 0 failing
 npm run build       out/, 7 files
 npm run smoke:out   15 checks, exit 0
-npm run package     veridian-cockpit-0.6.0.vsix, 13 files, 125.09 KB
+npm run package     veridian-cockpit-0.6.1.vsix, 13 files, 125.18 KB
 npm run smoke:vsix  35 checks, exit 0
 npm run gate        exit 0
 ```

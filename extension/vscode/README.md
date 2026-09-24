@@ -31,7 +31,7 @@ estimated:
 | Tests | `node --test` | 92 tests, 0 failing |
 | Build | `npm run build` | `out/` - 7 files |
 | Compiled artifact | `npm run smoke:out` | 15 checks, exit 0 |
-| Packaged archive | `npm run package` | `veridian-cockpit-0.6.0.vsix` - 13 files, 125.09 KB |
+| Packaged archive | `npm run package` | `veridian-cockpit-0.6.1.vsix` - 13 files, 125.18 KB |
 | Archive contents | `npm run smoke:vsix` | 35 checks, exit 0 |
 | All of the above but the archive | `npm run gate` | exit 0 |
 
