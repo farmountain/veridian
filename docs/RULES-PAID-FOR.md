@@ -1634,3 +1634,65 @@ port had none, which is why the defect reached a demo run.
   *consequence* while the first named the *cause*. **A prose edit in a document whose structure is parsed
   is a structural edit**, and the remedy is to run the guard before believing the edit was cosmetic: this
   one was submitted as an insertion, read as an insertion, and was a deletion.
+
+## A name in a document standing in for a capability
+
+`docs/ISOLATION-AND-MCP-PLAN.md` recorded phase 07's blocker as *"Not buildable on this machine (no
+container runtime; the `Dockerfile` is CI-only by precedent, and Docker is installed nowhere here)"* -
+and the load-bearing word was **Docker**. It is installed nowhere here. `podman` 5.7.1 is installed at
+`C:\Users\user\AppData\Local\Programs\Podman\podman.exe`, with a machine that existed and was stopped,
+and `podman machine start` was all that stood between this tree and a real substrate. Every clause of
+the sentence was true and the sentence was false, which is the shape worth keeping: **a document may
+name the *thing* it looked for instead of the *property* it needed, and the two differ by a vocabulary
+the document does not hold.** Two readings reinforced it, and both were instruments rather than
+measurements: `podman version --format '{{.Client.Version}}'` answers `5.7.1` against a **stopped**
+machine - so a probe written to check *is a runtime installed* passes on a machine that can run
+nothing - and the check was written for one runtime's name when the question was whether any runtime
+answered. The correct probe is `{{.Server.Version}}`, because only a live runtime returns one. *A
+blocker recorded as an absence of a named tool is a claim about that name; record the property you
+asked about and the probe that asked it.*
+
+## Two mechanisms can both be right, and the guard between them may still be wrong
+
+`local-process` adopted the isolation substrate and its network arm now names **both** `enforced` and
+`unenforceable`, because a container can sever the network and an interpreter cannot. The guard that
+held this seam - `tests/boundary-roster.test.ts`'s *never lets one world answer both ways, so the
+three-way split cannot collapse to two* - went red, and it was the guard that was wrong rather than the
+code. It had been written as a flat refusal, which is the right rule and was a true description of a
+tree where every world's answer was a literal. The distinction it was missing is mechanical: **two
+enforcement literals in one arm is a report making two claims at once; one answer *selected* from a
+reading is not.** So the rule narrowed rather than relaxed - the two-word case is now permitted only
+alongside a read of `#isolation`, which is the same discipline the same file already applied to the
+*filesystem* arm - and the set of worlds naming `enforced` became exact at three with the third named
+and justified rather than absorbed. *A guard written against a static tree becomes a guard that refuses
+correct code and accepts incorrect code once the tree gains a conditional; the remedy is to ask what
+decides, not to loosen the assertion.*
+
+## The instrument disagrees with the code: bisect before choosing
+
+The first `scripts/probe-isolation.ts` reported the port as failing to write through a mount it had
+mounted correctly. The port was right. The probe had built a container path by splitting a host root
+out of a string and pasting the remainder, which left a Windows `\` before the filename, so the
+container wrote a file literally named `rw0\inside.txt`, the host never saw it, and the probe reported
+the permitted half as broken. It was settled only by `scripts/probe-isolation-bisect.ts`, which printed
+`containerPathOf(mounts, root/inside.txt) -> /veridian/rw0/inside.txt` beside a host listing of
+`["inside.txt"]` - the mapping and the directory, side by side, which is what made the disagreement
+visible. The fix was to hand the port a **program file** so the port did its own translation, and
+`containerPathOf` now normalises `\` to `/`. **When a measurement disagrees with expectation, the
+instrument is a candidate cause before the code is** - and the way to decide is to print the value the
+instrument computed beside the value the world holds, because two readings of one fact printed together
+cannot both be wrong without saying so.
+
+## A container does not inherit the environment of the process that started it
+
+The first wiring of the substrate through `core/process.ts` set the world's variables on the spawn and
+stopped there. `podman run` passes through only what `--env` names, so the child read `undefined` for
+the one value telling it where its sandbox is, and failed with `ERR_INVALID_ARG_TYPE: The "path"
+argument must be of type string or an instance of Buffer or URL. Received undefined` - a failure that
+reads as an application defect and is an environment one. Two consequences worth keeping: the
+environment now travels as `--env=NAME`, so each value is read from the runtime's own environment and
+none of them ever appears on a command line; and the translation of a **host path into the mount it
+names** had to move into the port, because the mounts are the port's and a world that had to re-derive
+them to describe itself would be a world that has to know how it is being held. *A spawn's `env` option
+is the runtime's environment, not the container's, and the difference is invisible until the container
+reads a variable.*

@@ -1,8 +1,8 @@
 # The phase program
 
-The remaining work in this repository is documented across **five** files totalling **209,791 bytes**
+The remaining work in this repository is documented across **five** files totalling **210,900 bytes**
 (measured: `docs/DIGITAL-TWIN-PLAN.md` 12,270; `docs/DIGITAL-TWIN-DESIGN.md` 27,169;
-`docs/ISOLATION-AND-MCP-PLAN.md` 57,541; `docs/INSTRUMENT-AND-PROMPT-PLAN.md` 34,247;
+`docs/ISOLATION-AND-MCP-PLAN.md` 58,650; `docs/INSTRUMENT-AND-PROMPT-PLAN.md` 34,247;
 `docs/GAP-CLOSURE-DESIGN.md` 78,564). None of those five is wrong, and none of them is redundant. The
 problem is arithmetic: carrying all five at once is tens of thousands of tokens before a line of code
 has been read, and a context window spent on the plan is a window with nothing left for the work.
@@ -23,8 +23,8 @@ five files above.
 | 04 | [The ESI interchange document](./04-the-esi-interchange.md) | Export only: identity plus dENV, byte-stable | built | 03 |
 | 05 | [The Cockpit twin surface](./05-the-cockpit-twin-surface.md) | A thin client over the join, with no validation logic | built | 02, 03, 04 |
 | 06 | [Network enforcement](./06-network-enforcement.md) | The one boundary dimension enforced nowhere becomes enforced somewhere | built | 01 |
-| 07 | [The isolation substrate](./07-the-isolation-substrate.md) | A real substrate behind the seam that already exists | **blocked here** | 06 |
-| 08 | [Import into a prepared world](./08-import-into-a-prepared-world.md) | An imported world enters through `prepare()` or not at all | gated by 07 | 04, 07 |
+| 07 | [The isolation substrate](./07-the-isolation-substrate.md) | A real substrate behind the seam that already exists | built | 06 |
+| 08 | [Import into a prepared world](./08-import-into-a-prepared-world.md) | An imported world enters through `prepare()` or not at all | next | 04, 07 |
 | 09 | [Documentation currency](./09-documentation-currency.md) | The documentation guards run as a programme rather than one at a time, and what they report is repaired | built | 01 |
 | 10 | [Veridian judged by Veridian](./10-veridian-judged-by-veridian.md) | The CLI judged as a product by `local-process`, and a run judged as a witness by `acceptance:ladder` | **built** | 01 |
 | 11 | [The distribution and environments ledger](./11-the-distribution-and-environments-ledger.md) | Every row of the world table true of the tree, and every "blocked" row naming the world that answers it | **built** | 01, 09 |
@@ -40,9 +40,9 @@ that was actually run. So the remaining work in this repository is not there, an
 
 | Still open | Why, and the address that answers it |
 |------------|--------------------------------------|
-| **07 -- the isolation substrate** (`blocked here`) | A measurement on this machine, not an absence of design: `docker` is not on `PATH`, and `node --permission` rejects `--allow-net` as a `bad option` (exit 9) against a positive control that is accepted (exit 0). See `docs/ISOLATION-AND-MCP-PLAN.md` §3.1. |
-| **08 -- import into a prepared world** (`gated by 07`) | Buildable now, and a false `PASS` if built before 07 lands, because an imported world with no substrate behind it is a world whose boundaries are declared and unenforced. |
-| **12 -- the receipt half of its memory criterion** (`blocked here`) | Three of its four criteria are met. The fourth asks that every environment observation be a receipt rather than a claim, and it is measured false in that phase's own record rather than waved past. |
+| **08 -- import into a prepared world** (`next`) | 07 has landed, so the gate is cleared and this is the first thing to pick up: *an imported world enters through `prepare()` or not at all*, because this repository has paid for an inherited world three times. |
+| **12 -- the receipt half of its memory criterion** (`blocked here`) | Three of its four criteria are met. The fourth asks that every environment observation be a receipt rather than a claim, and it is measured false in that phase's own record rather than waved past. The operation itself was measured working over HTTP (`/intent/open` -> 200 with an `intent_id`, `accept_receipt` -> `{"ok": true}`); what the criterion quantifies over is a history already filed with `add_memory`, and that cannot be rewritten. |
+| **The `isolation` CI job's first run** | Not a phase: the obligation phase 07 leaves behind. Its job exists in `.github/workflows/ci.yml` and has never executed, because the branch is unpushed. *An unexecuted check is a defect that has not been observed yet* - and both of this phase's neighbours found real defects on their first runner execution. |
 | **Phase A2's re-run** | Not a phase: an obligation `docs/DISTRIBUTION-AND-ENVIRONMENTS.md` carries. Its Docker image is observed in CI job `container image`, 16s, success -- on run `35423126548`, the last **pushed** commit. The route is therefore observed for a commit and not for this tree, and re-taking it is a push and a re-run rather than a design. |
 
 This paragraph is the program's answer to *"what is next"*, and it exists because the alternative is a

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | gated by 07 -- buildable in shape, unsafe to build in fact; the exit condition is stated in `docs/DIGITAL-TWIN-PLAN.md` |
+| **Status** | next -- 07 has landed, so the gate is cleared; the exit condition is stated in `docs/DIGITAL-TWIN-PLAN.md` |
 | **Depends on** | 04 (the document exists) and 07 (there is something to import *into*) |
 | **Source** | `docs/DIGITAL-TWIN-PLAN.md` S4 (W3's import half) and S6; `docs/DIGITAL-TWIN-DESIGN.md` S6 |
 | **Touches** | `core/environment/load.ts`; the world that accepts an import; a new test |

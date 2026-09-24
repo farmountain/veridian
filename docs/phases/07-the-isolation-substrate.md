@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **blocked here** -- the design is written and the blocker is measured on this machine, in `docs/ISOLATION-AND-MCP-PLAN.md` |
+| **Status** | **built** -- the port is `core/environment/isolation.ts`, the seam's own suite is `tests/process-isolation.test.ts`, and the job it adds is the `isolation` job in `npm run gate`'s workflow |
 | **Depends on** | 06 (the seam has to be honest about what it enforces before a substrate is put behind it) |
 | **Source** | `docs/ISOLATION-AND-MCP-PLAN.md` S3.1 (E1); `docs/GAP-CLOSURE-DESIGN.md` S6 (W6) |
 | **Touches** | a new `IsolationPort` in the shape of `ProcessRunner`; the world that adopts it; a CI job |
@@ -11,24 +11,91 @@
 ## Why this phase exists
 
 The seam is built. The substrate behind it is not, and the tree says so rather than implying otherwise.
-`docs/ISOLATION-AND-MCP-PLAN.md` S3.1 measures the blocker and it is not a design problem:
+`docs/ISOLATION-AND-MCP-PLAN.md` S3.1 measured the blocker and it was **not a design problem, and not
+quite the problem it looked like**:
 
 ```
 docker      NOT INSTALLED          (not on PATH)
+podman      5.7.1 at C:\Users\user\AppData\Local\Programs\Podman\podman.exe
+            machine "podman-machine-default" existed and was STOPPED
 --allow-net rejected               bad option, exit 9      (with a positive control)
 --allow-fs-read / --allow-fs-write / --allow-child-process      accepted
 ```
 
-*"Not buildable on this machine"* is the plan's own verdict, and the correct response is the one this
-repository has already used once: **a CI-proven phase.** The `Dockerfile` precedent is exact -- it is a
-route that exists, is built and run by a job, and is verified in CI rather than locally, because this
-machine has no container runtime and *an unbuilt Dockerfile is a claim*. The container-image job has
-run, which is why the Dockerfile is a built image rather than a correct-looking file.
+The blocker had been recorded as *"`docker` is not on `PATH` here"*, and the word that was wrong is
+the one that looks most like a fact: **`docker`**. This machine had a runtime the whole time; it was
+a different runtime, and its machine was stopped. `podman version --format '{{.Client.Version}}'`
+answered `5.7.1` while the machine was stopped, which is what made the absence look total - a
+**client** version is a reading about the installed program, and only `{{.Server.Version}}` comes back
+from something that can actually run a container. `podman machine start` then succeeded and a real
+container ran (`node:22-alpine`, `v22.23.3`), with write-back to a bind-mounted Windows directory
+verified. *So the load-bearing error in the plan was a name standing in for a capability.*
+
+The `Dockerfile` precedent still holds and was still followed: the port was landed in the pass that
+could run it, and a CI job now measures it on a runner rather than trusting this machine.
+
+*Recorded so the record is not the flattering half:* the port was built **before** this phase's own
+last refusal was re-read. §Refusals says *do not land the port before the pass that can run it* - and
+by the time the machine was measured, the port had already been written against the assumption that
+no substrate existed. That ordering was wrong, it was not caught by anything, and the consequence was
+that the port's first version carried a defect (`isolateProcess` refusing the host interpreter path)
+that a pass run from the start would have met on its first execution.
 
 The reason a phase rather than a wish is that the *shape* is already decided, and a decided shape is the
 expensive half. The plan specifies an `IsolationPort` **in the same shape as `ProcessRunner`**, landing
 only in the pass that can run it. A port with no wall-clock deadline and no falsification is a port that
 will be trusted before it is measured.
+
+## What was measured
+
+Every reading below was taken on this machine and is quoted from the command's own output.
+
+```
+node scripts/probe-isolation.ts        exit 0
+  substrate available: true (podman 5.7.1)
+  1. on this host, unisolated:  inside written, outside written      <- the positive control
+  2. inside the substrate:      inside written, outside EROFS
+                                escape file on the host: false
+                                the host sees the permitted write: true (contents x)
+  3. a request it cannot hold:  applied false, with a stated reason
+  verdict: host allowed and substrate refused = true
+           permitted half worked AND host saw it = true
+
+node --test tests/process-isolation.test.ts tests/isolation.test.ts   19 pass / 0 fail
+npm run gate                                             2675 tests / 445 suites / 0 fail
+```
+
+Two of the three defects this phase found were **only findable through the runner**, and neither could
+have been found by the probe:
+
+- **`podman run` does not inherit the environment of the process that started it.** The first wiring set
+  the world's variables on the spawn, which the container never sees, and the child read `undefined`
+  for the one value telling it where its sandbox is: `ERR_INVALID_ARG_TYPE: The "path" argument must be
+  of type string or an instance of Buffer or URL. Received undefined`. The environment now travels as
+  `--env=NAME`, so each value is read from the runtime's own environment and none of them appears on a
+  command line.
+- **A bare runtime name would have gone through `cmd.exe` on Windows.** `core/process.ts`'s
+  `wantsShell` hands a bare name to the shell, and the container vector carries a host path that can
+  contain a space and an `-e` payload that always can. Both were proven to survive by resolving the
+  runtime to an executable; the test that holds it uses a sandbox whose name contains a space and a
+  payload containing `(` and `&`.
+
+The third was the port's own first defect and is recorded in `docs/RULES-PAID-FOR.md`: the probe that
+found it was itself wrong first.
+
+## What this phase does not claim
+
+- **Not every world is isolated.** One world adopted the substrate (`local-process`), and a document
+  asks for it by declaring `process.isolation`. The other eleven run as they did. That is the plan's
+  own instruction - *one world, one credential, one probe* - and `PLAN.md` S42's rule that containers
+  must not be forced on every environment.
+- **Not that the substrate is always available.** Where no runtime answers a server version, the world
+  reports `substrate: null`, `network: unenforceable` and the reason the port gave - so the absence is a
+  reading rather than a gap, and the CI job fails loudly on a runner that was supposed to have one.
+- **Not that a boundary crossing is recorded for a refused socket.** `crossings` remains empty, for the
+  reason it was already empty: nothing in this world observes an *attempt*, only the refusal the runtime
+  handed back. This phase made one more thing refusable, not one more thing observable.
+
 
 ## What is already true
 
@@ -63,12 +130,29 @@ will be trusted before it is measured.
 
 ## Acceptance criterion
 
-- A run inside the substrate **refuses an action the host would have allowed** -- a write outside the
-  world's roots, or an outbound socket -- and the refusal is a recorded boundary crossing, not a crash.
-- The bundle names the substrate that held the world, and a reader can tell from the bundle alone
-  whether a run was isolated.
-- The CI job's first run is green, and its log carries the demonstration rather than the intention: the
-  refusal and the bundle field.
+**Two of the three are met and measured; the third is written and unexecuted, and it says so.**
+
+- **Met, with both halves read.** A run inside the substrate refuses an action the host would have
+  allowed, and the permitted action still works -- `scripts/probe-isolation.ts` prints `outside: EROFS`
+  for the escape against `outside: written` for the same program on the host, `inside: written` for the
+  permitted half, and `the host sees the permitted write: true`, then exits 0 only when all three hold.
+  It exits 1 when they do not, which was verified by denying it a usable image.
+  - **One part of this is *not* met and is recorded rather than glossed:** the refusal is **not** a
+    recorded boundary crossing. See §What this phase does not claim -- nothing in this world observes an
+    attempt, only the refusal the runtime handed back, so `crossings` stays empty and the third clause
+    of this bullet is false as written. That was already true of the filesystem seam before this phase,
+    and the honest statement of the criterion is the one `core/environment/types.ts` makes.
+- **Met.** `BoundaryReport.substrate` carries the runtime's own name and is written to
+  `environment.json` as `boundary.substrate`, present-and-`null` when no substrate held the world, so a
+  reader can tell from the bundle alone whether a run was isolated.
+  - **And the negative control is a test rather than a paragraph:** before the first spawn the world
+    reports `substrate: null` and `network: unenforceable` however its document is written, so a
+    document that *asked* for a substrate cannot be read back as one that had it.
+- **Written, never executed.** The `isolation` job exists in `.github/workflows/ci.yml` and requires
+  `# skipped 0` from both suites it runs, so a runner that lacks a runtime fails loudly rather than
+  passing on skips. It has not run: the branch carrying it is unpushed. This is the criterion this phase
+  is *not* finished on, and calling it met would be the exact defect the item exists to prevent -- the
+  last two such jobs both found real defects on their first runner execution.
 
 ## Falsification probe
 

@@ -75,8 +75,20 @@ piece of work is what made it deferrable; reading it as two is what makes one of
 
 - **E1 - the isolation substrate.** A mechanism that can confine a world that `node --permission`
   cannot, so that `network` stops being `unsupported` for nine worlds and `unenforceable` stops being a
-  permanent answer for `local-process`. **Not buildable on this machine** (no container runtime; the
-  `Dockerfile` is CI-only by precedent, and Docker is installed nowhere here).
+  permanent answer for `local-process`. **It was recorded here as "not buildable on this machine (no
+  container runtime; the `Dockerfile` is CI-only by precedent, and Docker is installed nowhere here)",
+  and that sentence was wrong in the way this repository keeps paying for: a name stood in for a
+  capability.** `docker` is indeed absent; `podman` 5.7.1 is installed at
+  `C:\Users\user\AppData\Local\Programs\Podman\podman.exe`, with a machine named
+  `podman-machine-default` that existed and was **stopped**. Two readings made the absence look total
+  and neither was a measurement of what the sentence claimed: `podman version --format
+  '{{.Client.Version}}'` answers `5.7.1` on a stopped machine, because a *client* version is a fact
+  about the installed program and only `{{.Server.Version}}` comes back from something that can run a
+  container; and the check above looked for one runtime's name rather than asking whether *any*
+  runtime answered. `podman machine start` succeeded and a real container ran. **E1 is built** --
+  `core/environment/isolation.ts`, adopted by `local-process`, recorded in the bundle as
+  `boundary.substrate`, and measured by `scripts/probe-isolation.ts` and an `isolation` CI job. See
+  `docs/phases/07-the-isolation-substrate.md`.
 - **E2 - the MCP surface.** The third declared integration level, greenfield, requiring **no new
   dependency**, and provable here today by starting a real child process and driving it over its own
   protocol. **Executable in this session.**
