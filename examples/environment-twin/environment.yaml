@@ -1,0 +1,71 @@
+# The world the `environment-twin` goal is judged in.
+#
+# This is the `local-process` world - the tenth adapter, and one of the two in this repository that is
+# NOT simulated. Nothing here is stood in for. The adapter starts a real child process, every exit code
+# a criterion reads was produced by `process.exitCode` on a process this kernel reaped, and every file
+# the contract reads is a file on this disk. So this document has no `simulated` block, and that
+# absence is a claim rather than an omission.
+#
+# That choice is not incidental to the goal, it is the goal's precondition. A capability twin of a
+# *substitute* would be a twin of the substitute - and the one thing this example measures is what the
+# real machine really does. There is nowhere to hide a stand-in here, because the readings are exit
+# codes from the runtime the probe is actually running on.
+#
+# The sandbox matters for the same reason. `process.root` names a directory this world creates, empties
+# and deletes on its own schedule, and the twin is written *inside* it - so "the twin exists" is a claim
+# about this run rather than about the developer's disk, and a reset really does withdraw it. The probe
+# reads the same directory out of `VERIDIAN_PROCESS_ROOT`, which is why the two agree about where
+# "here" is.
+
+adapter: local-process
+
+# Relative to this file. The adapter runs `start` and every `run` step with the working directory set
+# here, which is why the contract writes `capability-probe.mjs` rather than a path to it.
+app: app
+
+# The process boundary this world is. `host` is the identity every reading carries, so a result read
+# later says which machine produced it. `root` is the sandbox, resolved relative to `app` exactly as
+# `databasePath` is in the inventory demo; it is required rather than defaulted because every path a
+# criterion names resolves inside it, and a defaulted root would judge the contract against whichever
+# directory the run happened to start in.
+process:
+  host: capability-host
+  root: sandbox
+
+  # The program this world starts and keeps running. It is optional on purpose - a contract that
+  # provisions with its own `run` steps and reads the files back needs no daemon - and this contract
+  # wants one for the reason `local-process` states: "is a program still running" is the question no
+  # `run` step can answer, because a `run` step is over by the time anything is observed. Here it also
+  # gives every criterion a world-validity reading to stand on before any capability is judged.
+  application:
+    command: node
+    args: [capability-probe.mjs, daemon]
+
+# Null means "this program has no dependencies to install" - a fact about a program written against the
+# Node standard library alone, which is what lets this example run from a clean checkout with nothing
+# to fetch.
+dependencyInstall: null
+
+start:
+  # Executed verbatim - never a shell string built by pasting configuration into it.
+  command: node
+  args: [capability-probe.mjs, daemon]
+
+  # The world waits for the probe to say it is ready. The pattern stops before the sandbox path,
+  # because that path is machine-specific: a readiness gate that depended on it would let a temporary
+  # directory abort the run instead of failing a criterion. The line is printed before the process
+  # holds itself open, so a criterion reading it is reading something that was true when the world
+  # declared itself ready.
+  #
+  # This is also the line no defect in this example may touch. `local-process` paid for that rule: a
+  # defect that misspelt the readiness word took the *world* down, so the run ended before any criterion
+  # was observed and before the repair gate was reached - and a defect that takes down the world cannot
+  # be repaired by a loop that only starts once the world is up.
+  readyPattern: "environment-twin daemon ready"
+
+# Reset is first-class, not test cleanup. `restart` stops the daemon before emptying the directory and
+# starting it again, so each iteration is judged in a world that holds nothing the previous one wrote -
+# including no twin, which is what makes AC-007's "verify with nothing to verify" a real state rather
+# than a race.
+reset:
+  strategy: restart

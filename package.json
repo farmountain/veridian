@@ -54,6 +54,7 @@
     "demo:local-process": "node examples/local-process/demo.ts",
     "demo:data": "node examples/sim-data/demo.ts",
     "demo:mobile": "node examples/sim-mobile/demo.ts",
+    "demo:twin": "node examples/environment-twin/demo.ts",
     "demo:no-browser": "node examples/shopping-cart/demo.ts --browser none",
     "e2e:install": "node scripts/e2e-install.mjs",
     "e2e": "node examples/shopping-cart/demo.ts --browser playwright"

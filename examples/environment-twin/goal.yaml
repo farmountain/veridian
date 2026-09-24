@@ -1,0 +1,92 @@
+# The goal: the environment's capabilities are *measured*, and the twin is the measurement.
+#
+# This goal exists because of one question that the rest of the repository could not answer:
+# *how does Veridian know the reality of the environment?* Every other world answers a question about
+# an application - does the page render, does the row persist, does the container hold its limits.
+# None of them answers a question about the **machine underneath**. This one does, and it does it with
+# the same instruments: a real child process, a real exit code, a real file on this disk.
+#
+# The statement below names an end state an operator could check afterwards without having watched the
+# run. It has four clauses and each is judged by named criteria:
+#
+#   1. every capability is exercised rather than assumed
+#   2. an absence is only reported when the instrument was proven live in the same run
+#   3. the twin is a document on disk that a second, independent reading agrees with
+#   4. a machine fact and a probe fault are given different names
+#
+# The second clause is the one worth reading twice, and it is the reason this goal exists rather than a
+# version table. **Absence is the one answer every broken instrument returns** - a probe that only
+# attempts the refused half cannot tell "the boundary holds" from "nothing works at all". So a
+# capability here carries one of three readings, and the third is what makes the other two mean
+# something:
+#
+#   available          exercised, and it succeeded
+#   absent             exercised, the instrument shown live, and it did not succeed
+#   instrument-broken  the permitted half failed, so nothing may be concluded and no absence is claimed
+
+version: 1
+
+id: environment-twin
+
+statement: >-
+  The capabilities of the machine this run executes on are measured by exercising them rather than
+  declared, each carries the evidence that produced its reading, a capability the machine lacks is
+  reported as absent only where a known-present control succeeded in the same run, and the resulting
+  twin is a document on disk that an independent second reading of the same machine agrees with.
+
+acceptance: acceptance.yaml
+
+environment: environment.yaml
+
+context: |-
+  The thirteenth example and the first whose subject is not an application at all. Every world before
+  it judges something the run deployed; this one judges **the ground the run stands on**, and it is
+  the product's own answer to a question that is otherwise answered by a README.
+
+  The principle is not new here. `core/environment/isolation.ts` already measures the container
+  substrate instead of declaring it, on the grounds that *"a constant saying 'a container runtime is
+  installed' would be a claim beside the code, free to disagree with the machine the code is running
+  on"*. That file measures one capability and says so. This goal is the same discipline applied to the
+  whole surface - the runtime, the filesystem, the permission model, the network allowance, and the
+  tools a run reaches for - and it is expressed as a contract so a reader can run it.
+
+  What a reader should watch is that nothing here reads a table. There is no list of "tools Veridian
+  needs", no version check against a manifest, and no environment variable consulted to decide what
+  the machine can do. Every entry was produced by attempting the thing and reading the exit code, the
+  stream or the bytes - which is why the twin changes when the machine changes, and why a capability
+  that is genuinely absent arrives with the code that said so rather than with a sentence saying it
+  was not found.
+
+  Running it on this machine produced two readings worth stating, and the second is a corroboration
+  rather than a discovery. `runtime.allow-net` is **absent**, quoting `bad option:
+  --allow-net=127.0.0.1` at exit 9 - which independently reproduces the measurement
+  `docs/ISOLATION-AND-MCP-PLAN.md` section 3.1 records. And `container.runtime` is **available**,
+  quoting `podman version 5.7.1`.
+
+  That second reading was checked against the document before anything was written about it, and the
+  document had already been here: its section 3.1 carries the corrected note in full - *"docker is
+  indeed absent; podman 5.7.1 is installed ... podman machine start succeeded and a real container
+  ran"* - together with the reason the original sentence was wrong, which was that it measured
+  `docker` and never measured `podman`. So this contract does not correct that record; it reproduces
+  it, from a different direction and with a different instrument. The near-miss is worth recording
+  where it happened rather than in a footnote: **a plausible-looking defect in a document has to be
+  checked against the document before it is written up**, because a correction carries more authority
+  than the claim it replaces and will not be re-checked by the next reader.
+
+tags:
+  - environment-twin
+  - capability-measurement
+  - thirteenth-example
+
+limits:
+  # 6 is what the demo needs: one to observe the defects, and five to repair them.
+  maxIterations: 6
+  maxRuntimeMs: 300000
+  maxCriterionMs: 30000
+
+  # This world reaches no network and writes only inside its own sandbox - so it can measure whether
+  # the *runtime* supports a network allowance without ever using one. That distinction is the whole
+  # point of the `runtime.allow-net` capability: it is a claim about what the interpreter accepts, not
+  # a request for a socket.
+  networkPolicy: deny
+  filesystemWrite: sandbox

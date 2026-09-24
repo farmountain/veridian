@@ -1,0 +1,356 @@
+# The contract: nine deterministic criteria over one real capability probe.
+#
+# Every step below is a `run` step - the kind the `sim-posix`, `sim-os` and `sim-container` worlds
+# introduced for a program that provisions by printing vectors, and which `local-process` uses for a
+# program judged on what it printed. It carries a bare array of strings, which the engine decodes as
+# `argv`: there is no `command` field anywhere, and a contract that wrote one would be describing a
+# step the schema does not have.
+#
+# Read the targets as a grammar, because there are two kinds of thing here and each is refused with its
+# own message:
+#
+#   `process.host`, `process.probe`     no target at all - the host is the reading's, and `process.probe`
+#                                       renders the whole world
+#   `process.exitcode`, `process.stdout`,  a command, named either `app` (the program this world started
+#   `process.stderr`, `process.run`    and keeps running) or a position counted from 1 naming which
+#                                      `run` step is meant
+#   `process.kind`, `process.contents`,  a path inside the world's own root - the sandbox the plan names,
+#   `process.size`, `process.file`     so `twin/capabilities.json` means the one under the sandbox
+#
+# Two consequences decide the shape below. A path is only read when some expectation names it, so a
+# criterion that judges the twin has to mention the twin. And a command can only be judged if this
+# criterion ran it - `observe()` records none - so every command-targeted expectation sits beside the
+# `run` step that produced it. A criterion that read position 1 without running anything would not
+# fail; it would be `INCONCLUSIVE`, which is the honest answer to a question nobody asked the world.
+#
+# The statuses that are *machine facts* - whether git is installed, whether the runtime accepts a
+# network allowance, whether a container runtime answers - are never asserted here as particular
+# values. Asserting them would make this contract a claim about one machine. What is asserted is the
+# **structure of the measurement**: that every capability carries evidence, that the control was live,
+# that the two-stage probes really ran both of their halves, and that a second reading agrees. Those
+# hold on a machine with everything installed and on one with nothing.
+
+version: 1
+goal_id: environment-twin
+
+criteria:
+  # ---------------------------------------------------------------------------------------------
+  # AC-001 - the world is the world this goal names, and a program is still running in it.
+  #
+  # This is the criterion every other one stands on, and it earns that position by being the only one
+  # whose failure means the world itself is wrong rather than the application. The host is what every
+  # reading carries, so a result read later says which machine produced it. A process that has not
+  # exited has no exit code, which is why this judges `process.state` and not `process.exitcode` - the
+  # exit-code validator says so rather than reporting a zero nobody observed.
+  #
+  # `process.probe` renders the whole world, so its `contains` stops before the sandbox path: that
+  # path depends on where this machine put a temporary directory, and an assertion that included it
+  # would be an assertion about a temporary directory.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-001
+    description: the world names its host, the probe announced itself as ready, and it is still running
+    steps: []
+    expect:
+      - validator: process.host
+        equals: "capability-host (root sandbox)"
+        message: the readings name a host other than the one this goal's environment declares
+      - validator: process.state
+        target: app
+        equals: running
+        message: the probe this world started is not running
+      - validator: process.stdout
+        target: app
+        contains: "environment-twin daemon ready"
+        message: the probe did not announce itself as ready
+      - validator: process.probe
+        contains: "application: node capability-probe.mjs daemon - still running"
+        message: the world's own reading does not describe the probe as running
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-002 - the instrument is live, which is the precondition for any absence to mean anything.
+  #
+  # Four capabilities are asserted `available` and they are chosen because they are the ones the probe
+  # itself depends on: it started a child, it captured what that child printed, it wrote into its own
+  # sandbox and it read the bytes back. A probe that reported any of those `absent` would not have
+  # measured the machine - it would have measured itself - so this criterion failing means the
+  # instruction to distrust the whole report, not merely one line of it.
+  #
+  # The `# control status=available` line is the control every absence elsewhere is read against, and
+  # it is the point `core/environment/isolation.ts` makes one capability at a time: *the permitted half
+  # is read first*. Without it, "absent" and "my instrument is broken" are the same output, and a run
+  # in which everything looks unavailable has almost certainly measured its own probe.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-002
+    description: the control is live, and the four capabilities the probe itself depends on are available
+    steps:
+      - run: [node, capability-probe.mjs, survey]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 0
+        message: the probe's survey refused to carry out the measurement
+      - validator: process.stdout
+        target: "1"
+        contains: "# control status=available"
+        message: the known-present control did not succeed, so no absence in this report can be read
+      - validator: process.stdout
+        target: "1"
+        contains: "capability:process.exec status=available"
+        message: the runtime could not start a child process, so nothing downstream of it is measurable
+      - validator: process.stdout
+        target: "1"
+        contains: "capability:process.capture status=available"
+        message: the runtime could not capture what a child printed
+      - validator: process.stdout
+        target: "1"
+        contains: "capability:fs.write status=available"
+        message: the sandbox could not be written to
+      - validator: process.stdout
+        target: "1"
+        contains: "capability:fs.read status=available"
+        message: a file written into the sandbox could not be read back
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-003 - the report enumerates every capability by name, and says how many it enumerated.
+  #
+  # The count is a real assertion rather than a decoration. A report that silently measured fewer
+  # capabilities than it names - because one probe threw and was dropped, or because a family was
+  # skipped - would satisfy every `contains` above and still be an incomplete twin. Eight is the number
+  # this program measures, and the eight names are asserted beside it, so a capability that stopped
+  # being measured cannot hide behind a count that was not updated.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-003
+    description: the report names eight capabilities and prints the same count it enumerated
+    steps:
+      - run: [node, capability-probe.mjs, survey]
+    expect:
+      - validator: process.stdout
+        target: "1"
+        contains: "capability:count 8"
+        message: the report enumerated a number of capabilities other than the eight this contract names
+      - validator: process.stdout
+        target: "1"
+        contains: "capability:runtime.permission status="
+        message: the runtime's permission model was not measured
+      - validator: process.stdout
+        target: "1"
+        contains: "capability:runtime.allow-net status="
+        message: the runtime's network allowance was not measured
+      - validator: process.stdout
+        target: "1"
+        contains: "capability:tool.git status="
+        message: the presence of a tool was not measured
+      - validator: process.stdout
+        target: "1"
+        contains: "capability:container.runtime status="
+        message: the presence of a container runtime was not measured
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-004 - the twin is a real document in the sandbox, and it declares what it is.
+  #
+  # The file is read from the world's own root, so this is a claim about a file this run wrote rather
+  # than about a document that happened to be in the checkout. The schema string and the goal string
+  # are both asserted because a twin that did not say which contract produced it could not be joined
+  # to anything - and joining is the whole use of a twin.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-004
+    description: the twin is a file in the sandbox declaring its own schema and the goal that produced it
+    steps:
+      - run: [node, capability-probe.mjs, survey]
+    expect:
+      - validator: process.kind
+        target: twin/capabilities.json
+        equals: file
+        message: the twin is not a file in the sandbox
+      - validator: process.contents
+        target: twin/capabilities.json
+        contains: "\"schema\": \"veridian.capability-twin/1\""
+        message: the twin does not declare the schema version this contract reads
+      - validator: process.contents
+        target: twin/capabilities.json
+        contains: "\"goal\": \"environment-twin\""
+        message: the twin does not name the goal that produced it
+      - validator: process.contents
+        target: twin/capabilities.json
+        contains: "\"name\": \"process.exec\""
+        message: the twin on disk does not hold the capabilities the report printed
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-005 - two independent surveys of the same machine agree.
+  #
+  # `compare` surveys twice and compares, rather than re-rendering one survey. That distinction is the
+  # criterion: a second reading derived from the first would agree with it by construction and measure
+  # nothing. What makes this possible is a decision in the twin's *shape* - it carries no timestamp, so
+  # two surveys of an unchanged machine are byte-identical and a disagreement is a fact about the
+  # machine rather than about the clock.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-005
+    description: two independent surveys of the same machine produce the same capability reading
+    steps:
+      - run: [node, capability-probe.mjs, compare]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 0
+        message: two surveys of the same machine disagreed
+      - validator: process.stdout
+        target: "1"
+        contains: "capability-twin stable yes"
+        message: the probe did not report its two surveys as agreeing
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-006 - the document on disk is checked against a fresh reading, not against a memory of one.
+  #
+  # The twin is re-read from the **file**, so the claim being verified is that the document a reader
+  # would open still describes the machine. A verifier comparing its own in-memory copy would agree
+  # with itself while the file said something else, which is the failure mode a "verify" command exists
+  # to exclude. `stderr` equals the empty string is the other half of the sentence: agreement is
+  # announced on stdout, and a verifier that explained a disagreement on the error stream while exiting
+  # zero would satisfy every other expectation here.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-006
+    description: a verifier re-reads the twin from disk and agrees with a fresh survey of the machine
+    steps:
+      - run: [node, capability-probe.mjs, survey]
+      - run: [node, capability-probe.mjs, verify]
+    expect:
+      - validator: process.exitcode
+        target: "2"
+        equals: 0
+        message: the verifier rejected a twin it had just been handed
+      - validator: process.stdout
+        target: "2"
+        contains: "capability-twin agrees yes"
+        message: the verifier did not confirm the twin it read back from disk
+      - validator: process.stderr
+        target: "2"
+        equals: ""
+        message: the verifier reported something on the error stream
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-007 - a verifier with nothing to verify says what it could not read, and does not pretend.
+  #
+  # This is the shape `local-process` uses for the same situation, and it is here because the interesting
+  # case for a verifier is the one where there is nothing to check. Exit 2 is the refusal - "I could not
+  # carry this out" - and it is a different number from the 4 that means "I read the twin and it
+  # disagrees", which AC-006 exercises from the other side. Neither is 1, because 1 is what an uncaught
+  # exception produces and a criterion could not tell "the twin is stale" from "the program fell over".
+  #
+  # `stdout` equals the empty string is a real assertion rather than a placeholder: the refusal is
+  # reported on stderr, and a program that also printed a friendly line to stdout would be claiming an
+  # outcome it did not reach.
+  #
+  # The `clear` step is why this criterion does not depend on where it sits in the list. The first
+  # version of it ran `verify` alone and assumed nothing had surveyed yet - and a criterion *earlier*
+  # in the same file already had, so the twin was on disk, `verify` correctly exited 0, and this
+  # criterion failed against a correct program. A criterion that inherits its precondition from the
+  # order other criteria happened to run in is a criterion that changes meaning when the list is
+  # reordered, so this one establishes the state it judges.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-007
+    description: a verify with no twin refuses with exit 2, names what it could not read, and writes nothing to stdout
+    steps:
+      - run: [node, capability-probe.mjs, clear]
+      - run: [node, capability-probe.mjs, verify]
+    expect:
+      - validator: process.exitcode
+        target: "2"
+        equals: 2
+        message: verify did not refuse when there was no twin to read
+      - validator: process.stdout
+        target: "2"
+        equals: ""
+        message: verify wrote to stdout while refusing
+      - validator: process.stderr
+        target: "2"
+        contains: "the twin could not be read from"
+        message: verify did not name the document it could not read
+      - validator: process.file
+        target: twin/capabilities.json
+        equals: false
+        message: a twin existed after the probe was asked to withdraw it
+      - validator: process.kind
+        target: twin/capabilities.json
+        equals: absent
+        message: the path verify could not read is not absent
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-008 - an absence is only reported when the instrument was shown to be live in the same run.
+  #
+  # This is the criterion the goal's second clause is about, and it is the reason the example exists.
+  # Two audit lines are asserted together because the claim is their conjunction: the control succeeded
+  # (`control-available yes`) **and** every capability carried non-empty evidence
+  # (`every-capability-has-evidence yes`). Only then may the derived line say that absence is
+  # distinguishable from a broken probe - and that derived line is asserted too, so the program cannot
+  # report the conclusion while one of its premises was false.
+  #
+  # A twin that said "no container runtime" from a probe that never ran would pass every structural
+  # check above; it fails here.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-008
+    description: the control was live and every capability carries evidence, so an absence is a reading about the machine
+    steps:
+      - run: [node, capability-probe.mjs, survey]
+    expect:
+      - validator: process.stdout
+        target: "1"
+        contains: "audit control-available yes"
+        message: the known-present control was not available
+      - validator: process.stdout
+        target: "1"
+        contains: "audit every-capability-has-evidence yes"
+        message: a capability was reported without the evidence that produced it
+      - validator: process.stdout
+        target: "1"
+        contains: "audit absence-is-distinguishable yes"
+        message: the probe claims a distinguishable absence without both of its premises holding
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-009 - the enforcement verdict was earned by measuring both halves, and the twin says so.
+  #
+  # This is the sharpest criterion here and it is deliberately about the *evidence* rather than about
+  # the answer. Whether a runtime confines a child's filesystem calls is a machine fact and is not
+  # asserted; what is asserted is that whichever reading was produced came from a probe that attempted
+  # the permitted write and the refused write, and wrote both results down. A probe that only attempted
+  # the refusal cannot tell "the boundary holds" from "every write fails", and §3.3 of the isolation
+  # plan is the record of this repository being caught by exactly that shape.
+  #
+  # The twin is judged rather than the stdout, because it is the artifact that outlives the run: a
+  # reader joining twins from several machines has to be able to see, per machine, that the two halves
+  # were run. The assertion is on the phrase both halves share.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-009
+    description: the enforcement reading records both the permitted and the refused half, so it was earned rather than assumed
+    steps:
+      - run: [node, capability-probe.mjs, survey]
+    expect:
+      - validator: process.contents
+        target: twin/capabilities.json
+        contains: "permitted half"
+        message: no capability records a permitted half, so no enforcement verdict can be concluded
+      - validator: process.contents
+        target: twin/capabilities.json
+        contains: "refused half"
+        message: no capability records a refused half, so the boundary was never put to the test
+      - validator: process.contents
+        target: twin/capabilities.json
+        contains: "\"name\": \"runtime.permission\""
+        message: the filesystem permission model is absent from the twin entirely
+    evidence:
+      - json

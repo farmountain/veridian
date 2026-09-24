@@ -221,6 +221,17 @@ npm run demo:mobile                         # the thirteenth demo, and the eight
                                             # Exit 0 when it passes: measured, 5 iterations and
                                             # 25/25 criteria, the failing count descending
                                             # 5 -> 4 -> 2 -> 1 -> 0.
+npm run demo:twin                           # the fourteenth demo, and the only one whose subject is
+                                            # not an application but the MACHINE the run stands on:
+                                            # `capability-probe.mjs` measures the environment by
+                                            # exercising it - runtime version, filesystem confinement
+                                            # (both halves), the network allowance, and the tools on
+                                            # PATH - and writes a twin into its sandbox. Every defect
+                                            # in this demo is a defect in the INSTRUMENT, which is the
+                                            # one failure mode no earlier demo can reach: a probe with
+                                            # a broken half passes every check there is. Exit 0 when
+                                            # it passes: measured, 4 iterations and 9/9 criteria, the
+                                            # failing count descending 4 -> 2 -> 1 -> 0.
 npm run demo:no-browser                     # the same demo with `--browser none`. Every criterion is
                                             # a browser observation, so this must end INCONCLUSIVE
                                             # (exit 2). It shows the refusal, not the aha.

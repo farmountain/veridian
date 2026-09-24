@@ -91,6 +91,10 @@ npm run demo:cockpit      # the twelfth: Veridian's OWN client is the applicatio
 npm run demo:mobile       # the thirteenth: the app provisions a SIMULATED handset through commands
                           # it really issues, judged on the bundles, permissions, deep links,
                           # notifications and logs that substitute device holds
+npm run demo:twin         # the fourteenth, and the only goal whose subject is not an application
+                          # but the MACHINE: it measures the environment's capabilities by exercising
+                          # them and writes a twin, and it is judged on whether an absence is
+                          # distinguishable from a broken probe rather than on what it found
 ```
 
 Run the seventeen `npm run` commands below in that order, after `npm ci`. `npm ci` removes

@@ -150,6 +150,24 @@ examples/vscode-cockpit/app/extension/
 # tree this rule excludes are the same one by construction.
 examples/vscode-cockpit/app/sandbox/
 
+# The sandbox tree the `environment-twin` example's world builds, and this rule was added *after* the
+# tree was already committed - which is the whole reason it is worth stating. The reasoning is the
+# `local-process` one: the probe and the tree are on the same real filesystem, so a committed copy
+# would let a criterion read the artifacts of a run that is over before this one started - and the
+# artifacts here are worse than a stale release, because one of them is a *capability reading*. A
+# committed `twin/capabilities.json` would be a document describing whatever machine first ran the
+# example, sitting inside the sandbox where the next reader would find it looking like current
+# evidence. That is the same shape as the `sim-mobile` context rule above, one layer further out.
+#
+# The two files it cost are `app/sandbox/capability-probe-proof.txt` and
+# `app/sandbox/twin/capabilities.json`, staged by `git add examples/environment-twin` on the commit
+# that landed the example, because a standalone probe run had written them into the tree before the
+# world ever created its own. The `**` is copied from the `local-process` rule deliberately: that
+# example's rule needed it after a root-resolution defect wrote a *nested* sandbox, and the same
+# defect was found here in the same shape, so this rule covers the nesting from the start rather than
+# waiting to pay for it again.
+examples/environment-twin/app/**/sandbox/
+
 # The state directory the self-acceptance contract's world builds - the one generated tree in this
 # repository that is not under an example's `app/`. The reasoning is the `sim-posix` one, and it is
 # sharper here because the world's root and the CLI's `--state-dir` are the *same* directory:

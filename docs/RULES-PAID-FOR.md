@@ -2055,3 +2055,57 @@ reads a variable.*
   named the environment file as `D:/all_projects/Veridian/.scratch/vgap/environment.yaml`, **absolute,
   resolved from a relative goal path**, so the repair announced itself inside the failure of the probe
   meant to test something else.
+
+- **A correction has to be checked against the document it corrects, because the document may have
+  already paid for the mistake - and a wrong correction outranks the claim it replaces.** Building the
+  `environment-twin` example produced a capability probe that read two things this repository has
+  written down. One corroborated: `runtime.allow-net` is **absent**, quoting `bad option:
+  --allow-net=127.0.0.1` at exit 9, which independently reproduces `ISOLATION-AND-MCP-PLAN.md`
+  section 3.1. The other looked like a defect: `container.runtime` read **available**, quoting
+  `podman version 5.7.1`, while that document's summary rows still said the isolation substrate was
+  absent because `docker` is not on `PATH`. Two comments were written - in the example's `goal.yaml`
+  and in its `demo.ts` - explaining that the document had generalised one command's absence into a
+  claim about the machine. **Both were false.** Reading section 3.1 before writing a third one showed
+  it already carried the corrected note in full - *"docker is indeed absent; podman 5.7.1 is installed
+  ... podman machine start succeeded and a real container ran"* - together with the reason the original
+  sentence was wrong, which was exactly the reason the new comments gave. *A repo's existing
+  measurement outranks your inference*, and the failure mode is specific: the write-up was plausible,
+  self-consistent, cited the right document, and would have been believed precisely because it read as
+  diligence rather than as an error. So: **before writing a correction, open the document and look for
+  the corrected sentence** - and when it is already there, record the corroboration instead, because
+  the second instrument agreeing is the useful reading and the invented repair is not.
+
+- **A criterion whose meaning depends on where it sits in the list is a criterion that changes meaning
+  when the list is reordered.** The first version of `environment-twin`'s AC-007 ran `verify` against a
+  world it assumed held no twin. It did not: a criterion **earlier in the same file** had already run
+  `survey`, so the twin was on disk, `verify` correctly exited 0, and the criterion failed against a
+  **correct program** - reporting an application fault for a fact about criterion ordering. The
+  `local-process` contract has the same shape and escapes it only by accident, because its first
+  criterion runs no commands at all. The repair is a `clear` command on the probe, so the criterion
+  *establishes* the state it judges rather than inheriting it from whatever ran before. The general
+  form: a criterion that provisions its own precondition can be reordered or run alone; one that
+  inherits it silently encodes the file's order as a requirement nothing states.
+
+- **A reach table is a claim about every expectation in the contract, and the third table in this
+  repository was wrong in the same direction.** The new example's `defects.ts` opened with "three
+  defects, three criteria, one each", reasoned from each defect's name - and the run disagreed. D1
+  empties one capability's evidence, and because `survey` derives its own exit code from its audit, the
+  survey then exits 4, which fails AC-002's "the survey exits 0" assertion beside AC-008's. The
+  measured descent is **4 -> 2 -> 1 -> 0**, not the 3 -> 2 -> 1 -> 0 that both the table and the demo's
+  narration printed. `local-process` wrote this rule after paying for it - *"it has to be read off a
+  run rather than reasoned from the defect's name - and the count is the part a reader checks first,
+  which is why it is the part that was wrong"* - and this is the recurrence showing the rule had been
+  understood as history rather than as a procedure. The count is now asserted in
+  `tests/environment-twin-demo.test.ts` against both files, so the two statements cannot drift apart
+  again without a test failing.
+
+- **The template-versus-pattern trap has a third site, and this time a test caught it rather than a
+  reader.** `environment.yaml` waits for the readiness line `environment-twin daemon ready`, and the
+  probe prints that sentence by interpolation - a template naming a `GOAL` constant - so the first
+  version of the guard, which searched the program's **source** for the pattern, could never match and
+  reported a correct contract as wrong. That is the same defect `tests/sim-data-demo.test.ts` records
+  and the same fix: compare the two *shapes*, or read the **rendered** line. What is new is where it
+  was caught. The two earlier occurrences were found by a human reading a document; this one was found
+  because a guard was written and it failed - which is the outcome those earlier entries argued for,
+  and the reason the fix now runs the daemon for four seconds and reads what it printed rather than
+  searching for a string a template never contains.

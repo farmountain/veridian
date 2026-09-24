@@ -203,14 +203,14 @@ jobs:
       #
       # The job was named `simulated worlds` and ran seven, which was the number of `sim-*` worlds when
       # it was written. It is now named for the property it actually tests - that none of them needs a
-      # browser - because that name had stopped describing its own membership twice over: `local-api`
-      # and `local-process` stand nothing in at all, and `api`, `local-process`, `data` and `cockpit`
-      # were declared, shipped, documented and run by nothing. That is this repository's oldest shape,
-      # one layer out: *a roster and the thing that executes it are two lists of the same thing, and
-      # only one of them can be executed.* A name that states the wrong property is the same defect as
-      # a step whose name states an outcome it does not check.
+      # browser - because that name had stopped describing its own membership twice over: `local-api`,
+      # `local-process` and `environment-twin` stand nothing in at all, and `api`, `local-process`,
+      # `data` and `cockpit` were declared, shipped, documented and run by nothing. That is this
+      # repository's oldest shape, one layer out: *a roster and the thing that executes it are two lists
+      # of the same thing, and only one of them can be executed.* A name that states the wrong property
+      # is the same defect as a step whose name states an outcome it does not check.
       #
-      # None of the twelve needs Playwright, which is why this job does not install it. That is a real
+      # None of the thirteen needs Playwright, which is why this job does not install it. That is a real
       # property of the worlds and not a convenience: the browser is the *first* world's observation
       # port, and every other world declares its own.
       #
@@ -218,11 +218,18 @@ jobs:
       # non-zero before the assertion could name the world that produced it. A failure here has to say
       # *which* world regressed - a job that only says "a demo failed" sends the reader to run twelve
       # commands to find out which one.
+      #
+      # `twin` is the newest member and the only one whose subject is not an application: it measures
+      # the *machine* the run stands on - the runtime, the filesystem confinement, the network
+      # allowance, the tools on `PATH` - and writes a twin. It belongs in this job rather than in the
+      # gate because it starts a real child process and reaches nothing else, and because its own
+      # defects are defects in the probe rather than in an application, which makes it the one demo
+      # whose failure could otherwise look like a machine difference rather than a regression.
       - name: every world must demo green, and say which one did not
         run: |
           set +e
           failed=""
-          for world in db k8s posix os cloud container vscode api local-process data cockpit mobile; do
+          for world in db k8s posix os cloud container vscode api local-process data cockpit mobile twin; do
             echo "::group::npm run demo:$world"
             npm run "demo:$world"
             code=$?
