@@ -1910,3 +1910,34 @@ reads a variable.*
   unexamined conclusion propagated into a second document and survived a correction that re-framed that
   very table without re-reading its reasons. *A conclusion is a citation, and a citation is only as good
   as the question behind it.*
+- **A documentary guard can hold the stale belief, and then it fails on a correct document.** Every rule
+  before this one is about a *document* drifting from the tree. `tests/implementation-plan-status.test.ts`
+  is the inverse: its fourth assertion required the deferred table to keep a row whose subject contains
+  `MCP`, reading it as one of *"the two whose deferral is a decision rather than a schedule"*. The Level-3
+  row's deferral **was** a decision - about the *gate*, since *"MCP is the door"* - but the surface then
+  landed as `mcp/` (three modules, eight tools, `npm run smoke:mcp` in CI), so the row's status moved to
+  `landed` and **the guard began failing on a corrected table**, with a message naming the row that had
+  just been fixed. So the repair had to be made in two files, not one: the row, and the guard's example.
+  The distinction that keeps this from being the forbidden move - editing an expectation to make a change
+  pass - is that the assertion's **purpose** was preserved and only its **example** re-measured: the table
+  must still carry its genuinely deferred rows, and `VM / guest-kernel adapter` (a booted kernel is a
+  claim nothing here can prove) is now named where the MCP row was. Both halves were then probed rather
+  than assumed: reverting the row to `deferred` fires the guard's *"the row and the tree disagreed, and
+  the tree was right"* message, and renaming the VM row out of the deferred set fires the rewritten
+  assertion by name. *A guard is a claim about the tree too, so a correction to the tree can require a
+  correction to the guard* - and a pass that fixes only the document will meet the guard as an obstacle
+  rather than a check, which is the state in which people weaken assertions.
+- **A probe that edits a file must restore it inside the same command, and verify the restore by reading
+  the file rather than by the suite going green.** Two probes here were written as separate commands -
+  edit, run, restore - and an unrelated interrupt killed the terminal twice in the middle of the run, so
+  the first `git checkout -- <path>` never executed and the *probe's* state sat on disk looking like a
+  result. Worse, when the restore finally did run it took the **legitimate** correction with it, because
+  `git checkout` restores to `HEAD` and the intended change was uncommitted: `git status` showed one
+  dirty line, which read as *the probe is still there* and was in fact *the correction is gone*. The
+  working shape is a single command that reads the original into a variable, writes the probe, runs the
+  suite, writes the original back, and then **prints two content assertions** - that the original line is
+  present and the probe marker is absent. That is what caught it: `restored VM row present: True`,
+  `probe marker still present: False`. This is the second time this repository has paid for a restore
+  that was not verified, and the earlier one had the same signature - *a suite that is green after a
+  restore and a suite that was green all along are the same output* - so the rule is now: **restore with
+  the tool that cannot half-succeed, and assert the restore by reading the bytes back.**

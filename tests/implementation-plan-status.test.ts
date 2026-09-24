@@ -141,13 +141,23 @@ describe("the deferred table in IMPLEMENTATION-PLAN.md §1", () => {
 
   it("still carries the rows that are genuinely deferred, so the table has not been emptied", () => {
     // A table where every row says `landed` would pass the three assertions above and would have
-    // stopped being an audit trail. The Level-3 MCP row and the goal-compiler row are the two whose
-    // deferral is a decision rather than a schedule, and losing them silently would be the same
-    // defect as losing a validator name from a roster.
+    // stopped being an audit trail.
+    //
+    // **The examples here had to be re-measured, and the way they failed is worth keeping.** They used
+    // to require a row containing `MCP` and a row containing `Goal compiler`, on the reading that those
+    // two were *"the two whose deferral is a decision rather than a schedule"*. The Level-3 MCP row was
+    // a decision about the **gate** - *"MCP is the door. Veridian is the building"* - but the surface
+    // itself then landed as `mcp/`, so the row's status moved to `landed` and this assertion began
+    // **failing on a correct document**. That is the one direction a documentary guard must not fail
+    // in: the guard was holding a claim about the tree that the tree had outgrown, and its message
+    // named the row that had been *fixed*. The repair is to re-measure which rows are genuinely
+    // deferred, not to delete the assertion - its purpose, that the table keeps its audit trail, is
+    // sound and is the reason the two rows below are named rather than counted.
     const deferred = ROWS.filter((row) => row.status === "deferred").map((row) => row.subject);
     assert.ok(
-      deferred.some((subject) => subject.includes("MCP")),
-      `Level-3 MCP is still deferred, and the table says: ${deferred.join(" | ")}`,
+      deferred.some((subject) => subject.includes("VM / guest-kernel")),
+      `the VM / guest-kernel row is still deferred - a booted kernel is a claim nothing here can ` +
+        `prove - and the table says: ${deferred.join(" | ")}`,
     );
     assert.ok(
       deferred.some((subject) => subject.includes("Goal compiler")),

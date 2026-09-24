@@ -37,9 +37,14 @@ figure that matters is in the last column: **seven items, six built, one designe
 **Two things this table is not.** It is not a claim that the W-list was a poor plan - the opposite: six
 of seven items were executable as specified, which is why they landed in the order §7 predicted
 (`W1 (S) → W3 (S) → W4 (S) → W5 (M) → W2 (M) → W6 (-) → W7 (S)`), with W6 correctly last because it
-was the one item the design expected to be unprovable here. And it is not a claim that nothing remains:
-§7 of the design already named W6 as *"designed and recorded, not built"*, and that is exactly what it
-still is.
+was the one item the design expected to be unprovable here. And it is not a claim that nothing remains.
+**What remains is not a work item but an obligation**, and W6 is where the difference is sharpest: the
+design named it *"designed and recorded, not built"*, and that sentence went stale in **both** halves -
+E1 landed as phase 07 and E2 as `mcp/` - so the row above records them as built while this paragraph
+used to repeat the design's verdict. It is kept here as a correction rather than deleted, because the
+failure is the one this program keeps meeting: a status is a reading of the tree, and the design's
+sentence was a reading of the design. What is genuinely left for W6 is the same thing every `built` item
+carries - keeping it true - and the phase index's open table names it, runs and all.
 
 ---
 
