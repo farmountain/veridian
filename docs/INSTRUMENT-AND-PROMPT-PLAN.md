@@ -380,6 +380,27 @@ requires, and that file's own doc block records why it is the load-bearing one: 
 the two placements differ only in a boundary the per-gap cap already covers, so a test built from a
 positive cap passes with the check moved below the increment.
 
+**W-D was audited and found already correct, and the audit's readings are the record rather than a
+repair.** This workstream is the one item of the five that is a *measurement* rather than a change, so
+the honest output is the four claims below re-read at their addresses rather than a diff. All four
+resolve:
+
+| Claim | Re-read at | Reading |
+| --- | --- | --- |
+| Three bounds, each checked before the spend | `core/clarification/engine.ts` | `:286` the `while` condition, `:287` the per-run guard, `:294` the clock guard; `:300` is the only increment - so no bound is compared after it |
+| Each bound terminates a *different* case | `tests/clarification-ladder.test.ts` | subtest 4 (per-gap, `attempts === 2`), subtest 5 (per-run at zero, `attempts === 0`), subtest 7 (clock already spent) - three bounds, three subtests, none redundant |
+| The policy cannot ship degenerate | `tests/clarification-ladder.test.ts:530` | asserts `maxSelfPromptRoundsPerAmbiguity > 0 && maxSelfPromptRoundsPerRun > 0`, so a bound of zero cannot silently make the ladder a no-op |
+| Reachability is a property of the host | `cli/session.ts` | the engine is built in one place and that host always installs a port unless `--no-self-prompt` is given, so no resolve site is portless |
+
+**One thing the audit made explicit that the plan had left implicit: the per-gap cap, not the clock, is
+the bound that always holds.** A clock that is frozen or injected returns a constant, so
+`this.#clock.now() - startedAt` is `0` on every iteration and the `:294` guard never fires - which is
+why the per-gap loop condition at `:286` is the guarantee and the clock is the belt for a clock that
+advances. That ordering is what the non-degenerate assertion above exists to protect: a policy with a
+zero per-gap cap would leave the clock as the only bound, and the clock is the one that can be stopped
+by the thing it is measuring.
+
+
 **That last sentence was falsified rather than trusted, which is the difference between a guard
 that exists and a guard that holds.** Moving the per-run check below the increment - and widening
 `>=` to `>` so that positive caps behave identically, leaving *only* the degenerate input to differ

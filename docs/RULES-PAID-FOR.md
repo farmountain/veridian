@@ -1790,3 +1790,20 @@ reads a variable.*
   before the world is created at all`, and the line was restored and the restore asserted by reading it
   back. *A source-text guard is cheap, survives refactors that change behaviour, and answers a different
   question - so write it, and then write the half that runs the thing.*
+- **A document's own size is a count site when another document states it, and the guard over it lives
+  in a third place.** Phase 08's pass closed by editing `docs/INSTRUMENT-AND-PROMPT-PLAN.md` to record
+  the W-D audit, and the gate came back `2692 pass / 1 fail` on *the byte count it measured for each of
+  the five source documents* - `docs/INSTRUMENT-AND-PROMPT-PLAN.md: says 33726, is 35625`. The count was
+  in `docs/phases/README.md`, the document it counts was one directory away, and the guard was
+  `tests/phases-roster.test.ts`. Three places for one number, and the edit that moved it touched none of
+  them: adding prose to a plan document is not obviously a change to an index table, so nothing in the
+  edit's own context suggested a count was at stake. **The list of count sites in `tests/docs-roster.test.ts`
+  is not the list of counts that can move.** That one reads stated *test totals*; this one is a byte
+  total over five named documents, and it is checked by a different file answering a different question.
+  So the rule is not "remember the fifth site" - it is: after editing any file under `docs/`, run the
+  documentary guards (`tests/docs-roster.test.ts`, `tests/phases-roster.test.ts`,
+  `tests/phase-anchors.test.ts`) as the pass's own gate rather than discovering them in the whole-tree
+  run. They are fast, they are not part of `npm run gate`'s first failure mode, and the whole-tree run
+  reports them as one unnamed suite among 451. *A guard is only preventive if it is run before the
+  thing it guards has been sent* - and the containment here is worth naming, because the alternative to
+  a guard that fires is a document that states a figure nobody re-measured.
