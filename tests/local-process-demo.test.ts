@@ -577,6 +577,56 @@ describe("the goal, the contract and the environment agree", () => {
     }
   });
 
+  it("records the environment mode this document omits, from the schema that fixes it", async () => {
+    // The environment is the fourth dimension of the boundary, and this is the half that makes the
+    // decision *visible* rather than merely applied.
+    //
+    // `examples/local-process/environment.yaml` does not state `process.environment`, and
+    // `core/environment/load.ts` defaults it to `inherit` - so the VALUE was never in question. What
+    // was missing is the record. The write boundary's default (`/limits/filesystemWrite` in the goal),
+    // this world's own read surface and its health fields are all resolved *and reported* as
+    // `derived`; the environment - the one boundary whose default a decoder applied - was reported by
+    // nothing. A reader of such a bundle saw `mode: inherit` in the crawl, which says what the mode
+    // IS, and nowhere saw that the mode had been a choice, or what bound it.
+    //
+    // **If this document ever states the mode, this assertion must move to a world that omits it
+    // rather than be deleted.** A row whose gap became unreachable is a derivation nothing can
+    // exercise, which is the state `tests/env-reality-ladder.test.ts` exists to prevent one file over.
+    const outcome = await define();
+
+    const plan = outcome.environment.process;
+    assert.ok(plan, "the local-process world must carry a resolved process block");
+    assert.equal(
+      plan.environment,
+      "inherit",
+      "the document states no mode, so the plan must carry the schema's declared default",
+    );
+
+    const record = outcome.reports.environment.records.find(
+      (entry) => entry.ambiguity.path === "/process/environment",
+    );
+    assert.ok(
+      record,
+      "the environment mode was applied without being recorded, so the bundle does not say the " +
+        "choice was made or what bound it - see SCHEMA_DEFAULTS in core/clarification/derive.ts",
+    );
+
+    const resolution = record.resolution;
+    assert.equal(
+      resolution.via,
+      "derived",
+      "the mode came from a rung other than the schema default, which leaves the schema's own " +
+        "`default: inherit` declared in one file and consulted by nothing",
+    );
+    if (resolution.via !== "derived") throw new Error("unreachable");
+
+    assert.equal(resolution.value, "inherit");
+    assert.match(
+      resolution.evidence,
+      /schemas\/environment\.schema\.json#\/properties\/process\/properties\/environment\/default/,
+    );
+  });
+
   it("plans nine mandatory criteria in the order the contract declares them", async () => {
     const outcome = await define();
     const ids = outcome.plan.criteria.map((entry) => entry.criterion.id);

@@ -930,6 +930,40 @@ export function detectEnvironmentAmbiguities(
     );
   }
 
+  // -------------------------------------------------------------------------------------------
+  // The fourth dimension of the boundary.
+  //
+  // `process.environment` decides what the application a process world starts may SEE, and it is
+  // raised for the reason the health fields above are: the resolution is derivable from the schema,
+  // but *a value that appears inside the decoder leaves no trace in the bundle, and an untraceable
+  // value in a validation system is indistinguishable from a guess.*
+  //
+  // The gap this closes is an asymmetry rather than an omission. The WRITE boundary's default
+  // (`/limits/filesystemWrite` in the goal) is recorded as `derived` in every run, and so are the read
+  // surface, the reset strategy and the health fields - so the environment was the one boundary whose
+  // default was applied by `readProcessEnvironment` and cited by nothing. A reader of such a bundle
+  // saw `mode: inherit` in the crawl, which says what the mode IS, and nowhere saw that the mode had
+  // been a choice or what bound it.
+  //
+  // Guarded on `process` being present, which is what makes the document a process world: the field
+  // exists only under that block, so asking a database world for it would invent a gap in a document
+  // that has no such field to leave out - the same coupling `derive.ts` records for `/browser/enabled`
+  // and `/health/expectStatus`.
+  // -------------------------------------------------------------------------------------------
+  if (!isMissing(environment.process) && isMissing(getPointer(environment, "/process/environment"))) {
+    found.push(
+      ambiguity({
+        origin: "environment",
+        path: "/process/environment",
+        kind: "missing_value",
+        question:
+          "Should the application this world starts inherit the operator's environment, or see only " +
+          "what this document declares?",
+        blocking: isBlocking({ changesEnvironmentMeaning: true }),
+      }),
+    );
+  }
+
   if (!noHttp && isMissing(environment.browser?.["enabled"])) {
     found.push(
       ambiguity({

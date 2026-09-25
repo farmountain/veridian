@@ -175,6 +175,33 @@ const SCHEMA_DEFAULTS: readonly SchemaDefault[] = [
     value: 100,
     cite: "schemas/environment.schema.json#/properties/health/properties/intervalMs/default",
   },
+  {
+    // The fourth dimension of the boundary, and the row whose absence made a schema default dead
+    // data.
+    //
+    // `process.environment` decides what the application a process world starts may SEE. The schema
+    // declares `"default": "inherit"` and `core/environment/load.ts` applies it, so the *value* was
+    // never in question - but this table cited nothing for it, and a default declared in a schema and
+    // consulted by no row here is exactly the shape this file's own header warns about: *a default row
+    // and the gap that reaches it are one fact written in two files.*
+    //
+    // The asymmetry is what made it visible. The WRITE boundary's default - `/limits/filesystemWrite`
+    // in the goal - has a row and is recorded as `derived` in every run. So do the read surface, the
+    // reset strategy and the health fields. The environment was the one boundary whose default was
+    // applied by a decoder and cited by nothing, so a bundle showed `mode: inherit` in the crawl -
+    // what the mode *is* - and nowhere showed that the mode had been a choice, or what bound it.
+    //
+    // Coupled to `/process/environment` in `detect.ts`, which raises the gap only for a process world,
+    // on the same reasoning as the two rows above: the field exists only under that block, so asking a
+    // database world for it would invent a gap in a document that has no such field to leave out. The
+    // two halves are held by `tests/env-reality-ladder.test.ts`; a row whose gap became unreachable
+    // would leave a derivation that can never be exercised, which is why that file asserts both that
+    // an omitted field reaches this citation AND that a stated one raises nothing.
+    origin: "environment",
+    suffix: "/process/environment",
+    value: "inherit",
+    cite: "schemas/environment.schema.json#/properties/process/properties/environment/default",
+  },
 ];
 
 /** Rung 1a: a field the schema has already fixed. */

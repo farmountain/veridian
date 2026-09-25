@@ -2222,3 +2222,44 @@ reads a variable.*
   the defect is now one that writes a document whose every count is zero. That is also the shape a
   passing run can hide, and it is the one worth demonstrating: a bundle whose every criterion passed
   while an artifact the contract promised described a world that never existed.
+
+- **A schema default is dead data until a ladder row cites it, and the asymmetry that exposes it is a
+  sibling that *is* recorded.** `schemas/environment.schema.json` declares `"default": "inherit"` for
+  `process.environment` and `core/environment/load.ts` applies it, so no behaviour was ever wrong - and
+  that is exactly why it survived: the value was right and only the **record** of the decision was
+  missing. A real run of `examples/env-reality` (`run-20260925-052828-eaff2b`) wrote **18** ambiguity
+  records to `clarifications.json`, and `/process/environment` was in none of them while every sibling
+  in the same `environment` origin was (`/health/intervalMs`, `/health/timeoutMs`) and the goal's own
+  boundary default was (`/limits/filesystemWrite`). A reader of such a bundle therefore saw
+  `mode: inherit` in the crawl, which says what the mode *is*, and nowhere saw that the mode had been a
+  **choice**, or what bound it. What made it findable is that `process.environment` is the fourth
+  dimension of a boundary whose other three are all reported: reads, writes and child processes each
+  arrive in the bundle as a resolved decision, and the environment arrived as a fact with no author.
+  *A default that a decoder applies leaves no trace in the bundle, and an untraceable value in a
+  validation system is indistinguishable from a guess.* The repair is a row in `SCHEMA_DEFAULTS` plus a
+  guarded branch in `detectEnvironmentAmbiguities`, and the coupling between those two files is held by
+  `tests/env-reality-ladder.test.ts` - one file rather than two because `derive.ts` states the rule it
+  exists to hold: *a default row and the gap that reaches it are one fact written in two files.* A gap
+  whose row is missing is not a quiet omission either: `isBlocking({ changesEnvironmentMeaning: true })`
+  is `true`, so the run is **refused** rather than degraded, which is what makes the end-to-end evidence
+  readable rather than merely green - `npm run demo:audit`, whose world omits the mode, exits **0** with
+  the record present because the row resolves it, while `npm run demo:env`, whose world states it,
+  records no such gap at all. The bundle-level half is asserted in `tests/local-process-demo.test.ts`,
+  against a real `local-process` document that omits the field.
+
+- **A count site's total can be held while the decomposition beside it drifts, because the guard holds
+  the total and nothing reads the rest of the line.** `tests/docs-roster.test.ts` scans the tree for
+  `NNNN tests over NNN suites` and fails when two sites disagree, and it did its job: all four sites
+  said `2782` and `470`. Beside three of them, though, sat an addition - and the additions did not sum.
+  `AGENTS.md` decomposed 2782 as *2690 plus the Cockpit's 92*, while `README.md` (twice) and
+  `docs/BUILD-AND-TEST-COMMANDS.md` decomposed the same total as *2608 plus 92*, which is **2700**, a
+  figure that appears in no run of anything. The 2608 was once correct, for a total of 2700, and it
+  stayed behind when the total moved twice - so a document stated a true total and a false decomposition
+  in the same sentence, and the false half is the half a reader uses to calibrate everything around it.
+  **The guard's selection is the whole story**: a pattern that matches the total cannot see the
+  arithmetic beside it. Measured before rewriting rather than assumed - the Cockpit's own `node --test`
+  reports **92 tests over 0 suites** - so the correct decomposition of the new total is 2696 plus 92, and
+  `472 suites` needs no split at all, because the extension contributes none. *When a guard pins a
+  figure, ask what the figure's neighbours claim and whether anything reads them* - the same shape this
+  register already records twice, once for a guard that could not see a nested directory and once for a
+  guard that could not see the branch its assertion lived in.
