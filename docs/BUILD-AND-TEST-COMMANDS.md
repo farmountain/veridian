@@ -18,7 +18,7 @@ Every command below was executed on this machine and is quoted from its real out
 npm ci                     # install. Runtime: yaml. Dev: typescript, @types/node.
                            # Also runs `prepare`, which is `npm run build`, so dist/ exists afterwards.
 npx tsc --noEmit           # typecheck. Currently silent - a single error means a real regression.
-node --test                # the whole suite. 2700 tests over 453 suites, ~11s. No directory argument.
+node --test                # the whole suite. 2782 tests over 470 suites, ~11s. No directory argument.
                            # 2700 = the root's own 2608 + the Cockpit's 92, because the runner walks
                            # the tree and reaches extension/vscode/src/*.test.ts. The inclusion is
                            # measured rather than assumed: a test title that exists only in the
