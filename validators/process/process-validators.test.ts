@@ -91,6 +91,9 @@ const reading = (overrides: Partial<ProcessFileReading> = {}): ProcessFileReadin
 const document = (overrides: Partial<ProcessObservationData> = {}): ProcessObservationData => ({
   host: "local-process:examples/local-process",
   root: "examples/local-process/.veridian/sandbox",
+  // Required and nullable, so it is stated rather than omitted: a fixture that left it out would be
+  // testing a document shape the adapter cannot produce.
+  environment: null,
   application: {
     argv: ["node", "app/server.mjs"],
     cwd: "examples/local-process",
@@ -252,13 +255,14 @@ const described = (name: string) => {
 // ---- the family describes itself ------------------------------------------------------------------
 
 describe("the process validator family describes itself honestly", () => {
-  it("registers every validator it exports, and exactly the twelve it has", () => {
+  it("registers every validator it exports, and exactly the thirteen it has", () => {
     assert.deepEqual(registry.names(), Object.values(PROCESS_VALIDATOR_NAMES).sort());
     // Spelled out as well as derived, because a list built only from the thing it checks can never
-    // disagree with it - and the twelve are the vocabulary a contract author reads.
+    // disagree with it - and the thirteen are the vocabulary a contract author reads.
     assert.deepEqual(registry.names(), [
       "process.argv",
       "process.contents",
+      "process.environment",
       "process.exitcode",
       "process.file",
       "process.host",
@@ -338,10 +342,10 @@ describe("the process validator family describes itself honestly", () => {
 
   it("freezes the shipped array and hands a fresh one to a registry", () => {
     assert.ok(Object.isFrozen(PROCESS_VALIDATORS));
-    assert.equal(PROCESS_VALIDATORS.length, 12);
+    assert.equal(PROCESS_VALIDATORS.length, 13);
     const first = processValidators();
     first.pop();
-    assert.equal(processValidators().length, 12, "the roster was mutated through the accessor");
+    assert.equal(processValidators().length, 13, "the roster was mutated through the accessor");
   });
 });
 

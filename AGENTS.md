@@ -59,8 +59,22 @@ instructions file for this workspace �?do not add a second one
 > boundary crossing** rather than resolved, because opening the developer's own filesystem while
 > calling it the sandbox's is the one thing this world must not do. Its family was the first asked two
 > different kinds of question, and the eleventh world's family is the second - which is why neither
-> claim is written as "the only one" any more.
-> `sim-data` is the eleventh and the seventh **simulated** one, and its subject is not a document a
+> claim is written as "the only one" any more.> **The environment is now a boundary dimension, and it is the fourth.** Confinement covered reads,
+> writes and child processes and measured all three; `core/process.ts` then started every child as
+> `{ ...process.env, ...declared }`, so every world's application ran inside the operator's shell while
+> `environment.json` recorded the world's *declaration* - a bundle showing two `env` names for a
+> program that could reach eighty-four. `process.environment` now chooses `inherit` or `declared`,
+> `core/environment/env-crawl.ts` records names and counts and **has nowhere to put a value** (held by
+> the type, and asserted by a control that plants a secret and fails if it appears anywhere in a
+> serialised crawl), `process.environment` is the thirteenth `process.*` validator, and
+> `core/metrics/envindex.ts` joins every run's crawl into a per-subject index whose third list -
+> `runsWithoutReading` - keeps *nobody measured* distinct from *measured clean*. `npm run reading:env`
+> exits 1 when no subject yielded a crawl, so an empty table cannot be read as a clean fleet. Two
+> measurements to carry forward: `PLATFORM_BASELINE` in `env-crawl.ts` names the eleven names a Windows
+> child receives whatever map it was handed (so a crawl of six was reporting `inherited: 0` for a
+> program that had inherited `USERNAME` and `LOGONSERVER`), and a defect whose only symptom is an
+> **absent** artifact produces `INCONCLUSIVE` rather than `FAIL`, which the repair gate refuses by
+> design - so a demo defect must make a document *wrong* rather than missing.> `sim-data` is the eleventh and the seventh **simulated** one, and its subject is not a document a
 > world holds but a **request an application made**: the application really opens a TCP socket on
 > loopback and really writes a broker protocol into it - length-prefixed frames, a CRC32C over each
 > body, a version negotiated through `ApiVersions` before anything else is sent - and the substitution
@@ -83,8 +97,8 @@ instructions file for this workspace �?do not add a second one
 > reading carries `simulated` - and nothing is emulated: no emulator, no image and no booted system
 > anywhere in the loop. It adds no step kind: the application provisions with the `run` steps the
 > second world introduced, and three of its criteria use one.
-> `npx tsc --noEmit` is silent and `node --test` reports 2700 passing tests over 453 suites -
-> Veridian's own 2608 plus the 92 the VS Code Cockpit contributes, which the root runner discovers
+> `npx tsc --noEmit` is silent and `node --test` reports 2782 passing tests over 470 suites -
+> Veridian's own 2690 plus the 92 the VS Code Cockpit contributes, which the root runner discovers
 > because it walks the tree. Five distribution routes ship - a clone, an npm package, the Cockpit (as
 > a development install and as a `.vsix`), the extension marketplaces that `.vsix` is published to,
 > and a container image - and there is still **no

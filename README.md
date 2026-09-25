@@ -99,9 +99,14 @@ npm run demo:audit        # the fifteenth, and the first whose subject is the ch
                           # standing in: a real tree outside the sandbox is read through a DECLARED
                           # observation surface, and the same run proves the runtime refuses to write
                           # into it - judged on the boundary holding, not on what the audit found
+npm run demo:env          # the sixteenth, and the one whose subject is the fourth dimension of a
+                          # boundary: a real child is started with an environment the world DECLARES
+                          # rather than inherits, and the same fact is measured three ways - by the
+                          # runner's crawl of the map it handed over, by the program's own census, and
+                          # by a document the program wrote and the world read back
 ```
 
-Run the seventeen `npm run` commands below in that order, after `npm ci`. `npm ci` removes
+Run the eighteen `npm run` commands below in that order, after `npm ci`. `npm ci` removes
 `node_modules` and rebuilds it from the lockfile,
 and no Playwright *package* is in that lockfile's installed set - the peer declaration names a range
 and installs nothing - so fetching the browser before `npm ci` would discard it.
@@ -1054,12 +1059,14 @@ each refused, and the adapter records the refusal as a **boundary crossing** rat
 missing file - because a resource that is absent and a place that is out of bounds are two different
 observations, and only one of them is the application's problem.
 
-The twelve validators are `process.host`, `process.probe`, `process.argv`, `process.state`,
+The thirteen validators are `process.host`, `process.probe`, `process.argv`, `process.state`,
 `process.exitcode`, `process.run`, `process.stdout`, `process.stderr`, `process.file`, `process.kind`,
-`process.contents` and `process.size`. `process.host` is targetless and reads the declared name;
-`process.state` and `process.probe` ask whether the program is still up; the rest read one command or
-one file. A stream is compared as the text an operator would read, not as raw bytes - a name that
-suggested otherwise would be a name a contract could be written against and never satisfy.
+`process.contents`, `process.size` and `process.environment`. `process.host` is targetless and reads
+the declared name; `process.state` and `process.probe` ask whether the program is still up; the rest
+read one command, one file, or one reading of the environment. A stream is compared as the text an
+operator would read, not as raw bytes - a name that suggested otherwise would be a name a contract
+could be written against and never satisfy - and `process.environment` is compared the same way,
+because every reading of a crawl leaves `core/environment/env-crawl.ts` as text.
 
 `npm run demo:local-process` drives this: four deliberate defects, nine criteria, and a `FAIL` ->
 repair -> `PASS` descent in five iterations - measured, verbatim: the failing count is
@@ -1317,7 +1324,7 @@ validators/api/         api.service, api.exchange, api.status, api.header, api.b
                         api.json, api.log
 validators/process/     process.host, process.probe, process.argv, process.state, process.exitcode,
                         process.run, process.stdout, process.stderr, process.file, process.kind,
-                        process.contents, process.size
+                        process.contents, process.size, process.environment
 validators/data/        data.node, data.topic, data.layout, data.partition, data.record, data.key,
                         data.value, data.group, data.member, data.commit, data.call, data.probe,
                         data.meter

@@ -1,6 +1,7 @@
 import type { FailureKind } from "../failure.ts";
 import type { FilesystemWritePolicy, NetworkPolicy } from "../goal/types.ts";
 import type { ContainerPlatform } from "./container-observation.ts";
+import type { EnvCrawl, EnvMode } from "./env-crawl.ts";
 import type { MobilePlatform } from "./mobile-observation.ts";
 import type { OsFamily } from "./os-observation.ts";
 
@@ -151,6 +152,20 @@ export interface BoundaryReport {
    * absence is written to the bundle as `null` rather than omitted, so the record holds one shape.
    */
   readonly substrate?: string | null;
+  /**
+   * What the world's application could **see**, which is the fourth dimension of this record.
+   *
+   * The other three - `network`, `filesystemWrite`, `substrate` - are about what the child could *do*.
+   * This one is about what it could read, and until it existed the answer was never recorded: a
+   * confined child could not write outside its roots, could not read outside its declared surface, and
+   * could still read every credential in the operator's shell. `env` on the environment record is the
+   * world's *declaration*; this is the measurement, and the two are different facts.
+   *
+   * Optional for the reason `substrate` is, with one addition: a world that starts no child has no
+   * environment to read, and `null` is how that absence is written rather than a fabricated empty
+   * crawl. A crawl that reported zero names would be a claim about a process, and there is none.
+   */
+  readonly environment?: EnvCrawl | null;
 }
 
 /** The resolved boundary. `EnvironmentPlan.boundary`, so the adapter can see the budget it holds to. */
@@ -944,6 +959,21 @@ export interface ProcessPlan {
    * widened is the set of paths the *operator named*, and everything unnamed is still refused.
    */
   readonly observe: readonly string[];
+  /**
+   * What this world's application may **see**, which is the fourth boundary dimension.
+   *
+   * The `readRoots`/`writeRoots` allowance decides what the application can *do*; this decides what it
+   * can read, and the two are not the same question. A confined child in every world before this field
+   * could read the operator's entire environment - measured, not assumed: a name planted in the
+   * invoking shell reached the application, and five credential-shaped names were visible with all five
+   * populated.
+   *
+   * `inherit` is the pre-existing behaviour and remains the default, so no document changes meaning by
+   * saying nothing. `declared` narrows the child to this document's own `env` block - narrower rather
+   * than empty, because a child started with an empty map still receives the names the operating system
+   * supplies.
+   */
+  readonly environment: EnvMode;
   /**
    * Whether this world's application runs in a container substrate instead of on this machine.
    *

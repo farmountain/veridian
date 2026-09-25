@@ -69,6 +69,7 @@ import { decodeStep } from "../../core/acceptance/plan.ts";
 import type { StepKind } from "../../core/acceptance/steps.ts";
 import type { Clock, Logger } from "../../core/clarification/types.ts";
 import { type ConfinementResult } from "../../core/environment/confinement.ts";
+import type { EnvCrawl, EnvMode } from "../../core/environment/env-crawl.ts";
 import type { IsolationResult } from "../../core/environment/isolation.ts";
 import type {
   ProcessCommandRecord,
@@ -221,6 +222,16 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
    */
   #confinement: ConfinementResult | null = null;
   #isolation: IsolationResult | null = null;
+  /**
+   * What the application this world started could see, read back off the spawn that started it.
+   *
+   * Held rather than recomputed, for the reason `#confinement` is: the runner decided the environment
+   * before the process existed, so this is a reading of something that happened rather than a second
+   * computation of the same intention. A recomputation here would be free to disagree with what the
+   * child was actually handed, and the disagreement would be invisible - which is the shape this whole
+   * seam exists to close.
+   */
+  #environment: EnvCrawl | null = null;
 
   constructor(plan: EnvironmentPlan, options: LocalProcessEnvironmentOptions) {
     this.#plan = plan;
@@ -495,6 +506,9 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
         application: this.#readApplication(block),
         commands,
         files,
+        // The fourth dimension, read back off the spawn rather than recomputed from the document. A
+        // world that started no child reports `null`, which is a reading rather than a hole.
+        environment: this.#environment,
       };
 
       const relativeRunDir = bundleLayout(this.#stateDir, request.runId).runDir;
@@ -736,6 +750,10 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
         substrate !== null || this.#confinement?.applied === true ? "enforced" : "unsupported",
       substrate,
       crossings: [],
+      // The fourth dimension, reported on the same record as the other three so a bundle answers
+      // *what could this application see* from one place. `null` when no child was started: the
+      // question has no answer then, and an empty crawl would be an answer nobody measured.
+      environment: this.#environment,
     };
   }
 
@@ -893,6 +911,7 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
   #allowance(block: ProcessPlan): {
     readonly readRoots: readonly string[];
     readonly writeRoots: readonly string[];
+    readonly environment: EnvMode;
   } {
     const hostRoot = this.#hostRoot(block);
     // `readRoots` names three kinds of directory because they are three - the program file is opened
@@ -903,6 +922,12 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
     // runner that refuses a write outside the sandbox refuses a write into an observed tree, so the
     // guarantee is held by the runtime rather than by a comment. The order is the plan's, so a bundle's
     // own record of `observe` and the allowance applied here cannot disagree about which were named.
+    //
+    // `environment` rides here rather than at the two call sites, and that is the same argument one
+    // dimension over: the application and every `run` step must be judged in the same environment, and
+    // a policy applied at two call sites is a policy that can be applied at one of them. It is carried
+    // through the allowance so the two cannot disagree - the failure mode being a world that declares
+    // its application's environment and silently hands every provisioner the operator's shell.
     return {
       readRoots: this.#withoutNested([
         this.#plan.appPath,
@@ -910,6 +935,7 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
         ...this.#observeRoots(block),
       ]),
       writeRoots: [hostRoot],
+      environment: block.environment,
     };
   }
 
@@ -1152,6 +1178,9 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
     this.#confinement = confinement;
     const isolation = handle.isolation ?? null;
     this.#isolation = isolation;
+    // Read back off the same handle, for the same reason: the runner computed the environment it
+    // handed the child, and this is that map rather than a reconstruction of it.
+    this.#environment = handle.environment ?? null;
     this.#logger.info("environment.start", {
       command: application.command,
       args: application.args,

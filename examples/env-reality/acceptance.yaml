@@ -1,0 +1,350 @@
+# The contract: seven deterministic criteria over one real process in a real environment.
+#
+# ## The claim being judged
+#
+# Not "the world sets an environment" - that was always true and never the question. The claim is that
+# a reader of the bundle can tell **what the program could reach**, rather than what the document said
+# it should have been given. `environment.json` has carried `env: {ENV_REALITY_CHANNEL, ENV_REALITY_BUILD}`
+# since the first world, and for just as long an application under that two-name declaration could reach
+# every credential the operator's shell held. A bundle showing two names was read as a two-name world.
+#
+# So the criteria below are arranged around **two instruments measuring one fact**, and the arrangement
+# is the substance:
+#
+#   the world's reading     `process.environment` - the crawl the runner took of the exact map it handed
+#                           the child. AC-002, AC-003, AC-004.
+#   the program's reading   what `env-probe.mjs` counted for itself and printed to its own stdout.
+#                           AC-005, AC-006, AC-007.
+#
+# Neither half is sufficient. A world that crawled a map it did not hand over passes AC-002..AC-004 and
+# fails AC-006, because the program never saw the name. A program reporting counts over an environment
+# it took from somewhere else passes AC-005..AC-007 and fails AC-003, because the names the world meant
+# to give it are not in the world's own reading. **Two instruments, one fact, and the contract refuses
+# to accept either alone.**
+#
+# ## Read the targets as a closed vocabulary, because each one is refused by name
+#
+# `process.environment` takes one of eleven readings: `mode`, `visible`, `declared`, `inherited`,
+# `populated`, `credential`, `credential-populated`, `inherited-credential`, `names`, `credentials`,
+# `inherited-credentials`. A target that is not one of them is refused as `unusable` with the list in
+# the message, so a misspelt `credential-shape` is a defect in this contract that says so rather than a
+# criterion that quietly passes. `target: mode` is the word `declared`, not a boolean: `environment: yes`
+# parses to YAML's `true` and `core/environment/load.ts` refuses it rather than widening the boundary.
+#
+# The other validators take a command the way the sibling example's do - `app` names the program the
+# world started and keeps running, and a bare 1-based number names which `run` step is meant - and a
+# path names a file inside the world's own sandbox.
+#
+# ## What is deliberately not asserted
+#
+#   - **how many names the program saw.** A `declared` child on Windows still sees eleven names the
+#     operating system supplies, so a criterion pinning the count would be a criterion about Node's
+#     build flags and this machine's login, and it would fail on the next one. What is asserted is that
+#     the count is **non-zero** - which is the property that distinguishes a declared environment from
+#     a broken spawn, since both can print zero and only one of them started a program.
+#   - **which credentials the operator's shell holds.** This contract runs against a real machine, and
+#     the entire point is that those names never leave it. No criterion names one, and the value of any
+#     one of them appears nowhere in this file or in any artifact the run writes.
+#   - **the operating system's floor.** The eleven names above are named in `environment.yaml`'s header
+#     as a measurement, and no criterion asserts that any of them is *present* or *absent*, because
+#     they are the runtime's rather than the world's.
+#
+# What is asserted is the shape of the boundary: the mode the document declared, the names the document
+# declared, that no undeclared credential-shaped name is in reach, and that a second instrument reading
+# the same environment agrees - all of which hold on this checkout, on a fork of it, and on a machine
+# with nothing installed but Node.
+
+version: 1
+goal_id: env-reality
+
+criteria:
+  # ---------------------------------------------------------------------------------------------
+  # AC-001 - the world is the world this goal names, and a program is still running in it.
+  #
+  # The criterion every other one stands on, and the only one whose failure means the *world* is wrong
+  # rather than the application. The host is what every reading carries, so a result read later says
+  # which machine produced it. It judges `process.state` rather than `process.exitcode`, because a
+  # process that has not exited has no exit code and the exit-code validator says so rather than
+  # reporting a zero nobody observed.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-001
+    description: the world names its host, the probe announced itself as ready, and it is still running
+    steps: []
+    expect:
+      - validator: process.host
+        equals: "env-reality-host (root sandbox)"
+        message: the readings name a host other than the one this goal's environment declares
+      - validator: process.state
+        target: app
+        equals: running
+        message: the probe this world started is not running
+      - validator: process.stdout
+        target: app
+        contains: "env-reality daemon ready"
+        message: the probe did not announce itself as ready
+      - validator: process.probe
+        contains: "application: node env-probe.mjs daemon - still running"
+        message: the world's own reading does not describe the probe as running
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-002 - the reading exists, it says the world chose `declared`, and what it read is not empty.
+  #
+  # Three expectations and each closes a different way this criterion could be satisfied by nothing.
+  #
+  # `mode equals declared` is the document's own choice read back off the crawl, so a world that
+  # ignored the field and inherited anyway is a FAIL rather than a silently narrower reading.
+  #
+  # `visible matches` is the one that matters, and it is the repository's oldest rule in a new place:
+  # **an absent measurement must not read as a clean one.** A crawl that examined nothing reports zero
+  # visible names, zero credentials, and zero undeclared credentials - a perfect score. The property
+  # that separates "the child saw a small environment" from "nobody looked" is that the first is
+  # non-zero, because a spawn that happened at all gives the child the operating system's floor. So
+  # zero here is a FAIL, and it is the failure that means the world did not start a child.
+  #
+  # It is spelled as a pattern rather than as `atLeast: 1` because `process.environment` compares text:
+  # every reading leaves `core/environment/env-crawl.ts` as a string - that is what makes a value unable
+  # to travel - so `^[1-9][0-9]*$` is how this vocabulary says "at least one", and it is the same idiom
+  # the sibling contract uses for the same question. A first draft of this file did write `atLeast`, and
+  # the validator refused it by name: *it compares with equals, contains and matches.*
+  #
+  # `populated matches` is the second, independent defence: a crawl of six names that all held nothing
+  # would satisfy `visible` and fail this, so the two together are what make the zero in AC-004 a
+  # measurement rather than an arithmetic artefact of a world that handed over empty strings.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-002
+    description: the environment reading exists, records the declared mode, and examined something populated
+    steps: []
+    expect:
+      - validator: process.environment
+        target: mode
+        equals: declared
+        message: the world's environment reading does not record the mode this goal's document declares
+      - validator: process.environment
+        target: visible
+        matches: "^[1-9][0-9]*$"
+        message: >-
+          the crawl saw no names at all. A declared environment is narrower than the shell, not empty -
+          a child started on this platform with no map still sees the operating system's floor - so zero
+          means the crawl examined nothing rather than that the boundary is tight.
+      - validator: process.environment
+        target: populated
+        matches: "^[1-9][0-9]*$"
+        message: >-
+          every name the crawl saw held an empty string, so the environment was declared and never
+          filled - which a count of visible names alone cannot tell from a populated one
+      - validator: process.environment
+        target: mode
+        contains: declared
+        message: the mode reading does not contain the word the document states
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-003 - the reading covers the world's whole declared set, not only the document's `env` block.
+  #
+  # This is the world's half of "the program really got what the world promised", and the first draft of
+  # it was wrong in a way worth recording, because it is the mistake a contract author will make.
+  #
+  # That draft asserted `declared equals "2"` - the two names in `environment.yaml`'s `env` block - and
+  # the run reported **6**. The reading was right and the expectation was wrong. `declared` counts every
+  # name the *world* declared, and a `local-process` world declares six: the two in the document's `env`
+  # block plus four of its own bookkeeping variables - `VERIDIAN_PROCESS_APP`, `VERIDIAN_PROCESS_HOST`,
+  # `VERIDIAN_PROCESS_OBSERVE` and `VERIDIAN_PROCESS_ROOT` - which the adapter sets and the document
+  # author never writes. *A reading named for a set answers a question about that set, and the set here
+  # is the world's rather than the document's.*
+  #
+  # Pinning `6` would replace that mistake with a worse one: it would be a claim about how many
+  # bookkeeping variables an adapter happens to set, and it would fail the day one was added. So the
+  # criterion asserts the two names the document does declare *and* one it does not - which is the
+  # stronger reading, because it proves the crawl covers the whole declared set rather than echoing the
+  # `env` block back.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-003
+    description: the reading names both variables the document declares and one the world declares itself
+    steps: []
+    expect:
+      - validator: process.environment
+        target: names
+        contains: ENV_REALITY_CHANNEL
+        message: the document's declared channel is absent from the world's own reading
+      - validator: process.environment
+        target: names
+        contains: ENV_REALITY_BUILD
+        message: the document's declared build is absent from the world's own reading
+      - validator: process.environment
+        target: names
+        contains: VERIDIAN_PROCESS_ROOT
+        message: >-
+          the reading does not mention the root the adapter sets, so it describes the document's `env`
+          block rather than the set the world actually declared - and a reading of the second is what
+          this criterion is a claim about
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-004 - no credential-shaped name the world did not declare is in the child's reach.
+  #
+  # **This is the criterion the whole example exists for.** Measured on this machine before the seam:
+  # five credential-shaped names visible to a confined child, all five populated, none of them declared
+  # by the world. This assertion was `5`, and it is `0` now.
+  #
+  # `equals "0"` rather than `atMost 0` is not pedantry. The reading is a count of entries, so a crawl
+  # that examined nothing reports `0` - which is exactly the value this criterion wants - and the way a
+  # count of nothing is told apart from a measurement of a clean environment is AC-002's `visible
+  # `visible matches` beside it. Two criteria, one of which makes the other's zero mean something: neither is
+  # a statement about the boundary alone, and together they are.
+  #
+  # The name-only half is asserted too, and separately, because they are different questions. `credential`
+  # counts names whose *spelling* is credential-shaped - `OPENAI_API_KEY`, `HARNESS_GATE_TOKEN` - and
+  # `inherited-credential` counts those the world did not declare. A crawler screening only the second
+  # would report a clean environment whenever the world happened to declare an innocuous name that held
+  # a secret, which is the single most likely way a developer leaks one.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-004
+    description: no credential-shaped name reaches the application unless this world's document declared it
+    steps: []
+    expect:
+      - validator: process.environment
+        target: inherited-credential
+        equals: "0"
+        message: >-
+          a name the operator's shell holds, whose spelling is credential-shaped and which this world's
+          document never declared, is in the application's environment. This is the defect the
+          `process.environment` field exists to close.
+      - validator: process.environment
+        target: inherited-credentials
+        equals: ""
+        message: >-
+          the reading names one or more undeclared credential-shaped variables. The names are the
+          finding and are reported; their values are never read and never leave.
+      - validator: process.environment
+        target: credential
+        equals: "0"
+        message: >-
+          a credential-shaped name is in the child's environment at all, whether declared by this world
+          or not. This example declares two innocuous names, so the honest count is zero.
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-005 - the program's own census agrees, and the count it reports is a real one.
+  #
+  # The second instrument. Everything above judges the world's crawl of the map it *meant* to hand over;
+  # this judges what a separate process, reading `process.env` for itself, actually found. A world that
+  # crawled one map and handed over another passes AC-002..AC-004 and fails here.
+  #
+  # `matches` on `probe:visible [1-9][0-9]*` carries AC-002's rule into the program's half: the leading
+  # character class is the whole of the defence, and it is what makes the zero beside it a measurement
+  # rather than a default. `contains probe:credential 0` is the same claim as AC-004's zero, arrived at
+  # by a different program through a different code path.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-005
+    description: the probe's own census reports a non-empty environment with no credential-shaped name
+    steps:
+      - run: [node, env-probe.mjs, census]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 0
+        message: the census did not run to completion
+      - validator: process.stdout
+        target: "1"
+        matches: "probe:visible [1-9][0-9]*"
+        message: >-
+          the program's own census saw no names, or did not report a count at all. A zero here is a
+          program that measured nothing, and this world is not one whose boundary is tight enough for
+          that to be true.
+      - validator: process.stdout
+        target: "1"
+        contains: "probe:credential 0"
+        message: >-
+          the probe counted a credential-shaped name in its own environment, contradicting the world's
+          reading of the map it handed over
+      - validator: process.stdout
+        target: "1"
+        matches: "probe:populated [1-9][0-9]*"
+        message: >-
+          the program reported no populated variable, which is the reading a census of an environment it
+          never read returns
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-006 - the program saw the name the document declared.
+  #
+  # The sharpest cross-instrument criterion here, because the two halves answer different questions.
+  # AC-003 asks "is `ENV_REALITY_CHANNEL` in the map the world handed over"; this asks "did the program
+  # that map was handed to find it". A world whose crawl and whose spawn disagree - the crawl built from
+  # a map that never reached `spawn`, which is the exact defect a reading added *after* the fact is prone
+  # to - passes AC-003 and fails here. The expected rendering is the probe's own format, and the two
+  # sides are `probe:channel present`, never the variable's contents: this example's subject is the
+  # environment, and a program that printed a value into a bundle would be the defect the crawler's type
+  # is built to make impossible.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-006
+    description: the probe reports the document's declared channel as present, and exits zero
+    steps:
+      - run: [node, env-probe.mjs, census]
+    expect:
+      - validator: process.exitcode
+        target: "1"
+        equals: 0
+        message: the census did not run to completion
+      - validator: process.stdout
+        target: "1"
+        contains: "probe:channel present"
+        message: >-
+          the program could not see the variable this contract's environment document declares, so the
+          world crawled a map it did not hand over
+    evidence:
+      - json
+
+  # ---------------------------------------------------------------------------------------------
+  # AC-007 - the reading survives as a document, and the third instrument is the file itself.
+  #
+  # The probe writes its census into the sandbox and reports only where. This criterion reads that file
+  # back through the world, so the same fact is now measured three ways: by the runner's crawl, by the
+  # program's stdout, and by a JSON document the program wrote and a different subsystem read. Three
+  # instruments failing in the same direction at once is the only arrangement in which a reading of a
+  # boundary is worth trusting.
+  #
+  # `process.contents` reports absence as `absent` rather than as an empty document, which is why the
+  # assertion is `contains` and not `matches`: nothing about an empty string is evidence that the file
+  # was there, and this repository separates "not present" from "present and empty" everywhere else for
+  # exactly this reason.
+  #
+  # The path is world-relative, so a contract that could reach the developer's own filesystem by writing
+  # a path is not a contract this world accepts - a path leaving the root is refused and recorded as a
+  # boundary crossing rather than resolved.
+  # ---------------------------------------------------------------------------------------------
+  - id: AC-007
+    description: the probe's census survives as a document inside the sandbox, and it agrees with the other two
+    steps:
+      - run: [node, env-probe.mjs, census]
+    expect:
+      - validator: process.stdout
+        target: "1"
+        contains: "probe:report written"
+        message: the probe did not report writing its reading
+      - validator: process.contents
+        target: env/reading.json
+        contains: "\"channel\": \"present\""
+        message: the reading document does not record the declared channel as present
+      - validator: process.contents
+        target: env/reading.json
+        contains: "\"credential\": 0"
+        message: the reading document records a credential-shaped name in the program's environment
+      - validator: process.contents
+        target: env/reading.json
+        matches: "\"visible\": [1-9][0-9]*"
+        message: >-
+          the reading document records no visible names, so the program wrote a census of an environment
+          it never read
+      - validator: process.file
+        target: env/reading.json
+        equals: true
+        message: the probe reported writing a reading and no reading is at that path
+    evidence:
+      - json

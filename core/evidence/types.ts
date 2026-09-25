@@ -1,5 +1,6 @@
 import type { ClarificationReport } from "../clarification/types.ts";
 import type { BoundaryCrossing, BoundaryEnforcement, EnvironmentPlan, HealthReport, EvidenceArtifact, ImportRecord } from "../environment/types.ts";
+import type { EnvCrawl } from "../environment/env-crawl.ts";
 import type { Failure } from "../failure.ts";
 import type { RunState } from "../run/types.ts";
 import type { CriterionResult, CriterionStatus } from "../validation/types.ts";
@@ -69,6 +70,20 @@ export interface BoundaryRecord {
    * on the host and cannot say that a container held either one.
    */
   readonly substrate: string | null;
+  /**
+   * What the run's application could see, or `null` when no child was started.
+   *
+   * The fourth dimension, beside the substrate. `EnvironmentRecord.env` above is the world's
+   * **declaration** - the two or three names its document set - while this is the measurement of the
+   * environment the child was actually handed, and the two are different facts about one run. Before
+   * this field a bundle could show a two-name `env` block for an application that could read
+   * eighty-four names, and nothing in the bundle contradicted it.
+   *
+   * Always present, even when it is `null`, for the reason `substrate` is: the question *what could
+   * this application read* has to be answerable from the bundle alone, and an omitted key invites a
+   * reader to answer it from `env` - which is the wrong half.
+   */
+  readonly environment: EnvCrawl | null;
   /**
    * Every request the boundary refused, in the order it refused them.
    *

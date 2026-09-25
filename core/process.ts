@@ -29,6 +29,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { isAbsolute } from "node:path";
 
 import { confineChild, type ConfinementResult } from "./environment/confinement.ts";
+import { crawlEnvironment, platformBaseline, type EnvCrawl, type EnvMode } from "./environment/env-crawl.ts";
 import { isolateProcess, type IsolationResult } from "./environment/isolation.ts";
 
 /**
@@ -46,6 +47,25 @@ export interface ProcessConfinement {
   readonly writeRoots: readonly string[];
   /** Whether the child may start children of its own. Off unless a world needs it. */
   readonly allowChildProcess?: boolean;
+  /**
+   * The fourth dimension, and the one that was uncovered until it was measured.
+   *
+   * The other three fields confine what the child can *do* - read, write, spawn - and this one decides
+   * what it can *see*, which is not a lesser question: an application that can read every credential
+   * in the operator's shell is an application whose `PASS` says nothing about what it had access to.
+   *
+   * `inherit` is the default and is what every caller before this field existed did: `process.env` with
+   * the request's `env` merged over it. `declared` gives the child the request's `env` **alone**, so the
+   * world's document is the whole of what its application can see.
+   *
+   * It is an opt-in rather than a new default, deliberately. The measured floor matters here: a child
+   * started with an empty map on Windows still sees eleven names the operating system supplies
+   * (`USERNAME` and `USERDOMAIN` among them), so `declared` is *not* an empty environment and a world
+   * adopting it is adopting a smaller one rather than a vacuous one. Changing the default would silently
+   * shrink every existing world's environment, which is a behaviour change a policy field must not make
+   * on somebody else's behalf.
+   */
+  readonly environment?: EnvMode;
 }
 
 /**
@@ -122,6 +142,16 @@ export interface ProcessResult {
    * answer *was this run isolated, and by what* from the bundle alone.
    */
   readonly isolation?: IsolationResult | null;
+  /**
+   * What the child could see.
+   *
+   * The exact environment the child was handed, crawled - names, classification and occupancy, never a
+   * value. This is the reading `core/evidence/writer.ts` has never had: it writes `env: plan.env`, which
+   * is the world's *declaration*, so a bundle could show a two-name `env` block for an application that
+   * could see eighty-four names. The two are not in conflict and they are not the same fact, which is
+   * why this reading sits beside the declaration rather than replacing it.
+   */
+  readonly environment?: EnvCrawl | null;
 }
 
 export interface ProcessHandle {
@@ -139,6 +169,15 @@ export interface ProcessHandle {
    * the decision is made before the process exists. `null` means the request asked for no substrate.
    */
   readonly isolation?: IsolationResult | null;
+  /**
+   * What the child could see, known synchronously for the same reason `confinement` is.
+   *
+   * Synchronous matters here rather than being a convenience: a world reading this off the *handle* can
+   * report it for an application that is still running, which is the only case a long-lived child
+   * offers. Reading it from the settled result would make the reading unavailable for exactly the
+   * processes a readiness signal is about.
+   */
+  readonly environment?: EnvCrawl | null;
   /** Everything written to stdout so far, concatenated. */
   output(): string;
   /** Everything written to stderr so far. */
@@ -273,11 +312,40 @@ export const nodeProcessRunner: ProcessRunner = {
         ? [...request.args]
         : [...confinement.args];
 
-    /** One place every result is created, so no shape can omit either reading. */
+    /**
+     * The environment the child will actually be handed, computed once so the crawl and the spawn
+     * cannot describe two different maps.
+     *
+     * This is the whole reason the crawler lives here rather than in an adapter. Twelve worlds start
+     * children and all of them come through this object, so a reading computed beside the spawn is a
+     * reading every world gets; a reading computed by an adapter is one that eleven worlds do not have
+     * and the twelfth has its own version of.
+     *
+     * The two halves are stated rather than folded into the spread below, because the crawl has to see
+     * the same value the spawn is given - and a spread written twice is a spread that can drift.
+     */
+    const environmentMode: EnvMode = request.confinement?.environment ?? "inherit";
+    const declaredEnv = substrateHolds ? isolation.env : (request.env ?? {});
+    // Under `declared` the map is seeded with the platform's own baseline before it is crawled, and the
+    // reason is a measurement rather than a preference: `spawn` with six names gives a Windows child
+    // seventeen, so a crawl of the six would report `inherited: 0` for a child that inherited
+    // `USERNAME`, `USERDOMAIN` and `LOGONSERVER` from the operating system. Seeding with the names the
+    // child receives anyway leaves its environment byte-identical and makes the reading true. See
+    // `PLATFORM_BASELINE` in `environment/env-crawl.ts` for the measured list and its control.
+    const renderedEnv: NodeJS.ProcessEnv =
+      environmentMode === "declared"
+        ? { ...platformBaseline(process.env), ...declaredEnv }
+        : { ...process.env, ...declaredEnv };
+    const environment = crawlEnvironment(renderedEnv, {
+      declared: Object.keys(declaredEnv),
+      mode: environmentMode,
+    });
+
+    /** One place every result is created, so no shape can omit any of the three readings. */
     const finish = (value: ProcessResult): void => {
       if (settled) return;
       settled = true;
-      const stamped: ProcessResult = { ...value, confinement, isolation };
+      const stamped: ProcessResult = { ...value, confinement, isolation, environment };
       result = stamped;
       resolveExited(stamped);
       notify();
@@ -290,10 +358,7 @@ export const nodeProcessRunner: ProcessRunner = {
         // runtime's own environment - from which `--env=NAME` reads each value - and, when no substrate
         // holds, the environment the child itself is given. The port translated the path-valued entries
         // against the mounts that port decided, so a variable naming the sandbox names the mount.
-        env: {
-          ...process.env,
-          ...(substrateHolds ? isolation.env : (request.env ?? {})),
-        },
+        env: renderedEnv,
         // Windows resolves `npm` and other `.cmd` shims only through a shell. Veridian is a Windows
         // -first tool, so this is not optional for a bare name; it costs nothing on POSIX. An absolute
         // path is deliberately excluded - see `wantsShell`.
@@ -308,6 +373,7 @@ export const nodeProcessRunner: ProcessRunner = {
         exited,
         confinement,
         isolation,
+        environment,
         output: () => stdoutChunks.join(""),
         error: () => stderrChunks.join(""),
         waitForPattern: async () => false,
@@ -345,6 +411,7 @@ export const nodeProcessRunner: ProcessRunner = {
       exited,
       confinement,
       isolation,
+      environment,
       output: () => stdoutChunks.join(""),
       error: () => stderrChunks.join(""),
       async waitForPattern(pattern: string, timeoutMs: number): Promise<boolean> {

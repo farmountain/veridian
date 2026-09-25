@@ -297,6 +297,9 @@ function plan(overrides: Partial<EnvironmentPlan> = {}): EnvironmentPlan {
       // test that built on it read `undefined` at runtime. The cast is the only reason a green
       // typecheck coexisted with eleven failing tests.
       observe: [],
+      // The fourth boundary dimension, defaulted to the behaviour every world had before the field, so
+      // a fixture that does not mention it describes the world every other world is.
+      environment: "inherit",
     },
     data: null,
     mobile: null,
@@ -385,7 +388,7 @@ describe("local-process: the lifecycle it really performs", () => {
   });
 
   it("refuses a process block with no root, because a world with no directory is not a world", async () => {
-    const { subject } = harness(plan({ process: { host: "veridian-local-process", application: null, root: "", isolation: null, observe: [] } }));
+    const { subject } = harness(plan({ process: { host: "veridian-local-process", application: null, root: "", isolation: null, observe: [], environment: "inherit" } }));
     await assert.rejects(
       () => subject.create(),
       (error: unknown) => {
@@ -416,7 +419,7 @@ describe("local-process: the lifecycle it really performs", () => {
   });
 
   it("starts no program when the contract declares none, and still reports itself healthy", async () => {
-    const { subject, processes, logger } = harness(plan({ process: { host: "veridian-local-process", application: null, root: "sandbox", isolation: null, observe: [] } }));
+    const { subject, processes, logger } = harness(plan({ process: { host: "veridian-local-process", application: null, root: "sandbox", isolation: null, observe: [], environment: "inherit" } }));
 
     const { id } = await subject.create();
     await subject.start(id);
@@ -562,6 +565,7 @@ describe("local-process: the boundary report is derived from what the world did"
           root: "sandbox",
           observe: [observed],
           isolation: null,
+          environment: "inherit",
         },
       }),
     );
@@ -639,6 +643,7 @@ describe("local-process: the boundary report is derived from what the world did"
           root: "sandbox",
           observe: [observed, nested],
           isolation: null,
+          environment: "inherit",
         },
       }),
       // The plan's `appPath` is a made-up path on a virtual filesystem, so the observed surface is
@@ -691,6 +696,7 @@ describe("local-process: the boundary report is derived from what the world did"
           root: "sandbox",
           observe: ["/virtual/workspace"],
           isolation: null,
+          environment: "inherit",
         },
       }),
       { node: { stdout: READY } },
@@ -772,7 +778,7 @@ describe("local-process: the boundary report is derived from what the world did"
 
   it("does not report enforcement for a command the confinement model cannot reach", async () => {
     const { subject, processes } = harness(
-      plan({ process: { host: "veridian-local-process", application: { command: "cmd", args: ["/c", "build.bat"] }, root: "sandbox", isolation: null, observe: [] } }),
+      plan({ process: { host: "veridian-local-process", application: { command: "cmd", args: ["/c", "build.bat"] }, root: "sandbox", isolation: null, observe: [], environment: "inherit" } }),
       // `cmd` is not Node, so the runner refuses the allowance by name and `cmd` is what really starts.
       { cmd: { stdout: READY } },
     );
@@ -822,6 +828,7 @@ describe("local-process: the substrate it can be held in", () => {
         root: "sandbox",
         observe: [],
         isolation: { denyNetwork },
+        environment: "inherit",
       },
     });
     const substrate = isolationCapability().substrate;

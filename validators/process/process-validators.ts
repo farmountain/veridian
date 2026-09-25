@@ -85,6 +85,8 @@ import {
   renderHost,
   renderStream,
 } from "../../core/environment/process-observation.ts";
+import { ENV_READINGS, readEnvironmentCrawl } from "../../core/environment/env-crawl.ts";
+import type { EnvReading } from "../../core/environment/env-crawl.ts";
 import {
   assertion,
   compareCounts,
@@ -114,6 +116,7 @@ import type { AssertionResult, Validator } from "../../core/validation/types.ts"
 export const PROCESS_VALIDATOR_NAMES = {
   host: "process.host",
   probe: "process.probe",
+  environment: "process.environment",
   argv: "process.argv",
   state: "process.state",
   exitcode: "process.exitcode",
@@ -314,8 +317,87 @@ const probe: Validator = {
   },
 };
 
-// ---- 2. the command ----------------------------------------------------------------------------
+/** What an `process.environment` target names, said once so the refusal and the message agree. */
+const ENVIRONMENT_NOUN = `one of ${ENV_READINGS.join(", ")}`;
 
+/** Whether a target names a reading this vocabulary has, so the refusal can be made before the read. */
+const isEnvReading = (value: string): value is EnvReading =>
+  (ENV_READINGS as readonly string[]).includes(value);
+
+/**
+ * The fourth dimension of the world: what the application could **see**.
+ *
+ * The other three boundary dimensions are `process.probe`'s subject or the bundle's, and this one is a
+ * separate validator because it answers a different question from all of them. `process.probe` renders
+ * what the application *did*; this renders what it could have read, and the two differ in exactly the
+ * case that matters - an application whose behaviour was entirely within its allowance, in a world
+ * that handed it every credential in the operator's shell.
+ *
+ * Two refusals are deliberate rather than defensive. An **unknown target** is refused by name rather
+ * than answered with an empty string, because a criterion comparing against a reading nobody took would
+ * report a defect in the application for a mistake in the contract. A **null crawl** is reported as
+ * `unusable` rather than as an empty environment, because "this world started no process" and "the
+ * process saw nothing" are different facts and only one of them is what `null` means.
+ *
+ * ### Why this validator declares text comparisons and not `atLeast`/`atMost`
+ *
+ * Seven of the eleven readings are counts, and the other four are words, so `atLeast` looks like it
+ * belongs here - and it declared it at first, which was a **lie in the register**: the guard that reads
+ * a validator's `comparisons` is not the guard that performs them, and this one passes `compareText`,
+ * which refuses `atLeast` with *"`atLeast` is not declared by this validator; it compares with equals,
+ * contains and matches."* A contract written against the advertised set therefore failed at run time
+ * with a message that contradicted the register. `compareCounts` would not help either, because
+ * `comparisons` is a property of the *validator* and not of the target: declaring numeric comparisons
+ * here would advertise `mode atLeast 1` as well, which would compare `"declared"` against a number.
+ *
+ * So the honest set is the one the code performs. Every reading leaves this module as text - that is
+ * `readEnvironmentCrawl`'s whole design, and it is what makes a leak unrepresentable - so "some names
+ * were seen" is spelled the way the sibling example spells the same question,
+ * `matches: "^[1-9][0-9]*$"`, and `equals: "0"` compares a rendered count against a rendered count.
+ * *A register may only advertise the comparisons its own comparator performs*, and the per-validator
+ * granularity means the narrower vocabulary is the true one.
+ */
+const environment: Validator = {
+  name: PROCESS_VALIDATOR_NAMES.environment,
+  needsTarget: true,
+  comparisons: ["equals", "contains", "matches"],
+  observationKind: PROCESS_OBSERVATION_KIND,
+  validate(raw, observation) {
+    const target = targetOf(raw);
+    const document = readDocument(observation, environment.name, target);
+    if (isAssertion(document)) return document;
+    if (target === null) return noTarget(environment.name, ENVIRONMENT_NOUN);
+    if (!isEnvReading(target)) {
+      return unusable(
+        environment.name,
+        target,
+        `\`${target}\` does not name a reading of the environment. This validator reads ` +
+          `${ENVIRONMENT_NOUN}, which is a closed set - an unrecognised target is refused rather than ` +
+          "answered with a reading nobody took.",
+      );
+    }
+    const crawl = document.environment;
+    if (crawl === null) {
+      return unusable(
+        environment.name,
+        target,
+        "this world started no process, so there was no environment to read. The reading is `null` " +
+          "rather than an empty crawl, because a world that handed a child nothing and a world that " +
+          "started no child are different facts.",
+      );
+    }
+    return judge(
+      environment.name,
+      target,
+      `the \`${target}\` reading of the environment this world's application could see`,
+      readEnvironmentCrawl(crawl, target),
+      raw,
+      compareText,
+    );
+  },
+};
+
+// ---- 2. the command ----------------------------------------------------------------------------
 const argv: Validator = {
   name: PROCESS_VALIDATOR_NAMES.argv,
   needsTarget: true,
@@ -592,6 +674,7 @@ const size: Validator = {
 export const PROCESS_VALIDATORS: readonly Validator[] = Object.freeze([
   host,
   probe,
+  environment,
   argv,
   state,
   exitcode,

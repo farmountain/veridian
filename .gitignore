@@ -186,6 +186,24 @@ examples/environment-twin/app/**/sandbox/
 # this rule the whole of the containment rather than a hygiene measure beside it.
 examples/workspace-audit/app/**/sandbox/
 
+# The sandbox tree the `env-reality` example's world builds, added with the example - which is now the
+# third rule written *before* the mistake rather than after it, and the pattern `**`/`sandbox/` is
+# carried across for the reasons its two neighbours state.
+#
+# The artifact this one excludes is a **reading of the operator's environment**, and that makes it the
+# sharpest of the three rather than one more of them. The probe writes its census to
+# `app/sandbox/env/reading.json`, containing the number of variables it could see, how many were
+# credential-shaped, how many held anything, and whether one named variable was present. Committed, that
+# is a document about the machine of whoever last ran the demo, sitting in the tree where the next reader
+# would find it looking like a current reading of their own - the `sim-mobile` context rule and the
+# `environment-twin` capability rule at a fourth subject.
+#
+# It is deliberately a **count** and never a value, which is why this is a hygiene rule and not the whole
+# of the containment: `core/environment/env-crawl.ts` makes a leak unrepresentable in the type, so what a
+# committed sandbox would expose is a figure about a machine rather than a secret from it. The containment
+# is held by the crawler; this rule stops a stale figure from being read as a fresh one.
+examples/env-reality/app/**/sandbox/
+
 # The state directory the self-acceptance contract's world builds - the one generated tree in this
 # repository that is not under an example's `app/`. The reasoning is the `sim-posix` one, and it is
 # sharper here because the world's root and the CLI's `--state-dir` are the *same* directory:

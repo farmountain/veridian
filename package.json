@@ -35,6 +35,7 @@
     "smoke:dist": "node scripts/smoke-dist.mjs",
     "smoke:mcp": "node scripts/mcp-smoke.mjs",
     "reading:denv": "node scripts/denv-reading.mjs",
+    "reading:env": "node scripts/envindex-reading.mjs",
     "prepare": "npm run build",
     "prepublishOnly": "npm run gate",
     "veridian": "node cli/veridian.ts",
@@ -56,6 +57,7 @@
     "demo:mobile": "node examples/sim-mobile/demo.ts",
     "demo:twin": "node examples/environment-twin/demo.ts",
     "demo:audit": "node examples/workspace-audit/demo.ts",
+    "demo:env": "node examples/env-reality/demo.ts",
     "demo:no-browser": "node examples/shopping-cart/demo.ts --browser none",
     "e2e:install": "node scripts/e2e-install.mjs",
     "e2e": "node examples/shopping-cart/demo.ts --browser playwright"

@@ -31,7 +31,8 @@
  * and those are the same two repairs the API reading's `status: null` keeps apart. `state` says which
  * of the three situations the record is in, and `exitCode` says what the code was when there was one.
  */
-
+import { isEnvCrawl } from "./env-crawl.ts";
+import type { EnvCrawl } from "./env-crawl.ts";
 /** Adapter-defined observation kind. Validators declare the kind they understand. */
 export const PROCESS_OBSERVATION_KIND = "process.exec";
 
@@ -140,6 +141,19 @@ export interface ProcessObservationData {
   readonly commands: readonly ProcessCommandRecord[];
   /** Every path this criterion asked about, in the order the criteria named them. */
   readonly files: readonly ProcessFileReading[];
+  /**
+   * What the application this world started could **see**.
+   *
+   * Required and nullable, in the shape `application` uses above: required so the field cannot be
+   * omitted in silence, and nullable because a world that started no child has no environment to read.
+   * `null` is a **reading** - "this world ran no process" - and not a stand-in for "nobody filled the
+   * field in", which is the distinction a bundle's `url: null` already carries.
+   *
+   * It is here rather than only on the boundary record because a criterion has to be able to judge it.
+   * A reading that reached the bundle and nothing else would be auditable and not testable, and the
+   * whole point of this seam is that `env:inherited-credential 0` is a claim a contract can compare.
+   */
+  readonly environment: EnvCrawl | null;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -190,6 +204,7 @@ export function isProcessObservationData(value: unknown): value is ProcessObserv
   if (typeof value["root"] !== "string") return false;
   if (value["application"] !== null && !isCommand(value["application"])) return false;
   if (!Array.isArray(value["commands"]) || !value["commands"].every(isCommand)) return false;
+  if (value["environment"] !== null && !isEnvCrawl(value["environment"])) return false;
   return Array.isArray(value["files"]) && value["files"].every(isFile);
 }
 

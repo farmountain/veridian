@@ -179,6 +179,17 @@ export function serializeEnvironment(record: EnvironmentRecord): Record<string, 
         policy: record.boundary.filesystemWrite.policy,
         enforcement: record.boundary.filesystemWrite.enforcement,
       },
+      environment:
+        record.boundary.environment === null
+          ? null
+          : {
+              mode: record.boundary.environment.mode,
+              entries: record.boundary.environment.entries.map((entry) => ({ ...entry })),
+              inherited: record.boundary.environment.inherited,
+              populated: record.boundary.environment.populated,
+              credentials: record.boundary.environment.credentials.map((entry) => ({ ...entry })),
+              inherited_credentials: [...record.boundary.environment.inheritedCredentials],
+            },
       crossings: record.boundary.crossings.map((entry) => ({
         boundary: entry.boundary,
         subject: entry.subject,
@@ -624,6 +635,10 @@ export function environmentRecord(
         enforcement: boundary.filesystemWrite,
       },
       substrate: boundary.substrate ?? null,
+      // The fourth dimension, normalized to `null` on the same rule `substrate` is: a world that
+      // started no child asked no environment question, and the bundle says so with a value rather
+      // than by omitting the key.
+      environment: boundary.environment ?? null,
       crossings: boundary.crossings.map((entry) => ({ ...entry })),
     },
     transitions: transitions.map((entry) => ({

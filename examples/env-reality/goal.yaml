@@ -1,0 +1,108 @@
+# The goal: a world declares what its application may see, and a bundle proves it did.
+#
+# ## The question this answers
+#
+# Veridian's whole claim is that a bundle is *evidence* - that a reader can tell from it what happened,
+# rather than being told. Four of the five MVP metrics measure that claim about one world's readings, and
+# the fourth dimension of a boundary was, until this goal, the one place where the claim was false in a
+# way nobody could see from the outside.
+#
+# A world confined a child in three dimensions and recorded each. Reads: `readRoots`, measured by the
+# runtime and reported as `ERR_ACCESS_DENIED`. Writes: the same, reported with its permitted half beside
+# it as a control. Children: `allowChildProcess`, which every world but one declares false. And the
+# environment: nothing. `core/process.ts` started every child as `{ ...process.env, ...declared }`, so
+# every world ran its application inside the operator's shell environment, and the *only* record of that
+# was `environment.json`'s `env` block - which holds the world's **declaration**, not its outcome.
+#
+# The consequence is not cosmetic and it is measured rather than argued. Through this repository's own
+# CLI, against a throwaway goal whose probe reported only counts: an application under a two-name
+# declaration saw **84 names**, including **5 credential-shaped ones, all 5 populated**, and one planted
+# in the invoking shell whose reachability the contract's own criterion **confirmed**. So a bundle that
+# showed `env: {ENV_REALITY_CHANNEL, ENV_REALITY_BUILD}` was a bundle that a reader would reasonably
+# take to mean "the application could reach two variables" - and it could reach eighty-four.
+#
+# ## The statement, and what judges it
+#
+#   A world starts a real process with an environment it declares rather than one it inherits, a crawl of
+#   the exact map handed over records what that child could reach without ever reading a value, an
+#   independent program counts the same environment for itself and agrees, and the reading survives as a
+#   document a third subsystem reads back.
+#
+# Four clauses, four kinds of evidence, and each is a named criterion:
+#
+#   1. the world chose `declared`, and what it read was non-empty      AC-002
+#   2. the names the document promised are the names in the reading    AC-003
+#   3. no name the operator's shell holds and the world did not declare is in reach   AC-004
+#   4. the program itself agrees                                            AC-005, AC-006, AC-007
+#
+# ## The clause that carries the rest, and the one that would make it a lie
+#
+# AC-004 is the claim. It asserts a count of **zero** undeclared credential-shaped names in the child's
+# environment, where the same measurement taken before this work was five.
+#
+# AC-002's `visible` pattern is what stops that zero from being free. **An absent measurement must not
+# read as a clean one**, and a boundary reading is where that rule bites hardest, because the value a
+# broken instrument returns is exactly the value success returns: a crawl that examined nothing reports
+# zero credentials and zero undeclared credentials - a perfect score, produced by nobody having looked.
+# The property that separates the two is that a child which started at all on this platform sees the
+# operating system's floor, so the honest count is non-zero and zero is a **failure** that means the
+# world did not start a process. Neither criterion is a statement about the boundary on its own; together
+# they are, and that is why they are written as two.
+#
+# Clauses 1 and 4 are then the same discipline applied to instruments. The world crawls the map it
+# *intended* to hand over; the program reads `process.env` for itself; a JSON document the program wrote
+# is read back by the world's own file reader. Three instruments, one fact, and the contract refuses any
+# of them alone - because the defect this seam is most prone to is a crawl built from a map that never
+# reached `spawn`, which passes every world-side criterion and fails exactly the program-side ones.
+#
+# ## What is deliberately not asserted
+#
+# No criterion pins a **machine fact**. Not how many names the child saw, because a `declared` environment
+# still carries the operating system's floor and that count is a property of the platform and the login
+# rather than of the code. Not which credentials the operator's shell holds - this contract runs against a
+# real machine, and the entire point is that those names never leave it, so no criterion names one and no
+# artifact the run writes contains a value. Not the names at the floor either: they are the runtime's, and
+# `environment.yaml`'s header records them as a measurement rather than as an expectation.
+#
+# What is asserted is the **shape of the boundary**: the mode the document declared, the names it
+# declared, that nothing it did not declare is credential-shaped and in reach, and that two further
+# instruments reading the same environment agree. Those hold on this checkout, on a fork of it, and on a
+# machine with nothing installed but Node.
+
+version: 1
+
+id: env-reality
+
+statement: >-
+  A world starts a real process with an environment it declares rather than one it inherits from the
+  operator's shell, a crawl of the exact map handed to that child records every name it could reach and
+  no value it could read, an independent program counts the same environment for itself and agrees, and
+  the reading survives as a document a third instrument reads back.
+
+acceptance: acceptance.yaml
+
+environment: environment.yaml
+
+context: |-
+  The sixteenth example, and the one that closes the fourth dimension of the boundary.
+
+  It is here rather than in a test because the defect it demonstrates is invisible to a test that shares
+  the fixture's assumptions. A unit test of `crawlEnvironment` proves the classifier classifies; a test
+  of `runToCompletion` with a doubled process port proves the port was asked for the right map - and
+  neither can observe that the operator's shell reached a real child, because the double answers about
+  requests and the shell is not a request. The finding only appears when a real process is started by a
+  real runner under a real contract and asked what it can see. So this example is the test: it starts
+  a child, crawls the map, and has the child report its own environment beside it.
+
+  What it demonstrates, in one line: **a boundary measured in three dimensions was being assumed in the
+  fourth, and the assumption was recorded as though it were the measurement.** `environment.json` held
+  the declaration, every reader took it for the outcome, and nothing in the bundle could tell an operator
+  that their application could read their credentials.
+
+  The fix is a field, a crawl, and a refusal to carry a value: `process.environment` chooses between
+  `inherit` and `declared`; `core/environment/env-crawl.ts` records names, counts and two booleans and
+  has nowhere to put a value; `process.environment` joins the validator register as its thirteenth
+  member so a criterion can judge the reading rather than the intention.
+
+  Nothing about this is simulated. No substitute, no stood-in surface, no `simulated` block: a real child
+  process, a real map handed to it by this kernel, and a real environment read back.

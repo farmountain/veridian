@@ -4,6 +4,8 @@ import type { ReadonlyIoPort } from "../io.ts";
 import { SCHEMA_URIS, type SchemaSet } from "../schema/index.ts";
 import { principalProblem } from "./cloud-observation.ts";
 import { CONTAINER_PLATFORMS } from "./container-observation.ts";
+import { ENV_MODES } from "./env-crawl.ts";
+import type { EnvMode } from "./env-crawl.ts";
 import { MOBILE_PLATFORMS } from "./mobile-observation.ts";
 import { OS_FAMILIES, PRIVILEGED_OS_ACCOUNTS } from "./os-observation.ts";
 import {
@@ -569,8 +571,37 @@ function readProcess(raw: unknown, appPath: string): ProcessPlan | null {
     application: readApplication(raw["application"]),
     root: resolveSibling({ dir: appPath, path: "", text: "" }, root),
     observe: readObserve(raw["observe"], appPath),
+    environment: readProcessEnvironment(raw["environment"]),
     isolation: readProcessIsolation(raw["isolation"]),
   };
+}
+
+/**
+ * What this world's application may see, defaulted to the behaviour every world had before the field.
+ *
+ * Absent means `inherit`, and that default is load-bearing rather than convenient: it is exactly what
+ * `core/process.ts` did for every world before this field existed, so a document that does not mention
+ * the environment is judged in the environment it was always judged in. A field that defaulted the
+ * other way would silently shrink the environment of every existing contract, which is a behaviour
+ * change a default must not make on a document's behalf.
+ *
+ * Anything that is neither `inherit` nor `declared` is **refused by name**, and the refusal says which
+ * two words exist. That is the difference between this and a truthy test: `environment: yes` in YAML is
+ * the boolean `true`, and a loader that read it as "not inherit" would hand a world a declared
+ * environment it never asked for - a boundary change produced by a typo, reported by nothing.
+ */
+function readProcessEnvironment(raw: unknown): EnvMode {
+  if (raw === undefined || raw === null) return "inherit";
+  const spelled = asString(raw).trim();
+  if ((ENV_MODES as readonly string[]).includes(spelled)) return spelled as EnvMode;
+  throw defect(
+    "$.process.environment",
+    `process.environment must be one of ${ENV_MODES.join(", ")}. It decides what the application this ` +
+      "world starts may SEE: `inherit` is the operator's environment with this document's `env` merged " +
+      "over it, and `declared` is the document's `env` alone. A value that is neither is refused " +
+      "rather than read as 'not inherit', because a typo would otherwise change a world's boundary " +
+      "without any reading reporting it.",
+  );
 }
 
 /**

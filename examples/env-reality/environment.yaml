@@ -1,0 +1,96 @@
+# The world the `env-reality` goal is judged in.
+#
+# This is `local-process` - a real child process, a real tree on this disk, and exit codes this kernel
+# produced. What makes this document different from every other one in the repository is one word.
+#
+# ## `process.environment`, and the measurement that produced it
+#
+# A Veridian world confines three dimensions and measures each: the child cannot write outside its
+# roots, cannot read outside its declared surface, and cannot start children unless a world asks. There
+# is a fourth, and until this field it was covered by nothing and recorded by nothing.
+#
+# `core/process.ts` started every child as `{ ...process.env, ...declared }`, so the operator's shell
+# went with it. That was not inferred from reading the spread - it was measured through this
+# repository's own CLI, with a name planted in the invoking shell and a throwaway goal whose probe
+# reported only counts. Readings: 84 names visible to the application, the world's own declaration
+# among them, and 5 credential-shaped names with all 5 populated. The criterion asserting the planted
+# name reached the child **passed**.
+#
+# So this document says `declared`, and the difference is the whole of what this example demonstrates:
+#
+#   inherit    the operator's environment with `env` below merged over it - the default, and what every
+#              world did before this field existed
+#   declared   the `env` block below ALONE
+#
+# `declared` is narrower rather than empty, and the distinction is measured rather than assumed: a
+# child started with a completely empty map on Windows still sees eleven names the operating system
+# supplies, `USERNAME` and `USERDOMAIN` among them. Those are the floor, they are not a defect, and no
+# criterion here pretends otherwise - what is asserted is that nothing the *operator's shell* holds
+# reaches this program.
+#
+# ## What a reader should watch
+#
+# Two readings of one fact, from two instruments, and the contract judges both. The world crawls the
+# exact map it hands the child and reports it as `process.environment`; the program below counts its
+# own environment and prints the result. A world whose crawl said "no credentials" beside a program
+# whose own census disagreed would be a world reporting a boundary it did not have, and neither
+# reading alone can catch that.
+#
+# Nothing here is simulated. There is no substitute, nothing is stood in, and the program is a real
+# process reading a real environment - so this document has no `simulated` block, and its absence is a
+# claim rather than an omission.
+
+adapter: local-process
+
+# Relative to this file. The adapter runs `start` and every `run` step with the working directory set
+# here, which is why the contract writes `env-probe.mjs` rather than a path to it.
+app: app
+
+# The world's own declaration, and under `declared` it is the whole of what the program can see besides
+# the operating system's floor. Two names, both innocuous, both asserted by name in the contract.
+#
+# Neither is credential-shaped, and that is deliberate rather than tidy: the criterion that matters is
+# that the count of *credential-shaped* names is zero, and a document that declared one would make its
+# own reading harder to read instead of clearer.
+env:
+  ENV_REALITY_CHANNEL: "nightly"
+  ENV_REALITY_BUILD: "release"
+
+process:
+  # The identity every reading carries, so a result read later says which machine produced it.
+  host: env-reality-host
+
+  # The sandbox - the one directory this world may create, empty and delete. The program writes its
+  # reading inside it, and a reset withdraws that reading without touching the program.
+  root: sandbox
+
+  # The fourth dimension. See the header: this is the field that makes this example possible, and
+  # `declared` is what the contract's zero-credential criterion is a claim about.
+  environment: declared
+
+  # The program this world starts and keeps running, so `process.state` has something to report and
+  # the readiness gate has something to wait for.
+  application:
+    command: node
+    args: [env-probe.mjs, daemon]
+
+# Null means "this program has no dependencies to install", which is a fact about a program written
+# against the Node standard library alone - and stating it is what lets the demo run from a clean
+# checkout with nothing to fetch.
+dependencyInstall: null
+
+start:
+  # Executed verbatim - never a shell string built by pasting configuration into it.
+  command: node
+  args: [env-probe.mjs, daemon]
+
+  # The line the world waits for before it calls itself ready. No defect in this example may touch it:
+  # `local-process` paid for that rule when a defect in a readiness word took the *world* down, so the
+  # run ended before any criterion was observed and before the repair gate was reached - and a defect
+  # that takes the world down cannot be repaired by a loop that only starts once the world is up.
+  readyPattern: "env-reality daemon ready"
+
+# Reset is first-class. `restart` stops the daemon before emptying the sandbox and starting it again, so
+# each iteration is judged in a world holding nothing the previous one wrote.
+reset:
+  strategy: restart

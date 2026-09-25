@@ -446,6 +446,7 @@ const WORLD_KIND_CASES: readonly {
         root: `${CHECKOUT}\\sandbox`,
         observe: [],
         isolation: null,
+        environment: "inherit",
       },
     },
     name: "veridian-local-process",

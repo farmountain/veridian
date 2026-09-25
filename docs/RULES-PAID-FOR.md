@@ -2164,3 +2164,61 @@ reads a variable.*
   instead - a backticked name inserted into the document that the adapter never sets - fails exactly one
   assertion with the message it was written to print, and the restore was verified twice, by a clean
   `git status` **and** by a byte-identical comparison against the pre-probe content.
+
+- **A reading of the map you handed over is not a reading of what the child received, and the eleven
+  names in the gap were enough to make the first version a false clean.** `process.environment` was
+  built to close the fourth dimension of the boundary - reads, writes and child processes were confined
+  and measured, and the environment was covered by nothing - and the first version of the crawl took its
+  reading from `renderedEnv`, the map the runner was about to pass to `spawn`. Measured through the
+  example that ships with it: the crawl reported **6** names, and the program's own census of
+  `process.env` printed **17**. The difference is not a rounding error. `spawn(..., { env: {six names} })`
+  gives a Windows child seventeen, because the platform supplies eleven of its own -
+  `HOMEDRIVE`, `HOMEPATH`, `LOGONSERVER`, `PATH`, `SYSTEMDRIVE`, `SYSTEMROOT`, `TEMP`, `USERDOMAIN`,
+  `USERNAME`, `USERPROFILE`, `WINDIR` - whether or not they were asked for. So the crawl reported
+  `inherited: 0` for a child that had inherited `USERNAME`, `USERDOMAIN` and `LOGONSERVER` from the
+  operating system, and it would have reported zero inherited credentials for a child that had one if
+  this platform's floor had included a credential-shaped name. **That is `env: plan.env` again, one
+  level down** - a reading of the intention presented as a reading of the outcome - and it appeared in
+  the code written specifically to remove that defect. The fix is a **seed**: under `declared` the
+  runner merges the current process's own `PLATFORM_BASELINE` names into the map before crawling it,
+  which leaves the child's environment byte-identical (those names arrived anyway) and makes the reading
+  true. The list is a curated measurement and therefore a liability, so it carries a control rather than
+  a promise: `tests/env-confinement.test.ts` starts a real child on an **empty** map and asserts that
+  nothing it saw is missing from the list, and a second assertion demands that the crawl's names equal
+  the child's names **name for name** - which is the assertion that would have caught the original
+  defect and did not exist when it shipped. *Two instruments that disagree are worth more than one
+  instrument that agrees with itself: this was found because the example printed the program's own count
+  beside the world's crawl, and neither reading alone could have shown it.*
+
+- **A register may only advertise what its own comparator performs, and the guard that reads
+  `comparisons` is not the guard that enforces them.** `process.environment`'s eleven readings include
+  seven counts, so its `comparisons` was declared as
+  `["equals", "contains", "matches", "atLeast", "atMost"]` - and it passes `compareText`, which refused
+  a contract's `atLeast: 1` with *"`atLeast` is not declared by this validator; it compares with equals,
+  contains and matches."* A contract written against the advertised set therefore failed **at run time**
+  with a message that contradicted the register it was written from. `compareCounts` is not the fix
+  either, and the reason is structural rather than stylistic: `comparisons` is a property of the
+  *validator*, not of the target, so declaring numeric comparisons here would also advertise
+  `mode atLeast 1`, which would compare the word `declared` against a number. The honest set is the one
+  the code performs - every reading leaves `readEnvironmentCrawl` as text, by design, because that is
+  what makes a leak unrepresentable - so "some names were seen" is spelled `matches: "^[1-9][0-9]*$"`,
+  the same idiom the sibling contract already used for the same question. *Two registries describing one
+  capability will drift, and the drift is invisible until a caller trusts the one nothing enforces.*
+
+- **An absent artifact produces `INCONCLUSIVE`, and a repair loop refuses to repair `INCONCLUSIVE` -
+  correctly, which is why a demo defect must make a document wrong rather than missing.** The
+  `env-reality` demo's third defect was written to remove the probe's write of its census, on the
+  reasonable assumption that a criterion reading the file would then **fail**. It did not fail: the run
+  stopped at iteration 3 with *"a verdict of INCONCLUSIVE is not something a repair can change"*, and
+  the first pass's descending failure count never reached zero. The mechanism is a rule this repository
+  already holds and states elsewhere: `process.contents` reports an absent file as `unusable` rather
+  than comparing against an empty string, *"because a comparison against an empty string would report a
+  defect in an application nobody read."* So the criterion's expectations composed to `INCONCLUSIVE`
+  while `process.file` failed outright in the same breath - and the loop stopped, because a missing
+  artifact is indistinguishable from a world that never ran the step that should have produced it, and a
+  loop that repairs **that** is guessing about which side of the boundary the defect is on. Two
+  consequences to carry: **the reach of a defect is not only how many criteria it moves but which verdict
+  it produces**, and *a demo whose defect makes an artifact absent is a demo that will not descend* - so
+  the defect is now one that writes a document whose every count is zero. That is also the shape a
+  passing run can hide, and it is the one worth demonstrating: a bundle whose every criterion passed
+  while an artifact the contract promised described a world that never existed.

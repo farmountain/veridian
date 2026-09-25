@@ -246,6 +246,43 @@ npm run demo:audit                          # the fifteenth demo, and the first 
                                             # 4 -> 2 -> 1 -> 0. Writes nothing outside its own
                                             # sandbox: the one attempt to is refused and its residue is
                                             # stat'd rather than assumed.
+npm run demo:env                            # the sixteenth demo, and the one that closes the FOURTH
+                                            # dimension of a boundary. A world used to confine reads,
+                                            # writes and child processes and record all three, while its
+                                            # application ran inside the operator's shell - so a bundle
+                                            # could show a two-name `env` declaration for a program that
+                                            # could reach eighty-four names. This world declares
+                                            # `process.environment: declared`, and the same fact is
+                                            # measured three times: by the runner's crawl of the map it
+                                            # handed over, by the program's own census of `process.env`,
+                                            # and by a JSON document the program wrote and the world's
+                                            # file reader read back. No value is ever read or written -
+                                            # the crawl's type has nowhere to put one - and a control
+                                            # plants a secret and fails if it appears anywhere in a
+                                            # serialised crawl. Exit 0 when it passes: measured, 4
+                                            # iterations and 7/7 criteria, the failing count descending
+                                            # 3 -> 2 -> 1 -> 0.
+                                            #
+                                            # Two measurements this demo is the record of, both taken
+                                            # through it rather than reasoned about. First: `spawn` with
+                                            # six names gives a WINDOWS child seventeen, so the first
+                                            # version of the crawl reported `inherited: 0` for a program
+                                            # that had inherited `USERNAME`, `USERDOMAIN` and
+                                            # `LOGONSERVER` from the operating system - `visible 6`
+                                            # against the program's own census of 17, which is how it
+                                            # was found. `core/environment/env-crawl.ts`'s
+                                            # `PLATFORM_BASELINE` names the eleven, and the reading is
+                                            # now 17. Second: a defect whose only symptom is an ABSENT
+                                            # artifact produces INCONCLUSIVE rather than FAIL, and the
+                                            # loop refuses to repair INCONCLUSIVE - correctly, because a
+                                            # missing artifact is a statement about the world. That is
+                                            # why this demo's third defect writes a WRONG document
+                                            # instead of no document.
+                                            #
+                                            # Useful when run by hand: `npm run reading:env`, which
+                                            # joins every run on disk into a per-subject environment
+                                            # index and exits 1 when NO subject yielded a crawl - so an
+                                            # empty table cannot be read as a clean fleet.
 npm run demo:no-browser                     # the same demo with `--browser none`. Every criterion is
                                             # a browser observation, so this must end INCONCLUSIVE
                                             # (exit 2). It shows the refusal, not the aha.
