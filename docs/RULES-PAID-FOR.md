@@ -2263,3 +2263,48 @@ reads a variable.*
   figure, ask what the figure's neighbours claim and whether anything reads them* - the same shape this
   register already records twice, once for a guard that could not see a nested directory and once for a
   guard that could not see the branch its assertion lived in.
+
+  **The neighbours are read now, and the reason is that the gap was paid for a second time.** This
+  entry named the hole and left it open, which is why it is worth recording that the hole was then
+  walked into again: the same total moved by hand through four documents in a single pass, twice, and
+  the first sweep of the additions missed one site. `tests/docs-roster.test.ts` now carries a second
+  assertion beside the one that pins the total: each site's own figure plus the Cockpit's must reach
+  that site's total, and every site must credit the Cockpit with the same figure. It reads the
+  addition as a **shape** rather than a sentence, because the tree spells it two ways - the figure then
+  the noun (`plus the 92 the VS Code Cockpit contributes`) and the noun then the figure (`plus the
+  Cockpit's 92`) - and a guard that knew only one would silently drop the sites that chose the other.
+  It carries two controls, both of which this register has been burned by the absence of: a total read
+  with no addition beside it **fails** rather than being skipped, so deleting a decomposition cannot
+  reduce the guard to the assertion above; and every named site must contribute a claim, so a pattern
+  that matched nothing cannot pass by agreeing with itself. Both spellings also share **one** `COUNT_CLAIM`
+  pattern with the total assertion rather than each carrying its own, because two spellings of one
+  sentence is the same defect one layer in - the total and the addition must be read from the same
+  words or the pair agrees about nothing. What remains out of reach is stated in the test rather than
+  discovered later: the Cockpit's figure is read *from these sites*, not taken from the extension's own
+  suite, so a change there arrives as disagreement between sites and never as truth - which is the
+  limit the paragraph above already names about the total, one figure out.
+
+- **A criterion that reads a child's stream reads back the allowances the world granted it, and
+  attributes them to the application.** `AC-001` in `acceptance/acceptance.yaml` asserts that the
+  confined child wrote nothing to stderr, and it had begun to fail on a line the *program* did not
+  write: `local-process` starts its `run` steps with `--allow-child-process` deliberately, as part of
+  the world's contract, and Node answers that flag by printing a two-line warning - a
+  `SecurityWarning` naming the process id, followed by a hint telling the reader how to get a
+  stack trace - *before the program's first line executes*. Measured: 210 bytes, two lines. The
+  criterion was therefore reading the **world's own allowance** back as the application's output, and
+  reporting that the CLI had logged when it had written nothing at all. The repair is a split rather
+  than a relaxation: `splitRuntimeDiagnostics` in `core/environment/process-observation.ts` separates
+  the diagnostic lines from the application's stream, the adapter calls it at **both** of its
+  producers, and the diagnostic is kept rather than discarded - as `runtimeDiagnostics`, required and
+  nullable, where `null` means *the runtime said nothing* rather than *nobody looked*. The hint line
+  is consumed with its warning because it is a second line of one diagnostic; a reading that took the
+  warning and left the hint would move a line rather than a diagnosis, and the test that holds this is
+  the one that fails when the hint is left behind. *A boundary you granted is not an observation about
+  the program you granted it to* - which is the same shape as the rule above it about an error message
+  naming only a cause the reporter observed, one layer out: there the reporter and the cause were
+  conflated, here the **grantor** and the **subject of the grant** are, and in both cases a rule that
+  reads cleaner than it measures is the thing that gets believed. Held by
+  `tests/process-observation.test.ts`, whose probes are the *second* thing that matters here: the first
+  version of this entry's fix was tested, and the test passed with the defect deliberately reintroduced,
+  because the assertions had been aimed at the wrong half - the split was asserted and the *join* was
+  not.

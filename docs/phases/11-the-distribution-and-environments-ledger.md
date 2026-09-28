@@ -180,6 +180,11 @@ criterion), and the one obligation this document carries that is not a phase at 
 the next push**. The plan's own backlog and the program's backlog are now one list in one file, which is
 what the criterion asked for and is the only form of it that a reader can act on.
 
+*Three of those four items have since been taken - 07, 08 and the receipt half of 12 all moved, and the
+fourth is an obligation rather than a phase - so this paragraph records what phase 11 **added** rather
+than what is open today. The current state is that table's, and it is not restated here because a list
+copied into a second place is a list that will disagree with the first.*
+
 ## Acceptance criterion
 
 - Every row of S5's world table is true of the tree, and `tests/simulated-surfaces.test.ts` passes with

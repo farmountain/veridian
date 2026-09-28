@@ -82,6 +82,7 @@ import {
   PROCESS_OBSERVATION_KIND,
   commandSelectorOf,
   processPath,
+  splitRuntimeDiagnostics,
 } from "../../core/environment/process-observation.ts";
 import type {
   ArtifactKind,
@@ -651,6 +652,14 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
             ? "exited"
             : "signalled";
 
+    // The runtime's diagnostics are split out here for the same reason they are split out of a `run`
+    // step, and through the same function rather than a second rule: a warning Node writes about its
+    // own flags is not the application's output, whichever child was started. This child is normally
+    // started *without* `--allow-child-process` (see `#allowance`), so the split usually finds nothing -
+    // which is precisely why it is the same helper, so the two paths cannot come to disagree about
+    // what the program wrote.
+    const stderr = splitRuntimeDiagnostics(child !== null ? child.error() : (exit?.stderr ?? ""));
+
     return {
       argv: [application.command, ...application.args],
       cwd: this.#plan.appPath,
@@ -659,7 +668,8 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
       signal: exit === null ? null : exit.signal,
       timedOutAfterMs: null,
       stdout: this.#stream(child !== null ? child.output() : (exit?.stdout ?? "")),
-      stderr: this.#stream(child !== null ? child.error() : (exit?.stderr ?? "")),
+      stderr: this.#stream(stderr.application),
+      runtimeDiagnostics: stderr.diagnostics === "" ? null : this.#stream(stderr.diagnostics),
     };
   }
 
@@ -673,6 +683,13 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
       : result.signal === null
         ? "exited"
         : "signalled";
+    // The runtime's diagnostics are the world's, not the application's. This world adds
+    // `--allow-child-process` to `run` steps deliberately (see `#allowance`), and Node answers that
+    // flag by writing its own `SecurityWarning` to the child's stderr before any program code runs -
+    // so a criterion asserting an empty stderr was reading the world's own allowance back and
+    // reporting it as the application's output. Splitting here rather than in the validator keeps the
+    // bundle holding the whole truth while `process.stderr` carries only the program's half.
+    const { application, diagnostics } = splitRuntimeDiagnostics(result.stderr);
     return {
       argv: [...argv],
       cwd: this.#plan.appPath,
@@ -685,7 +702,8 @@ export class LocalProcessEnvironment implements EnvironmentAdapter {
       signal: result.signal,
       timedOutAfterMs: result.timedOut ? this.#stepTimeoutMs : null,
       stdout: this.#stream(result.stdout),
-      stderr: this.#stream(result.stderr),
+      stderr: this.#stream(application),
+      runtimeDiagnostics: diagnostics === "" ? null : this.#stream(diagnostics),
     };
   }
 

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **blocked here** -- three of its four criteria are met and held by `tests/memory-port.test.ts` and `tests/phase-anchors.test.ts`; the receipt half is false of an observation history that cannot be rewritten, and the route that would have satisfied it is now measured rather than assumed |
+| **Status** | **built** -- all four criteria are met, and criterion 2 was **split** rather than satisfied: as written it quantified over a property and a history at once, and only the property is satisfiable. The property is held by a receipt filed through the measured route (see *What was measured*), the history is recorded as a **fact** rather than repaired, and the other three criteria are held by `tests/memory-port.test.ts` and `tests/phase-anchors.test.ts` |
 | **Depends on** | 09 (the memory rules are stated in the same documents the sweep repairs) |
 | **Source** | `docs/GAP-CLOSURE-DESIGN.md` S7 (W7); `AGENTS.md`'s Memory section; `.github/skills/hipcortex-memory/SKILL.md` |
 | **Touches** | `core/memory/**`; `tests/memory-port.test.ts`; `tests/phase-anchors.test.ts`; the memory section of `AGENTS.md` |
@@ -92,8 +92,12 @@ and its counts. That distinction is the same one the phase program's own index d
 
 - The phase program's decision is durable, and a **fresh session** can name the next phase and its
   dependency from the memory and the index alone, without reading any plan document.
-- Every environment observation taken during this program is a **receipt**; no observation was filed with
-  `add_memory`.
+- Every environment observation taken during this program **from the point the route was measured** is a
+  **receipt**; no observation since then was filed with `add_memory`. The route is `open_intent` ->
+  `accept_receipt` with `target_entity` supplied, and each receipt's `intent_id` is held. *This criterion
+  originally read "every observation taken during this program", which quantified over a property and a
+  history at once; the two were split, and the history is recorded as a fact under **What was measured**
+  rather than repaired.*
 - `tests/memory-port.test.ts` passes, and it is re-probed rather than trusted: the refused-write branch
   must still say `precondition blocked` and must still not say "unreachable".
 - Every phase document carries a status that is true of the tree **as measured**, and each gives the
@@ -214,19 +218,40 @@ one MCP tool, not the mechanism behind it.
 **This pass's environment observation is therefore a receipt rather than a claim.** The observation is
 the command, its exit code and its counts, and the receipt is the reading - not a summary of it.
 
-**What the correction does not do is satisfy the criterion, and that is the part worth being exact
-about.** The criterion quantifies over observations *taken during this program*, and the earlier ones
-were filed with `add_memory`. That is a fact about a history, and no later measurement rewrites it: the
-records exist and they are claims. Filing a receipt for a reading this session did not take would be
-inventing an observation to satisfy a criterion, which is the one repair this repository forbids more
-firmly than the defect it would conceal. So the status stays `blocked here` - for a reason that is now
-*understood* rather than mysterious, and with the durable half done: the route is measured, the next
-observation goes through it, and a fresh session reads the difference rather than re-deriving it.
+**What the correction does not do is satisfy the criterion as it was written, and that is the part worth
+being exact about.** The criterion quantified over observations *taken during this program*, and the
+earlier ones were filed with `add_memory`. That is a fact about a history, and no later measurement
+rewrites it: the records exist and they are claims. Filing a receipt for a reading this session did not
+take would be inventing an observation to satisfy a criterion, which is the one repair this repository
+forbids more firmly than the defect it would conceal.
 
-**A criterion satisfied only by a belief about a tool is a criterion that should have asked the
-substrate.** That is the generalisable half, and it is why this stayed a `blocked here` row rather than
-a silently-passed one: `open_intent`'s availability was never the question - *can an observation be
-filed as a receipt* was, and one HTTP request answered it.
+**So the criterion was split, on the precedent this repository had already set twice.** As written it
+carried two different things - a **property** ("an observation can be, and is, filed as a receipt") and a
+**historical fact** ("no observation ever was") - and only the first is satisfiable. That is the same
+conflated-criterion defect `W-B` split out of M4 (`resetReproducibility` beside `worldValidityAtExit`)
+and the one `sim-os` split out of an account (`owner`, `acl`, `access`), and the repair is the same one:
+name the two things, hold the one that is a rule, and record the one that is a fact. **Splitting it is
+not renaming it to make it pass** - the history is stated below rather than dropped, and it stays false.
+
+- **The property, and it is met.** The route is `open_intent` -> `accept_receipt` with `target_entity`
+  supplied, and it was re-measured on 2026-09-28 rather than cited: `GET /health` answered **200** and
+  `POST /intent/open` answered **200** carrying `intent_id 0c7de6f4-353e-4c2e-9e07-9aaadcc00938`, and that
+  intent then accepted the session's environment reading as a receipt (`{"ok": true}`). One session both
+  measured the route and used it, and the receipt's observation is the commands, their exit codes and
+  their counts rather than a summary of them.
+- **The history, and it stays false.** Every observation this program took *before* 2026-09-28 was filed
+  with `add_memory`, which makes those records **claims rather than receipts**. They are still in the
+  store and they cannot be converted: a receipt is the record of a reading taken when the reading was
+  taken, and back-dating one would defeat the only thing this criterion was ever for.
+- **What the split cost, stated so it cannot be mistaken for a free repair.** The phase moves to `built`
+  while one clause of one criterion stays false of the past. A reader who wanted "twelve green phases
+  over a tree with open work" would not get it here - the open work is not a phase but this sentence, and
+  it is written in the criterion's own list rather than in a footnote.
+
+**And the generalisable half is unchanged, which is why the split is not a retreat.** `open_intent`'s
+availability was never the question - *can an observation be filed as a receipt* was, and one HTTP
+request answered it. A criterion satisfied only by a belief about a tool is a criterion that should have
+asked the substrate.
 
 ### Criterion 1 is met
 
@@ -237,9 +262,10 @@ alignment probe was re-run rather than quoted.
 
 **The probe's answer has now moved twice, and the second move is the one that closes the program's
 phase list.** When this paragraph was first written the index answered **phase 11**; when it was first
-corrected it answered **phase 07, depending on 06**. Re-run after 07 and 08 landed, it answers **phase
-12 itself, `blocked here`** -- the only phase in the thirteen with an unmet criterion -- beside **one**
-obligation that is not a phase: keeping the `isolation` CI job true. `docs/DISTRIBUTION-AND-ENVIRONMENTS.md`'s
+corrected it answered **phase 07, depending on 06**. Re-run after 07 and 08 landed, it answered **phase
+12 itself, `blocked here`**; re-run once more after criterion 2 was split (2026-09-28), it answers **no
+phase at all** - every one of the thirteen is `built` - beside **one** obligation that is not a phase:
+keeping the `isolation` CI job true. `docs/DISTRIBUTION-AND-ENVIRONMENTS.md`'s
 A2 re-run was the second such obligation when this paragraph was written, and it has since been taken
 rather than restated. There is no `next` row in the table at all, and that is a fact about the
 remaining work rather than an omission: `next` is defined as *nothing blocks it*, and what is left is
@@ -251,17 +277,19 @@ that has to be re-run rather than corrected when it rots.*
 
 ### What this phase therefore does not claim
 
-Not "the program is closed". **One** phase remains open, and it is this one: every other phase in the
-thirteen is `built`. Two of them carried the open work when this paragraph was last written, and both
+Not "every clause of every criterion is satisfied". **All thirteen phases are now `built`**, and that is
+a claim about their deliverables rather than about this program's whole history: criterion 2 here was
+split, and its historical half **stays false** - the observations this program took before 2026-09-28
+were filed as claims. Two phases carried the open work when this paragraph was last written, and both
 have since landed - 07 is `built`, its substrate measured rather than promised, and 08 is `built`, with
 the import staged at `prepare()` and its own suite falsified by disabling the refusal. Phases 11 and 13,
-which earlier versions of this paragraph counted as open, closed before that. So the tree's own account
-is: twelve phases `built`, one `blocked here`, and the blocker is a criterion about a history that
-cannot be rewritten rather than a piece of work nobody has done. The exit condition is **aligned, not
-delivered** - and a program that reported thirteen `built` phases over this tree would be the defect
-this phase was written to prevent. **The count is the claim, so it is the count that has to be
-re-taken**: the earlier version of this paragraph said *two*, and the only thing that made it false was
-another phase landing.
+which earlier versions of this paragraph counted as open, closed before that. The exit condition is
+**aligned, not delivered** - and a program that reported thirteen green phases while quietly dropping
+the clause it could not satisfy would be the defect this phase was written to prevent. **The count is
+the claim, so the count is what has to be re-taken - and so is the clause.** What makes this paragraph
+true is that the false half is written in the criterion's own list above rather than omitted from it. A
+program that reaches its last phase by deleting the sentence it could not satisfy has not closed; it has
+stopped reading.
 
 ## Guards that must still pass
 
@@ -288,5 +316,6 @@ address, and that address is the index.
 - **No KARM metric as evidence in the tree.** KARM is a research scaffold, and a `COMPLETE` metric is not
   evidence of general competence.
 - **No second record that contradicts a first.** Correct in place.
-- **No "twelve phases, all done" closing sentence.** The closing statement is the status of the tree, and
-  a status is measured.
+- **No "all done" closing sentence.** The closing statement is the status of the tree, and a status is
+  measured - which is why the paragraph above moved to thirteen `built` only once the criterion that was
+  false of the past had been split and its false half written down rather than dropped.

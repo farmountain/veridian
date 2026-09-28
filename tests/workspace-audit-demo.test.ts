@@ -96,7 +96,17 @@ function runProbe(options: RunOptions): { readonly code: number; readonly stdout
     VERIDIAN_PROCESS_ROOT: options.sandbox,
     VERIDIAN_PROCESS_APP: options.sandbox,
   };
+  // Spreading `process.env` first is deliberate - the program needs PATH to find a runtime - but it
+  // also inherits any `VERIDIAN_PROCESS_OBSERVE` the operator has exported, and an inherited value
+  // turns this test's "no surface declared" into a real audit of whatever directory that variable
+  // names. Measured: with the variable set in the shell, the suite below failed `4 !== 2` for a probe
+  // that had audited the repository root and correctly reported its own breach - a failure caused by
+  // the operator's environment rather than by anything in the tree. The variable is therefore
+  // **removed** rather than merely left unset, because "not set" and "absent" are not the same thing
+  // when a parent process is handing one down. It is the distinction the fourth boundary dimension
+  // already draws between an environment that is `inherit`ed and one that is `declared`.
   if (options.observed !== undefined) env["VERIDIAN_PROCESS_OBSERVE"] = options.observed;
+  else delete env["VERIDIAN_PROCESS_OBSERVE"];
 
   const args = [probePath, options.command];
   if (options.confined === true) {
@@ -323,6 +333,28 @@ describe("the workspace audit reads a real tree and can not write into it", () =
       assert.match(run.stderr, /no observation surface was declared/u);
       assert.equal(run.stdout, "", "the audit wrote to stdout while refusing");
     });
+  });
+
+  it("still refuses when the operator's shell exports the surface this test never declared", () => {
+    // The regression this holds, and it was found by running the suite in a shell that had one.
+    // `runProbe` spreads `process.env`, so an exported `VERIDIAN_PROCESS_OBSERVE` reached a child this
+    // test meant to start with *no* surface; the probe then audited whatever that variable named,
+    // reported its own breach, and exited **4** where the criterion above asserts **2**. The failure
+    // therefore appeared and disappeared with the operator's shell rather than with the code, which is
+    // the worst kind of defect to leave in a suite: it is a green run on a clean machine and a red one
+    // on a machine that has ever run the crawler.
+    const previous = process.env["VERIDIAN_PROCESS_OBSERVE"];
+    process.env["VERIDIAN_PROCESS_OBSERVE"] = appDir;
+    try {
+      withTrees((sandbox) => {
+        const run = runProbe({ command: "audit", sandbox });
+        assert.equal(run.code, 2, "an exported variable was read as a declared surface");
+        assert.match(run.stderr, /no observation surface was declared/u);
+      });
+    } finally {
+      if (previous === undefined) delete process.env["VERIDIAN_PROCESS_OBSERVE"];
+      else process.env["VERIDIAN_PROCESS_OBSERVE"] = previous;
+    }
   });
 
   it("keeps the vocabulary the contract names, so a criterion can not read a status nothing produces", () => {

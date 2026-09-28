@@ -71,6 +71,18 @@ criteria:
   # one stream. A help path that started logging would break every caller that parses it, and no other
   # criterion in this contract would notice.
   #
+  # `process.stderr` reads the **application's** stream rather than the runtime's, and that distinction
+  # was paid for. This world starts a `run` step with `--allow-child-process` deliberately (see the
+  # `local-process` adapter's `#allowance`), and Node answers that flag by writing a two-line
+  # `SecurityWarning` to the child's own stderr **before any program code runs**. Reading it as the
+  # program's output made this criterion report that the CLI had logged when the CLI had written
+  # nothing: it was measuring the world's own allowance and attributing it to the program under test,
+  # which is the same defect this repository records as *an error message may only name a cause the
+  # reporter observed*, one layer out. The adapter now splits the runtime's diagnostics out of the
+  # reading and keeps them on the record as `runtimeDiagnostics`, so the bundle holds both halves -
+  # nothing is hidden - and this comparison sees only what the CLI wrote. The expectation below is
+  # unchanged; what changed is that it is now an assertion about the program.
+  #
   # The two `process.stdout` expectations are lines of the usage text that were measured rather than
   # recalled: `veridian validate [options]` is unique to the command list, and `Exit codes` heads the
   # block that states the four codes this contract spends seven criteria testing. Both are long enough
