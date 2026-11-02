@@ -1,0 +1,47 @@
+name: Pilot enquiry
+description: You want Veridian to prove your agent's output before it merges.
+labels: ["pilot"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is a paid engagement — the scope and price are in PRICING.md. You do not have to be a
+        customer to file this; a description of what you are trying to prove is enough for a reply.
+  - type: input
+    id: role
+    attributes:
+      label: Your role and company
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What decision are you trying to make that you cannot make today?
+      description: e.g. "merge an agent's PR without a human reading it", "prove a generated migration is safe".
+    validations:
+      required: true
+  - type: textarea
+    id: stack
+    attributes:
+      label: What the application under test looks like
+      description: Language, how it is started, what "works" means for it today.
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Which agent produces the code
+      options:
+        - Claude Code
+        - Codex
+        - Cursor
+        - Copilot
+        - Aider
+        - In-house agent
+        - Other / not yet
+    validations:
+      required: true
+  - type: input
+    id: timeline
+    attributes:
+      label: When would this need to be decided?

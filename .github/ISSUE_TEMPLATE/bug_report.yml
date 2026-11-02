@@ -1,0 +1,53 @@
+name: Bug report
+description: Something that should have passed, or a run you cannot explain.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before you file: the answer is usually in `.veridian/latest-failure.md`. Paste it below —
+        a report without it is answered with a request for it.
+
+        Do **not** paste secrets, tokens or customer data. If a bundle contains one, that is a
+        security issue: see SECURITY.md instead.
+  - type: input
+    id: version
+    attributes:
+      label: Veridian version
+      description: Output of `veridian --version`
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node version and platform
+      description: Output of `node --version` and your OS
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: The smallest goal file that reproduces it
+      render: yaml
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what the run reported
+      description: The verdict words matter — PASS, FAIL, INCONCLUSIVE, or ENVIRONMENT_FAILURE.
+    validations:
+      required: true
+  - type: textarea
+    id: failure
+    attributes:
+      label: .veridian/latest-failure.md
+      render: markdown
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: The exact command you ran
+    validations:
+      required: true

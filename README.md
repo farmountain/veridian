@@ -183,9 +183,27 @@ Requires **Node 22.18.0 or newer**.
 
 ### Install
 
+From the registry (the published route):
+
 ```bash
 npm install -g veridian
 veridian help
+```
+
+From this repository, which is the route that works **today** — the npm entry is being republished
+and `npm install -g veridian` returns `E404` until it is:
+
+```bash
+npm ci && npm run build && npm pack
+npm install -g ./veridian-*.tgz
+veridian help
+```
+
+Or run the source tree directly, with no build step at all:
+
+```bash
+npm ci
+node cli/veridian.ts validate --goal examples/inventory-db/goal.yaml
 ```
 
 The package ships compiled JavaScript in `dist/`, which is why there is a build step at all: Node
@@ -194,6 +212,12 @@ refuses to strip types for files under `node_modules`
 The source tree is still what runs during development - `npm test` executes `.ts` directly through
 Node - and `npm run build` is what produces the artifact. The two facts do not contradict each other;
 they describe two different trees.
+
+### Support, security and what is for sale
+
+- Bugs and questions: [SUPPORT.md](./SUPPORT.md)
+- Boundary escapes and evidence forgery: [SECURITY.md](./SECURITY.md)
+- A paid pilot, and why the code stays BSD-2: [PRICING.md](./PRICING.md)
 
 **Playwright is declared as an optional peer dependency, and is never installed by us.** It is in
 `peerDependencies` with `peerDependenciesMeta.playwright.optional: true`, so a package manager can
