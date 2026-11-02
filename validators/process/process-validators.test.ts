@@ -67,6 +67,7 @@ const command = (overrides: Partial<ProcessCommandRecord> = {}): ProcessCommandR
   timedOutAfterMs: null,
   stdout: stream("provisioned 3 files\n"),
   stderr: stream(""),
+  runtimeDiagnostics: null,
   ...overrides,
 });
 
@@ -103,6 +104,7 @@ const document = (overrides: Partial<ProcessObservationData> = {}): ProcessObser
     timedOutAfterMs: null,
     stdout: stream("cart-web listening on 4180\n"),
     stderr: stream(""),
+    runtimeDiagnostics: null,
   },
   commands: [
     command(),

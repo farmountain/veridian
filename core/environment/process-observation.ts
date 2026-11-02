@@ -93,6 +93,25 @@ export interface ProcessCommandRecord {
   readonly timedOutAfterMs: number | null;
   readonly stdout: ProcessStreamReading;
   readonly stderr: ProcessStreamReading;
+  /**
+   * The part of `stderr` the **runtime** wrote about itself, split out of it.
+   *
+   * A confined child is started with flags this world adds, and one of them - `--allow-child-process`
+   * - makes Node write a `SecurityWarning` to the child's own stderr **before any application code
+   * runs**. That line is not the application's output. Reading it as though it were made `AC-001`
+   * report that the CLI had written to stderr when the CLI had written nothing, so the criterion was
+   * measuring the world's own allowance and attributing it to the program under test.
+   *
+   * The two are **separated rather than one being deleted**. `stderr` is what a criterion judging the
+   * program should compare, and this field is what keeps the bundle from quietly losing the rest -
+   * a reader can still see that the runtime said something. `null` means there was nothing to split,
+   * which is the ordinary case for every unconfined child.
+   *
+   * It is required-and-nullable in the shape `environment` uses above: required so the field cannot be
+   * omitted in silence, nullable because "the runtime said nothing" is a **reading** and not a
+   * stand-in for "nobody filled the field in".
+   */
+  readonly runtimeDiagnostics: ProcessStreamReading | null;
 }
 
 /**
@@ -181,7 +200,8 @@ const isCommand = (value: unknown): value is ProcessCommandRecord =>
   (value["signal"] === null || typeof value["signal"] === "string") &&
   (value["timedOutAfterMs"] === null || typeof value["timedOutAfterMs"] === "number") &&
   isStream(value["stdout"]) &&
-  isStream(value["stderr"]);
+  isStream(value["stderr"]) &&
+  (value["runtimeDiagnostics"] === null || isStream(value["runtimeDiagnostics"]));
 
 const isFile = (value: unknown): value is ProcessFileReading =>
   isRecord(value) &&
@@ -371,6 +391,65 @@ export function renderStream(label: string, reading: ProcessStreamReading): stri
   return reading.truncated
     ? `${label} ${count} (${shown}, last ${String(reading.text.length)} shown)`
     : `${label} ${count} (${shown})`;
+}
+
+/**
+ * The opening of a diagnostic the **runtime** writes to its own stderr.
+ *
+ * Node's own format is `(node:<pid>) <WarningType>: <message>`, followed by a second line that says
+ * how to trace it. Requiring the pid is what keeps this from matching prose a program printed: the
+ * prefix is emitted by the runtime rather than by a program using it, so an application line cannot be
+ * lost to it without that program impersonating the runtime's own diagnostic format.
+ */
+const RUNTIME_DIAGNOSTIC_LINE = /^\(node:\d+\) /;
+
+/** The hint Node prints immediately after a warning, naming how to trace where it came from. */
+const RUNTIME_DIAGNOSTIC_HINT =
+  /^\(Use `node --trace-warnings \.\.\.` to show where the warning was created\)\r?\n$/;
+
+/**
+ * Separate the lines the **runtime** wrote from the lines the **application** wrote.
+ *
+ * Measured, not assumed: a node child started with `--permission --allow-child-process` writes exactly
+ * two lines to stderr before any program code runs -
+ *
+ * ```
+ * (node:48276) SecurityWarning: The flag --allow-child-process must be used with extreme caution. It could invalidate the permission model.
+ * (Use `node --trace-warnings ...` to show where the warning was created)
+ * ```
+ *
+ * and the second line is a continuation of the first rather than a statement of its own, which is why
+ * the hint is consumed with the warning that produced it instead of being matched independently. A
+ * warning whose hint was left behind would put the application's stderr back to non-empty and the
+ * criterion would keep failing on half the diagnostic.
+ *
+ * Nothing is dropped: `diagnostics` is kept, so the information moves out of the criterion's reading
+ * rather than out of the bundle. When nothing matches, `application` is returned **as the input string
+ * itself**, so the common path cannot alter a byte.
+ */
+export function splitRuntimeDiagnostics(stream: string): {
+  readonly application: string;
+  readonly diagnostics: string;
+} {
+  // Split *after* each terminator so every line keeps its own ending, which is what makes the
+  // application half byte-identical to its input whenever no line was removed.
+  const lines = stream.split(/(?<=\r?\n)/);
+  const application: string[] = [];
+  const diagnostics: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (!RUNTIME_DIAGNOSTIC_LINE.test(line)) {
+      application.push(line);
+      continue;
+    }
+    diagnostics.push(line);
+    const hint = lines[index + 1];
+    if (hint !== undefined && RUNTIME_DIAGNOSTIC_HINT.test(hint)) {
+      diagnostics.push(hint);
+      index += 1;
+    }
+  }
+  return { application: application.join(""), diagnostics: diagnostics.join("") };
 }
 
 /**

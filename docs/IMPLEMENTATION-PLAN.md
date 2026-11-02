@@ -350,14 +350,23 @@ scripts/              e2e-install.mjs                    (the Playwright bootstr
 .veridian/            runtime state (gitignored)
 ```
 
-**`acceptance/veridian-mvp.yaml` — Veridian judged by its own tool — is not built, and the MVP
-cannot express it.** This section and step 9 of §7 both call for it, and the intent behind them is
-right: dogfooding is the only honest proof that the product works on a target nobody designed it
-for. But the MVP has exactly one adapter (`REGISTERED_ADAPTERS` is `["local-web"]`) and all eight
-registered validators are *browser* observations, so a contract about a CLI has no validator able to
-judge a single criterion. Every one of them would be `INCONCLUSIVE` and the run would exit 2 — the
-same defect as `--browser none` on the canonical demo, where a contract that cannot be observed is
-reported as a contract that was not observed. *A demo that cannot demonstrate is not a demo.*
+**`acceptance/veridian-mvp.yaml` — Veridian judged by its own tool — was not buildable inside the MVP,
+and the reason was the instrument rather than the idea.** This section and step 9 of §7 both called for
+it, and the intent behind them is right: dogfooding is the only honest proof that the product works on a
+target nobody designed it for. It could not be written *then*, because the MVP had exactly one adapter
+(`REGISTERED_ADAPTERS` was `["local-web"]`) and all eight registered validators were *browser*
+observations, so a contract about a CLI had no validator able to judge a single criterion. Every one of
+them would have been `INCONCLUSIVE` and the run would have exited 2 — the same defect as `--browser
+none` on the canonical demo, where a contract that cannot be observed is reported as a contract that was
+not observed. *A demo that cannot demonstrate is not a demo.*
+
+**It is built, and this paragraph used to end by saying it was not.** `acceptance/veridian-mvp.yaml`
+exists, `npm run acceptance` judges the CLI with it, and it is phase 10 of the phase program
+(`docs/phases/10-veridian-judged-by-veridian.md`). What spent the blocker was `local-process` landing: a
+world whose subject is a program can judge a command line, and the CLI's exit codes are the program's
+own output rather than an inference about it. The paragraph above is kept rather than deleted because
+the obstacle it names is why the contract is worth having — a version written inside the MVP would have
+been written against one world and would never have exercised the seam at all.
 
 Expressing it needs a **non-web** adapter or validator (`process`, `file`, `command`), which §8 and
 the hard scope boundary forbid building speculatively. So the gap is recorded rather than papered

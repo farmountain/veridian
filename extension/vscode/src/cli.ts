@@ -236,6 +236,15 @@ export function commandArguments(
  * bytes to stderr**, so the Cockpit's output channel showed the `> ...` header and the exit line and
  * nothing between them - a command that had measured the whole history, reporting nothing.
  *
+ * The figure is **of its moment, not of this code**: it was taken against the v0.2.1 report, which
+ * printed one line per run and per criterion (6,839 lines over the 226 bundles on this machine). The
+ * later scoping work removed that detail, and `metrics` now writes **3,698 bytes over 226 bundles
+ * (218 measured, 8 unreadable, 17 subjects)** - a report whose size follows the *subject* count, not
+ * the run count. So the bytes shrank by ~360x while the reason for `streamFor` did not change at
+ * all, which is the point worth keeping: *the stream is the property, and the byte total was only
+ * ever evidence that the report existed and was not being shown.* A figure that moves with a
+ * refactor cannot be the thing a decision rests on.
+ *
  * Decided here, beside the arguments, for the reason `commandArguments` passes `--state-dir`
  * unconditionally: the invocation is the only thing the runner sees, and a runner that worked out
  * which subcommand this was would be a second place the command name is parsed.

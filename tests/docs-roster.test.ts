@@ -43,6 +43,15 @@ import { nodeIo } from "../core/io.ts";
  * day all of them move together and none of them is re-measured, because *a count cannot be pinned by
  * a test that itself changes the count*; that case is repaired by re-taking the measurement, and the
  * four sites are named here so the next pass knows where to take it.
+ *
+ * **And the arithmetic beside a total is read too.** `docs/RULES-PAID-FOR.md` records a defect where
+ * all four sites agreed on `2782` while three decomposed it as `2608 plus 92` and one as `2690 plus
+ * 92` - a true total printed beside a false addition, because the guard's pattern matched the total
+ * and nothing read its neighbours. The second assertion below closes that: each site's addition must
+ * reach its own total, and the sites must credit the VS Code Cockpit with the same figure. What it
+ * still cannot do is confirm that figure against the Cockpit itself - it is read from these sites
+ * rather than taken from the extension's suite, so a change there arrives as disagreement between
+ * sites rather than as truth, and that limit is stated rather than left to be discovered.
  */
 
 /**
@@ -66,6 +75,19 @@ const COUNT_SITES = [
   "README.md",
   "docs/BUILD-AND-TEST-COMMANDS.md",
 ] as const;
+
+/**
+ * The one spelling of a live count claim, shared by both assertions below.
+ *
+ * A `const` rather than two inline literals because the two assertions are about *the same sentence*:
+ * if the spellings drifted apart, one could read a total from a sentence the other did not read an
+ * addition from, and the pair would agree about nothing while appearing to agree. Callers strip
+ * asterisks first, because one site emphasises the figure.
+ *
+ * `matchAll` clones the pattern it is given, so a shared global `RegExp` does not carry `lastIndex`
+ * between the two callers.
+ */
+const COUNT_CLAIM = /(\d[\d,]{2,6})\s+(?:passing\s+)?tests?\s+over\s+(\d[\d,]{0,5})\s*suites?/g;
 
 const repo = nodeIo();
 
@@ -233,7 +255,7 @@ describe("the Documentation table in AGENTS.md", () => {
       // Asterisks are stripped first because one site emphasises the figure (`at **2569** tests over
       // **426** suites`) and a pattern built for the other three would report that site as silent.
       const text = ((await repo.readTextFile(name)) ?? "").replaceAll("*", "");
-      const found = [...text.matchAll(/(\d[\d,]{2,6})\s+(?:passing\s+)?tests?\s+over\s+(\d[\d,]{0,5})\s*suites?/g)].map(
+      const found = [...text.matchAll(COUNT_CLAIM)].map(
         (match) => `${match[1] ?? ""} tests over ${match[2] ?? ""} suites`,
       );
       figures.set(name, found);
@@ -257,6 +279,96 @@ describe("the Documentation table in AGENTS.md", () => {
       `the live count sites state ${String(distinct.length)} different figures: ${distinct.join(" | ")}. ` +
         `A total corrected in one document and not in the others is the defect this assertion exists ` +
         `for; re-measure rather than choosing between them.`,
+    );
+  });
+
+  it("holds each site's addition to its own total, so the arithmetic beside a figure is read", async () => {
+    // The gap `docs/RULES-PAID-FOR.md` names and did not close: *"a pattern that matches the total
+    // cannot see the arithmetic beside it."* Every site states the total **and** an addition that
+    // reaches it - the tree's own figure plus the Cockpit's - and the assertion above reads only the
+    // total, so the addition was free to be wrong inside a sentence that looked verified. It has been
+    // wrong: that register entry records `2782` decomposed as `2608 plus 92` at three sites and `2690
+    // plus 92` at the fourth, a false decomposition printed beside a true total. The gap was then paid
+    // for again in the pass that wrote this assertion - the same figure moved by hand through four
+    // documents and missed on the first sweep, because nothing read the half that had moved.
+    //
+    // What this cannot catch is what the assertion above cannot catch either: every site moving
+    // together with none re-measured. And the Cockpit's figure is *read from these sites* rather than
+    // taken from the extension's own suite, so a change there surfaces as disagreement between sites,
+    // never as truth. Both limits are named because a guard whose limits are unstated gets trusted
+    // past them.
+    const claims: { site: string; total: number; own: number; cockpit: number }[] = [];
+    const unread: string[] = [];
+    for (const name of COUNT_SITES) {
+      const text = ((await repo.readTextFile(name)) ?? "").replaceAll("*", "");
+      for (const match of text.matchAll(COUNT_CLAIM)) {
+        // A window rather than the document: the addition belongs to the same sentence as the total,
+        // and a stray `own <n>` in a later paragraph would be paired with a total it does not
+        // describe. 400 characters covers the longest of the four - a wrapped comment line - and
+        // stops well short of the paragraph after it.
+        const window = text.slice(match.index, match.index + 400);
+        const own = /\bown\s+(\d[\d,]*)/i.exec(window)?.[1];
+        // Two spellings, both in use: the figure then the noun (`the 92 the VS Code Cockpit`), and
+        // the noun then the figure (`the Cockpit's 92`). Read as shapes because a fourth site may use
+        // either, and a guard that knew only one would silently drop the sites that chose the other.
+        const cockpit =
+          /(\d[\d,]*)\s+the\s+VS\s+Code\s+Cockpit/i.exec(window)?.[1] ??
+          /Cockpit'?s\s+(\d[\d,]*)/i.exec(window)?.[1];
+        if (own === undefined || cockpit === undefined) {
+          unread.push(`${name}: ${match[0]}`);
+        } else {
+          claims.push({
+            site: name,
+            total: Number((match[1] ?? "").replaceAll(",", "")),
+            own: Number(own.replaceAll(",", "")),
+            cockpit: Number(cockpit.replaceAll(",", "")),
+          });
+        }
+      }
+    }
+
+    // The control, and it is the one this file warns about twice: a total read without an addition
+    // beside it must fail here rather than pass by being absent from `claims` - otherwise deleting a
+    // decomposition would quietly reduce this guard to the assertion above.
+    assert.deepEqual(
+      unread,
+      [],
+      `a count claim at ${unread.join(", ")} states a total with no addition beside it. Either the ` +
+        `decomposition was deleted - in which case the tree has stopped making the claim and this ` +
+        `assertion should be deleted with it - or the sentence was reworded into a shape the two ` +
+        `patterns here do not read. Add the spelling; do not drop the site.`,
+    );
+    // The second control, and the stronger one: every named site must have contributed at least one
+    // claim, so that a pattern which matched nothing at all cannot pass by agreeing with itself.
+    assert.deepEqual(
+      [...new Set(claims.map((claim) => claim.site))].sort(),
+      [...COUNT_SITES].sort(),
+      `no addition was read from one or more of the count sites, so nothing below was compared.`,
+    );
+
+    const wrong = claims
+      .filter((claim) => claim.own + claim.cockpit !== claim.total)
+      .map(
+        (claim) =>
+          `${claim.site}: ${String(claim.own)} + ${String(claim.cockpit)} != ${String(claim.total)}`,
+      );
+    assert.deepEqual(
+      wrong,
+      [],
+      `the addition beside a count does not reach the total it sits under - ${wrong.join("; ")}. ` +
+        `The total is pinned to one figure by the assertion above, so a mismatch here is the half a ` +
+        `reader calibrates the rest of the sentence against, and until this test it was the half ` +
+        `nothing read.`,
+    );
+
+    const credit = [...new Set(claims.map((claim) => claim.cockpit))].sort();
+    assert.equal(
+      credit.length,
+      1,
+      `the sites credit the VS Code Cockpit with ${String(credit.length)} different figures ` +
+        `(${credit.join(", ")}) while stating the same total. Two additions cannot reach one total ` +
+        `unless a site's own figure absorbed the difference, which is the trade this assertion exists ` +
+        `to refuse.`,
     );
   });
 });
