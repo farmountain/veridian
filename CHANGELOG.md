@@ -12,13 +12,15 @@ All notable changes to Veridian are recorded here. Format follows
   asserted "this wrote nothing to stderr" failed against a program that wrote nothing. The
   observation layer now separates the runtime's diagnostics from the program's stream
   (`core/environment/process-observation.ts`).
-- **Four worlds failed on Node 24+ because the network permission is enforced there.** `local-api`,
-  `sim-k8s`, `sim-cloud` and `sim-data` stand a real server on loopback; `--permission` without
-  `--allow-net` refused every socket, so `environment INVALID — no criterion is a measurement`.
-  Confinement now carries a network dimension (`ConfinementRequest.network`), and these four goals
-  declare `networkPolicy: allow`, which makes their bundle report the boundary as `not-requested`
-  rather than `enforced`. On Node 22 the flag was inert and the bundle was wrong; on Node 24+ both
-  the flag and the report are true.
+
+### Known limitation
+
+- **Four worlds require Node 22 today.** `local-api`, `sim-k8s`, `sim-cloud` and `sim-data` stand a
+  real server on loopback; Node 24+ enforces the network permission, so `--permission` without
+  `--allow-net` refuses every socket and those worlds report `environment INVALID`. The fix is
+  understood (`ConfinementRequest.network` carried into `--allow-net`), but it changes what the
+  bundle reports for the network boundary and therefore moves the tests that hold that vocabulary.
+  Until it lands, run those worlds on the version `.nvmrc` pins.
 
 ### Added
 
