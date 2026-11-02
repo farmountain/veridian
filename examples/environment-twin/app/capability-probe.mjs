@@ -96,6 +96,30 @@ function warn(line) {
  * would make "the tool is not installed" indistinguishable from "the tool is installed and refused",
  * so both are recorded verbatim and the evidence says which one happened.
  */
+/**
+ * A line the **runtime** printed about itself, rather than one the program printed.
+ *
+ * Node writes `SecurityWarning` diagnostics to stderr whenever it is started with a permission
+ * flag, and every one of them carries the child's pid: `(node:1564012) SecurityWarning: ...`. That
+ * pid changes on every run, so a first line taken literally turns the same machine into two
+ * different machines and `compare` reports the twin unstable. Node 24 also prefixes some of these
+ * with a `[PERM0002]` tag.
+ *
+ * This is the same rule `core/environment/process-observation.ts` holds for `local-process`: the
+ * runtime's diagnostics are not the application's output. A probe that quotes them as evidence is
+ * quoting its own instrumentation back at itself.
+ */
+const RUNTIME_DIAGNOSTIC = /^(?:\[PERM\d+\]\s*)?\(node:\d+\)\s/;
+
+/** The first line the program itself printed, with the runtime's own diagnostics removed. */
+function firstProgramLine(stream) {
+  const lines = stream
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !RUNTIME_DIAGNOSTIC.test(line));
+  return lines[0] ?? "";
+}
+
 function runChild(command, args) {
   const result = spawnSync(command, args, { encoding: "utf8", windowsHide: true });
 
@@ -105,7 +129,7 @@ function runChild(command, args) {
   }
 
   const stream = `${result.stderr ?? ""}${result.stdout ?? ""}`.trim();
-  const first = stream.split(/\r?\n/)[0] ?? "";
+  const first = firstProgramLine(stream);
   const tail = first === "" ? "" : `; first line: ${first}`;
 
   return result.status === 0
